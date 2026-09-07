@@ -9,8 +9,6 @@ const AERO_REG = "0x5c3f18f06cc09ca1910767a34a20f771039e37c0";
 const V3_FAC   = "0x33128a8fc17869897dce68ed026d694621f6fdfd";
 const WETH     = "0x4200000000000000000000000000000000000006";
 const POOL     = "0x1111111111111111111111111111111111111111";
-const POTPAL   = "0x06cc93ff9013b150445ff850d8d9285d6022eba3";
-const PPPOOL   = "0xdd44444444444444444444444444444444444444";
 const FOREIGN0 = "0xaaaa000000000000000000000000000000000001";
 const FOREIGN1 = "0xbbbb000000000000000000000000000000000002";
 // V3 fixture: spot 100,000 LAPTOP per WETH, virtual reserve 10 WETH deep.
@@ -53,7 +51,6 @@ function handle(scn, req) {
 
   if (method === "eth_getCode") {
     const [addr, blk] = params;
-    if (scn === "potpal-nocode") return { result: "0x" };
     if (scn === "pool-nocode") return { result: "0x" };
     if (scn === "nocode") return { result: "0x" };
     if (blk && blk !== "latest") {
@@ -67,23 +64,6 @@ function handle(scn, req) {
     const to = (params[0].to || "").toLowerCase();
     const data = (params[0].data || "").toLowerCase();
     const sel = data.slice(0, 10);
-
-    // ---- deployed POTPAL fixtures ----
-    if (scn.startsWith("potpal")) {
-      const noPool = scn === "potpal-nopool";
-      const wrongSym = scn === "potpal-wrongsym";
-      if (to === POTPAL) {
-        if (sel === "0x06fdde03") return { result: strWord("POT PAL") };
-        if (sel === "0x95d89b41") return { result: strWord(wrongSym ? "SCAMCOIN" : "POTPAL") };
-        if (sel === "0x313ce567") return { result: uintWord(18) };
-        if (sel === "0x18160ddd") return { result: uintWord(420000000000000n * 10n ** 18n) };
-        return { result: "0x" };
-      }
-      if (sel === "0xe6a43905")                                   // V2 getPair
-        return noPool ? { result: W0 } : { result: addrWord(PPPOOL) };
-      if (sel === "0x1698ee82" || sel === "0x79bc57d5") return { result: W0 };
-      return { result: "0x" };
-    }
 
     // ---- multi-venue comparison fixture: three pools of different depth ----
     if (scn === "venues") {

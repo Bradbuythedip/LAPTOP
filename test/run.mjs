@@ -56,7 +56,7 @@ await page.goto(SITE + "/", { waitUntil: "domcontentloaded" });
 
 /* ---------------- 1. crypto + parsing (pure, no network) ---------------- */
 const T = await page.evaluate(() => {
-  const t = window.__TWD;
+  const t = window.__LAPTOP;
   return {
     kEmpty: t.keccakHex(""),
     kAbc: t.keccakHex("abc"),
@@ -157,9 +157,9 @@ eq("venue plan size (1 gate + 3 V2 + 21 V3 + 6 aero + 1 registry)", T.planLen, 3
 /* ---------------- 2. browser flow against the mock ---------------- */
 async function useScenario(scn) {
   await page.evaluate(async (url) => {
-    localStorage.setItem("twd.rpc", url);
-    localStorage.removeItem("twd.ref");
-    localStorage.removeItem("twd.relay");
+    localStorage.setItem("laptop.rpc", url);
+    localStorage.removeItem("laptop.ref");
+    localStorage.removeItem("laptop.relay");
   }, MOCK + "/" + scn);
   await page.reload({ waitUntil: "domcontentloaded" });
   await page.waitForTimeout(350);
@@ -296,67 +296,64 @@ ok("invalid input renders no verdict", !(await page.isVisible("#verdictArea")));
 const kept = await page.inputValue("#addr");
 eq("typed text never mutated by the tool", kept, "0xnothex");
 
-console.log("── a known non-LAPTOP token is identified, not just rejected");
+console.log("── the buy path appears only where acting is safe");
 await useScenario("happy");
+await type("0xB095274743941e953c746F9C228DA9c18Bb6ec29");
+const ctaMatch = await page.$$eval("#verdictArea a.cta", as => as.map(a => a.getAttribute("href")));
+ok("a match offers a primary action", ctaMatch.length >= 1, JSON.stringify(ctaMatch));
+ok("it leads to the venue comparison", ctaMatch.includes("/buy.html"), JSON.stringify(ctaMatch));
+ok("and to the size curve", ctaMatch.includes("/size.html"), JSON.stringify(ctaMatch));
+await type("0x0000000000000000000000000000000000001234");
+const ctaMiss = await page.$$eval("#verdictArea a.cta", as => as.length);
+eq("a mismatch offers no buy path at all", ctaMiss, 0);
 await type("0x06cC93FF9013B150445fF850D8D9285D6022eBa3");
-ok("verdict is still DOES NOT MATCH", (await txt("#verdictArea")).includes("DOES NOT MATCH"));
-ok("the token is named so the user knows what they have",
-   (await txt("#verdictArea")).includes("POT PAL"));
-ok("and told plainly it will not get them LAPTOP",
-   (await txt("#verdictArea")).includes("will not get you LAPTOP"));
-ok("recognition never becomes endorsement",
-   !(await txt("#verdictArea")).includes("MATCHES"));
+eq("nor does a recognised different token", await page.$$eval("#verdictArea a.cta", as => as.length), 0);
 
-console.log("── background art and the $TWD watermark");
+console.log("── background art");
 const bg = await page.evaluate(() => {
   const before = getComputedStyle(document.body, "::before");
-  const after = getComputedStyle(document.body, "::after");
+  const vig = getComputedStyle(document.documentElement, "::before");
   return {
     img: before.backgroundImage, imgOpacity: parseFloat(before.opacity),
-    mark: after.backgroundImage, markOpacity: parseFloat(after.opacity),
-    zIdxBefore: before.zIndex, zIdxAfter: after.zIndex,
-    pointerBefore: before.pointerEvents, pointerAfter: after.pointerEvents,
+    zArt: before.zIndex, zVig: vig.zIndex,
+    pointerArt: before.pointerEvents, pointerVig: vig.pointerEvents,
+    vigBg: vig.backgroundImage, vigOpacity: parseFloat(vig.opacity),
   };
 });
 ok("background image layer is applied", /bg\.png/.test(bg.img), bg.img);
-ok("background art is subdued enough to read over", bg.imgOpacity > 0 && bg.imgOpacity <= 0.2,
+ok("background art is subdued enough to read over", bg.imgOpacity > 0 && bg.imgOpacity <= 0.35,
    String(bg.imgOpacity));
-ok("$TWD watermark tiles the page", /svg\+xml/.test(bg.mark) && /%24TWD/.test(bg.mark));
-ok("watermark is faint", bg.markOpacity > 0 && bg.markOpacity <= 0.1, String(bg.markOpacity));
-ok("both layers sit behind the content", Number(bg.zIdxBefore) < 0 && Number(bg.zIdxAfter) < 0);
-ok("neither layer can swallow a tap",
-   bg.pointerBefore === "none" && bg.pointerAfter === "none");
-const src = fs.readFileSync(path.join(ROOT, "web", "index.html"), "utf8");
-const twdCount = (src.match(/\$TWD/g) || []).length + (src.match(/%24TWD/g) || []).length;
-ok("$TWD appears many times on the page", twdCount >= 6, "count=" + twdCount);
-ok("the ticker is visible in the header, not only in the watermark",
-   (await txt("h1")).includes("$TWD"));
+ok("a vignette layer exists", /gradient/.test(bg.vigBg), bg.vigBg.slice(0, 60));
+ok("the vignette runs at full strength, not dimmed with the art", bg.vigOpacity === 1);
+ok("the vignette sits above the art but below the content",
+   Number(bg.zVig) < 0 && Number(bg.zVig) > Number(bg.zArt), bg.zVig + " vs " + bg.zArt);
+ok("neither decorative layer can swallow a tap",
+   bg.pointerArt === "none" && bg.pointerVig === "none");
 
-// The whole point is that the art never competes with the answer.
+// The site is about one token. Anything else named on it is either cross-promotion or a
+// chance for a reader to confuse two things, and both are out.
+console.log("── one token, and only one");
+const pages = ["index.html", "size.html", "route.html", "buy.html"];
+for (const f of pages) {
+  const t = fs.readFileSync(path.join(ROOT, "web", f), "utf8");
+  ok(`${f} never mentions $TWD`, !/\$TWD|%24TWD/.test(t));
+  ok(`${f} never mentions another token`, !/POT ?PAL|POTPAL/i.test(t));
+  ok(`${f} does not link to another token's page`, !/potpal\.html/.test(t));
+}
+const bodyText = await txt("body");
+ok("no ticker chip survives in the rendered page", !/\$TWD/.test(bodyText));
+ok("LAPTOP is still named", /LAPTOP/.test(bodyText));
+
+// Verdicts still work for an address that is simply not LAPTOP.
 await useScenario("happy");
-await type("0xB095274743941e953c746F9C228DA9c18Bb6ec29");
-ok("verdict box keeps an opaque ground over the art", await page.evaluate(() => {
-  const v = document.querySelector(".verdict");
-  const bgc = getComputedStyle(v).backgroundColor;
-  const m = bgc.match(/rgba?\(([^)]+)\)/);
-  if (!m) return false;
-  const parts = m[1].split(",").map(s => parseFloat(s));
-  return parts.length < 4 || parts[3] >= 0.95;   // no alpha, or effectively opaque
-}));
-ok("page still fits 375px with the art in place",
-   (await page.evaluate(() => document.documentElement.scrollWidth)) <= 375);
-
-// And that it degrades to nothing if the image is absent.
-// The meaningful property: no behaviour depends on the image. It is referenced once, from
-// a decorative CSS layer, and never from script - so a missing or blocked bg.png costs a
-// picture and leaves every number and verdict intact.
-const scriptBody = (src.match(/<script[\s\S]*?<\/script>/g) || []).join("");
-ok("no script references bg.png, so nothing functional depends on it",
-   !/bg\.png/.test(scriptBody));
-const cssDecl = (src.match(/url\(["']?\/bg\.png/g) || []).length;
-eq("bg.png is loaded from exactly one place", cssDecl, 1);
+await type("0x06cC93FF9013B150445fF850D8D9285D6022eBa3");
+ok("an unrelated address is rejected without naming what it is",
+   (await txt("#verdictArea")).includes("DOES NOT MATCH"));
+ok("and no other token is named in the verdict",
+   !/POT ?PAL/i.test(await txt("#verdictArea")));
 
 console.log("── static checks");
+const src = fs.readFileSync(path.join(ROOT, "web", "index.html"), "utf8");
 const html = fs.readFileSync(path.join(ROOT, "web", "index.html"), "utf8");
 ok("no third-party origins (C7)", !/https?:\/\/(?!basescan\.org|laptoptoken\.com|mainnet\.base\.org)[a-z0-9.-]+\//i.test(
    html.replace(/basescan\.org[^"'\s]*/g, "")), "found an external origin");

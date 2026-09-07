@@ -120,7 +120,7 @@ eq("a fill at half spot is 50% slippage", props.slipHalf, 0.5);
 
 /* ---------------- 3. browser flows ---------------- */
 const use = async scn => {
-  await page.evaluate(u => localStorage.setItem("twd.rpc", u), MOCK + "/" + scn);
+  await page.evaluate(u => localStorage.setItem("laptop.rpc", u), MOCK + "/" + scn);
   await page.reload({ waitUntil: "domcontentloaded" });
   await page.waitForTimeout(200);
 };
@@ -278,7 +278,7 @@ ok("and the ceiling claim is simply omitted rather than guessed",
    !(await txt("#curveCard")).includes("No trade can take"));
 
 console.log("── deep link from the checker");
-await page.evaluate(u => localStorage.setItem("twd.rpc", u), MOCK + "/pool-v3");
+await page.evaluate(u => localStorage.setItem("laptop.rpc", u), MOCK + "/pool-v3");
 await page.goto(SITE + "/size.html?pool=" + POOL, { waitUntil: "domcontentloaded" });
 await page.waitForTimeout(1100);
 ok("a ?pool= link reads without any typing", (await txt("#curveBadge")).includes("best case"));
@@ -288,7 +288,7 @@ await page.goto(SITE + "/size.html?pool=0xdeadbeef", { waitUntil: "domcontentloa
 await page.waitForTimeout(500);
 ok("a malformed ?pool= is rejected like typed input", await page.isVisible("#poolErr"));
 
-await page.evaluate(u => localStorage.setItem("twd.rpc", u), MOCK + "/pool-foreign");
+await page.evaluate(u => localStorage.setItem("laptop.rpc", u), MOCK + "/pool-foreign");
 await page.goto(SITE + "/size.html?pool=" + POOL, { waitUntil: "domcontentloaded" });
 await page.waitForTimeout(1100);
 ok("a deep link to a pool with no LAPTOP side is still refused",
