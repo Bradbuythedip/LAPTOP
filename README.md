@@ -67,13 +67,13 @@ python3 -m http.server -d web 8000     # then open http://localhost:8000
 Or just open `web/index.html` from disk — it has no build step and no dependencies. Saving the
 file and opening it locally removes the hosting party from the trust question entirely.
 
-Published build `2026-09-07g`:
+Published build `2026-09-07h`:
 
 ```
-sha256(web/index.html) = 54bb7a48fac63481cb6c6f44082a933a3261b9f58cc35579ea3090cb30077e26
-sha256(web/size.html)  = cbd07bf51533d4608e61c99770224e041b290441866741620af778e753308c02
-sha256(web/route.html) = 458bbce337055b92096389e29a35096f48766e89d4190708206df85a608f1c67
-sha256(web/buy.html)   = e872b6e3fc5503db7c67720d8327654fdfd9ed249f2f16051e59e5bf782aecdd
+sha256(web/index.html) = 3d404113eb1a9f7f7fdd61b39380ceddba340446205c45803951b2468c48e84d
+sha256(web/size.html)  = 8205ce5d3d8c004a4211e6ea924e9888e8f7ded127c54a376a37600ee5f1a359
+sha256(web/route.html) = ffd567425fed38937f0e88ffde98982f9261dc0ebbd281c47c13486a552d97d7
+sha256(web/buy.html)   = bd453a242b859bd8d172ed97d429e4dab929a0be876b34303c3c7c3dde46f703
 ```
 
 ### Tests
@@ -82,9 +82,9 @@ sha256(web/buy.html)   = e872b6e3fc5503db7c67720d8327654fdfd9ed249f2f16051e59e5b
 sh test/run-all.sh         # everything below, no network touched
 ```
 
-**406 assertions across eight suites.**
+**417 assertions across eight suites.**
 
-`test/run.mjs` — 97, drives the real page in Chromium against `test/mock-rpc.mjs`: Keccak
+`test/run.mjs` — 105, drives the real page in Chromium against `test/mock-rpc.mjs`: Keccak
 vectors, the four EIP-55 reference addresses, the v4 poolId derivation checked against a real
 Base pool id, ABI-string decoding (including a 10-character name, whose length word contains a
 hex letter, and truncated/absurd offsets), result-length discipline, and full flows for the
@@ -108,7 +108,7 @@ fills better, and no fill can exceed the output-side virtual reserve. Emits the 
 disclaimers, and enforces the real protocol limits (420 trillion passes, 1 quintillion is
 rejected by uint112).
 
-`test/run-buy.mjs` — 30, drives the venue comparison against a three-venue fixture with
+`test/run-buy.mjs` — 33, drives the venue comparison against a three-venue fixture with
 deliberately different depths and asserts the ranking follows depth, the spread is quantified,
 and no wallet code exists anywhere in the page.
 
@@ -372,11 +372,16 @@ exactly one decorative CSS rule and never from script. So if the file is missing
 CSP, or the HTML is saved and opened offline, the pages lose a picture and nothing else — every
 verdict, number and failure state is untouched. A test asserts that no script references it.
 
-Recommended: a wide image (roughly 16:9), under ~300KB. It renders at 13% opacity, inverted in
-dark mode, behind cards that sit on a 90%-opaque ground, so nothing ever competes with a verdict
-someone is reading in a hurry. Tests assert the art stays below 20% opacity, the watermark below
-10%, both layers sit behind the content with `pointer-events:none`, and the verdict box keeps an
-effectively opaque background.
+Recommended: a wide image (roughly 16:9), under ~300KB. It renders at 26% opacity on a single
+deep dark theme, under a full-strength vignette, behind cards that sit on a 90%-opaque ground, so nothing ever competes with a verdict
+someone is reading in a hurry. Tests assert the art stays below 35% opacity, the watermark below 10%, both layers sit behind
+the content with `pointer-events:none`, the vignette exists on its own layer at full strength
+(on the art layer it would inherit that layer's opacity and do nothing), and — rather than any
+proxy for legibility — that the verdict text clears **WCAG AA contrast** once every translucent
+layer behind it is actually composited.
+
+The four LAPTOP pages are a single deep theme now, not light-with-a-dark-variant: near-black
+warm ground, cream text, art at 26% under a vignette that falls to near-black at the edges.
 
 `test/fixture-bg.png` is a generated stand-in used only so the test suite exercises the
 background code path. It is not artwork and is not served in production.

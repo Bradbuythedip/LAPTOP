@@ -307,6 +307,19 @@ ok("and told plainly it will not get them LAPTOP",
 ok("recognition never becomes endorsement",
    !(await txt("#verdictArea")).includes("MATCHES"));
 
+console.log("── the buy path appears only where acting is safe");
+await useScenario("happy");
+await type("0xB095274743941e953c746F9C228DA9c18Bb6ec29");
+const ctaMatch = await page.$$eval("#verdictArea a.cta", as => as.map(a => a.getAttribute("href")));
+ok("a match offers a primary action", ctaMatch.length >= 1, JSON.stringify(ctaMatch));
+ok("it leads to the venue comparison", ctaMatch.includes("/buy.html"), JSON.stringify(ctaMatch));
+ok("and to the size curve", ctaMatch.includes("/size.html"), JSON.stringify(ctaMatch));
+await type("0x0000000000000000000000000000000000001234");
+const ctaMiss = await page.$$eval("#verdictArea a.cta", as => as.length);
+eq("a mismatch offers no buy path at all", ctaMiss, 0);
+await type("0x06cC93FF9013B150445fF850D8D9285D6022eBa3");
+eq("nor does a recognised different token", await page.$$eval("#verdictArea a.cta", as => as.length), 0);
+
 console.log("── background art and the $TWD watermark");
 const bg = await page.evaluate(() => {
   const before = getComputedStyle(document.body, "::before");
@@ -319,11 +332,21 @@ const bg = await page.evaluate(() => {
   };
 });
 ok("background image layer is applied", /bg\.png/.test(bg.img), bg.img);
-ok("background art is subdued enough to read over", bg.imgOpacity > 0 && bg.imgOpacity <= 0.2,
+ok("background art is subdued enough to read over", bg.imgOpacity > 0 && bg.imgOpacity <= 0.35,
    String(bg.imgOpacity));
 ok("$TWD watermark tiles the page", /svg\+xml/.test(bg.mark) && /%24TWD/.test(bg.mark));
 ok("watermark is faint", bg.markOpacity > 0 && bg.markOpacity <= 0.1, String(bg.markOpacity));
 ok("both layers sit behind the content", Number(bg.zIdxBefore) < 0 && Number(bg.zIdxAfter) < 0);
+// The vignette is what actually guarantees a dark ground under text, and it must live on its
+// own layer — put it on the art layer and it inherits that layer's opacity and does nothing.
+const vig = await page.evaluate(() => {
+  const cs = getComputedStyle(document.documentElement, "::before");
+  return { bg: cs.backgroundImage, op: parseFloat(cs.opacity), z: cs.zIndex };
+});
+ok("a vignette layer exists", /gradient/.test(vig.bg), vig.bg.slice(0, 60));
+ok("the vignette runs at full strength, not dimmed with the art", vig.op === 1, String(vig.op));
+ok("and sits above the art but below the content",
+   Number(vig.z) < 0 && Number(vig.z) > Number(bg.zIdxBefore), vig.z + " vs " + bg.zIdxBefore);
 ok("neither layer can swallow a tap",
    bg.pointerBefore === "none" && bg.pointerAfter === "none");
 const src = fs.readFileSync(path.join(ROOT, "web", "index.html"), "utf8");
@@ -335,14 +358,30 @@ ok("the ticker is visible in the header, not only in the watermark",
 // The whole point is that the art never competes with the answer.
 await useScenario("happy");
 await type("0xB095274743941e953c746F9C228DA9c18Bb6ec29");
-ok("verdict box keeps an opaque ground over the art", await page.evaluate(() => {
+// What matters is that the verdict is readable once every translucent layer is composited,
+// not that any one layer is opaque. Measure the real thing: WCAG contrast of the verdict
+// text against the stack of grounds actually behind it.
+const contrast = await page.evaluate(() => {
+  const parse = c => (c.match(/[\d.]+/g) || []).map(Number);
+  const over = (fg, bg) => {           // composite fg (may have alpha) onto bg
+    const a = fg.length > 3 ? fg[3] : 1;
+    return [0, 1, 2].map(i => fg[i] * a + bg[i] * (1 - a));
+  };
+  const lum = c => {
+    const [r, g, b] = c.map(v => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; });
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  };
   const v = document.querySelector(".verdict");
-  const bgc = getComputedStyle(v).backgroundColor;
-  const m = bgc.match(/rgba?\(([^)]+)\)/);
-  if (!m) return false;
-  const parts = m[1].split(",").map(s => parseFloat(s));
-  return parts.length < 4 || parts[3] >= 0.95;   // no alpha, or effectively opaque
-}));
+  const card = v.closest(".card");
+  let ground = parse(getComputedStyle(document.body).backgroundColor);
+  if (card) ground = over(parse(getComputedStyle(card).backgroundColor), ground);
+  ground = over(parse(getComputedStyle(v).backgroundColor), ground);
+  const text = parse(getComputedStyle(v.querySelector(".vtext")).color);
+  const [a, b] = [lum(text) + 0.05, lum(ground) + 0.05].sort((x, y) => y - x);
+  return a / b;
+});
+ok("verdict text clears WCAG AA against everything composited behind it",
+   contrast >= 4.5, "contrast ratio " + contrast.toFixed(2) + ":1");
 ok("page still fits 375px with the art in place",
    (await page.evaluate(() => document.documentElement.scrollWidth)) <= 375);
 

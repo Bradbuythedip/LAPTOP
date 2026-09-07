@@ -80,7 +80,14 @@ ok("concentrated venues are labelled a best case", body.includes("best case"));
 
 console.log("── every venue links out with a checkable address");
 const links = await page.$$eval(".venue a", as => as.map(a => a.href));
-ok("every venue offers a link", links.length === 3, JSON.stringify(links.length));
+const perVenue = await page.$$eval(".venue", vs => vs.map(v => v.querySelectorAll("a").length));
+ok("every venue offers at least one link", perVenue.every(n => n >= 1), JSON.stringify(perVenue));
+ok("the best venue gets a primary action on top of its link",
+   (await page.$$(".venue.best a.cta")).length === 1);
+ok("only the winner gets one", (await page.$$(".venue a.cta")).length === 1);
+const ctaHref = await page.$eval(".venue.best a.cta", a => a.getAttribute("href"));
+ok("the primary action carries the amount as well as the pair",
+   /exactAmount=1000/.test(ctaHref) && /outputCurrency=0xb095/i.test(ctaHref), ctaHref);
 ok("links carry the LAPTOP contract address",
    links.every(h => h.toLowerCase().includes("0xb095274743941e953c746f9c228da9c18bb6ec29")));
 ok("links open in a new tab with no referrer leak",
