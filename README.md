@@ -184,6 +184,31 @@ textbook closed form `L·(√P − √P_next)` is algebraically identical but su
 large numbers, losing ~1e-10 of relative precision to cancellation and underflowing to zero
 outright on small probes. `test/test_size_math.py` holds both forms and asserts they agree.
 
+## Design notes
+
+`docs/premarket-and-tokenomics.md` — an FR/DP treatment of a pre-market order book and of
+token design. Two conclusions worth pulling out:
+
+**An escrowed pre-market is coupled by construction.** The collateral ratio sets both safety
+and liquidity in opposite directions: high collateral means nobody posts a sell order and the
+book is empty; low collateral means defaulting becomes rational exactly when the token moons.
+One DP, two opposed FRs. Decoupling it properly — mark positions against a live index and
+margin-call — re-derives the cash-settled perp, which is to say the escrowed-delivery design
+is the coupled one and the derivative is the decoupled one. Its settlement oracle is also an
+irreducible centralisation, and given 14 copycat contracts across four chains, an oracle
+pointed at the wrong address settles the whole book against the wrong token.
+
+**Single-token designs are maximally coupled.** One instrument typically serves funding,
+alignment, fee capture, governance, collateral and incentives — six rows, one column. That is
+why emissions to bootstrap usage dilute the holders you were trying to align, and why raising
+the in-token fee discourages the usage you paid to acquire. It cannot be tuned out; the endless
+retuning is the diagnostic. Decomposed properly each FR finds a better DP than "issue a token"
+— fund with equity or revenue, align with vesting, price in USD and settle in USDC, govern with
+a non-transferable right, and collateralise with an asset you do not issue, since collateral
+whose value derives from the system it secures falls exactly when it is needed. A design that
+starts from *what functions do I need* and ends at *therefore a token* has usually smuggled in
+an unstated requirement worth naming out loud.
+
 ## The flow, and why it is this short
 
 Working back from what the person actually needs at the moment they are deciding:
