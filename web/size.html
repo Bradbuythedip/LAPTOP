@@ -8,13 +8,13 @@
 <title>LAPTOP size curve</title>
 <style>
 :root{
-  --bg:#fbfaf8; --fg:#16150f; --dim:#6b6862; --line:#e0ddd6; --card:#ffffff;
+  --bg:#fbfaf8; --fg:#16150f; --dim:#6b6862; --line:#e0ddd6; --card:#ffffff; --cardBg:rgba(255,255,255,.90);
   --ok:#1c6b3f; --okbg:#e8f4ec; --bad:#a4262c; --badbg:#fdecec;
   --warn:#8a5300; --warnbg:#fdf3e2; --unk:#4a4740; --unkbg:#f0eee9;
   --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
 }
 @media (prefers-color-scheme:dark){:root{
-  --bg:#141412; --fg:#eceae4; --dim:#9a968d; --line:#302e2a; --card:#1c1b19;
+  --bg:#141412; --fg:#eceae4; --dim:#9a968d; --line:#302e2a; --card:#1c1b19; --cardBg:rgba(28,27,25,.90);
   --ok:#7fd6a0; --okbg:#16281d; --bad:#ff9a9a; --badbg:#2c1717;
   --warn:#e8bb70; --warnbg:#2a2114; --unk:#b8b4ac; --unkbg:#232220;
 }}
@@ -43,7 +43,8 @@ button.act:disabled{opacity:.45;cursor:default}
 .badge.good{background:var(--okbg);border-color:var(--ok);color:var(--ok)}
 .badge.bad{background:var(--badbg);border-color:var(--bad);color:var(--bad)}
 .badge.warn{background:var(--warnbg);border-color:var(--warn);color:var(--warn)}
-.hdr{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px}
+.hdr{display:flex;justify-content:space-between;align-items:center;gap:8px;
+  margin-bottom:8px;flex-wrap:wrap}
 .hdr h2{font-size:13.5px;margin:0;font-weight:600}
 table{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:6px}
 th,td{text-align:right;padding:6px 5px;border-bottom:1px solid var(--line)}
@@ -65,13 +66,37 @@ a{color:inherit} a.ext{font-family:var(--mono);font-size:12px}
 .spin{display:inline-block;width:11px;height:11px;border:2px solid var(--line);
   border-top-color:var(--dim);border-radius:50%;animation:sp .7s linear infinite}
 @keyframes sp{to{transform:rotate(360deg)}}
+
+/* ---- background art + $TWD watermark ---- */
+/* bg.png is the ONLY external asset in either page. It is same-origin and purely
+   decorative: if it is missing, blocked, or the file is saved and opened offline, the
+   page loses a picture and nothing else. Every number stays readable. */
+body::before{
+  content:"";position:fixed;inset:0;z-index:-2;pointer-events:none;
+  background:url("/bg.png") center center / cover no-repeat;
+  opacity:.13;
+}
+@media (prefers-color-scheme:dark){
+  body::before{opacity:.10;filter:invert(1) hue-rotate(180deg)}
+}
+body::after{
+  content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;
+  background-image:url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20width%3D%27190%27%20height%3D%27130%27%3E%3Ctext%20x%3D%278%27%20y%3D%2734%27%20font-family%3D%27ui-monospace%2CMenlo%2Cmonospace%27%20font-size%3D%2715%27%20font-weight%3D%27700%27%20fill%3D%27%23000%27%3E%24TWD%3C%2Ftext%3E%3Ctext%20x%3D%27104%27%20y%3D%2788%27%20font-family%3D%27ui-monospace%2CMenlo%2Cmonospace%27%20font-size%3D%2715%27%20font-weight%3D%27700%27%20fill%3D%27%23000%27%3E%24TWD%3C%2Ftext%3E%3Ctext%20x%3D%2738%27%20y%3D%27122%27%20font-family%3D%27ui-monospace%2CMenlo%2Cmonospace%27%20font-size%3D%2715%27%20font-weight%3D%27700%27%20fill%3D%27%23000%27%3E%24TWD%3C%2Ftext%3E%3C%2Fsvg%3E");
+  background-repeat:repeat;
+  opacity:.045;
+}
+@media (prefers-color-scheme:dark){ body::after{filter:invert(1);opacity:.06} }
+/* Cards sit on a near-opaque ground so the art shows through the page without ever
+   competing with a verdict someone is reading in a hurry. */
+.card{background:var(--cardBg)}
+.ticker{font-family:var(--mono);font-weight:700;letter-spacing:.02em;color:var(--dim)}
 </style>
 </head>
 <body>
 
-<h1>LAPTOP size curve</h1>
+<h1>LAPTOP size curve <span class="ticker">$TWD</span></h1>
 <p class="sub">What each size actually gets you, after slippage and fee, from a real pool.
-Read-only. No wallet. <a href="/">← contract checker</a></p>
+Read-only. No wallet. <span class="ticker">$TWD</span> <a href="/">← checker</a> &middot; <a href="/buy.html">where to buy</a> &middot; <a href="/potpal.html">POT PAL</a> &middot; <a href="/route.html">get ready</a></p>
 
 <div class="card">
   <label for="pool">Pool address (V2, Aerodrome, V3 or Slipstream)</label>
@@ -89,7 +114,11 @@ Read-only. No wallet. <a href="/">← contract checker</a></p>
 </div>
 
 <div class="card" id="poolCard" style="display:none">
-  <div class="hdr"><h2>Pool</h2><span class="badge" id="poolBadge">—</span></div>
+  <div class="hdr"><h2>Pool</h2>
+    <span style="display:flex;gap:6px;flex-wrap:wrap">
+      <span class="badge" id="chainBadge">chain not checked</span>
+      <span class="badge" id="poolBadge">—</span>
+    </span></div>
   <div id="poolInfo"></div>
 </div>
 
@@ -116,7 +145,7 @@ Read-only. No wallet. <a href="/">← contract checker</a></p>
   transaction — on launch day that is the norm, not the exception. Any hook on a v4 pool that
   taxes or blocks the swap. Price impact is not the same as loss: it is what you pay to move the
   price, and you pay it again in reverse when you sell.</p>
-  <p>No analytics, no trackers, no cookies. Nothing you type leaves your browser except the
+  <p><span class="ticker">$TWD</span> &middot; totalworlddomination.xyz. No analytics, no trackers, no cookies. Nothing you type leaves your browser except the
   pool address, which goes to the RPC endpoint so it can be read.</p>
 </div>
 
@@ -138,6 +167,7 @@ const SEL={slot0:"0x3850c7bd",liquidity:"0x1a686502",fee:"0xddca3f43",tickSpacin
   getFee:"0xcc56b2c5"};
 const DEFAULT_RPC=localStorage.getItem("twd.rpc")||"https://mainnet.base.org";
 const Q96=2**96;
+const CHAIN_ID=8453;
 
 /* ---------------- swap math ----------------
    Exposed on window.__SIZE for the test suite. Kept free of DOM so it can be
@@ -242,6 +272,19 @@ function okWord(res){
 }
 
 /* ---------------- reading a pool ---------------- */
+// Chain first. The same address holds different code on different chains, so a pool read
+// without knowing which chain answered is not a number, it is a guess.
+async function checkChain(){
+  const b=$("chainBadge");
+  const r=await rpcCall("eth_chainId",[]);
+  if(!r.ok){ b.className="badge bad"; b.textContent="chain unknown"; b.title=r.reason;
+    return {ok:false,reason:r.reason}; }
+  let id; try{ id=Number(BigInt(r.data)); }catch(e){ id=NaN; }
+  if(id===CHAIN_ID){ b.className="badge good"; b.textContent="Base · 8453 ✓"; return {ok:true}; }
+  b.className="badge bad"; b.textContent="chain "+id+" — not Base";
+  return {ok:false,chain:id};
+}
+
 async function readPool(addr){
   const code=await rpcCall("eth_getCode",[addr,"latest"]);
   if(!code.ok) return {err:"could not read the address: "+code.reason};
@@ -389,6 +432,19 @@ async function go(){
   $("poolCard").style.display="block";
   $("poolInfo").innerHTML='<span class="spin"></span> <span class="dim">reading pool state…</span>';
   $("curveCard").style.display="none";
+  const chain=await checkChain();
+  if(!chain.ok){
+    $("go").disabled=false; $("go").textContent="Read pool";
+    $("poolBadge").className="badge bad"; $("poolBadge").textContent="not priced";
+    $("poolInfo").innerHTML="";
+    $("poolInfo").appendChild(el("div","warnbox", chain.chain!==undefined
+      ? "Not priced: the endpoint reports chain "+chain.chain+", not Base 8453. The same "
+        +"address holds different code on a different chain, so any number here would be "
+        +"about something else."
+      : "Not priced: the chain could not be confirmed ("+chain.reason+"). Every number "
+        +"below would be unanchored."));
+    return;
+  }
   const pool=await readPool(raw.toLowerCase());
   $("go").disabled=false; $("go").textContent="Read pool";
   if(pool.err){
@@ -506,6 +562,16 @@ function renderCustom(c,pool){
   }
   out.appendChild(box);
 }
+
+// A pool address arriving in the URL is treated exactly like a typed one: same validation,
+// same refusal when neither side is LAPTOP. A deep link is an untrusted input - anyone can
+// send one - so it gets no shortcut past any check.
+(function fromUrl(){
+  const q=new URLSearchParams(location.search).get("pool");
+  if(!q) return;
+  $("pool").value=q;
+  go();
+})();
 
 $("go").addEventListener("click",go);
 $("pool").addEventListener("keydown",e=>{if(e.key==="Enter")go();});

@@ -37,10 +37,17 @@ const ok = (name, cond, extra) => {
 const eq = (name, got, want) => ok(name, got === want, `got  ${got}\n         want ${want}`);
 
 const site = http.createServer((req, res) => {
-  const f = path.join(ROOT, "web", req.url === "/" ? "index.html" : req.url.replace(/^\//, ""));
-  fs.readFile(f, (e, d) => {
+  const rel = (req.url || "/").split("?")[0];
+  const f = path.join(ROOT, "web", rel === "/" ? "index.html" : rel.replace(/^\//, ""));
+  // web/bg.png is supplied by the site owner and is not in the repo. For tests, fall back
+  // to a clearly-named fixture so the background code path is exercised either way.
+  const target = (!fs.existsSync(f) && f.endsWith("bg.png"))
+    ? path.join(ROOT, "test", "fixture-bg.png") : f;
+  fs.readFile(target, (e, d) => {
     if (e) { res.writeHead(404); res.end(); return; }
-    res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+    const ct = f.endsWith(".png") ? "image/png"
+             : f.endsWith(".svg") ? "image/svg+xml" : "text/html; charset=utf-8";
+    res.writeHead(200, { "content-type": ct });
     res.end(d);
   });
 });
@@ -199,6 +206,93 @@ await page.fill("#pool", "0xnothex");
 await page.click("#go");
 await page.waitForTimeout(200);
 ok("a malformed address is rejected inline", await page.isVisible("#poolErr"));
+
+console.log("── failure: chain is anchored before anything is priced");
+await use("wrongchain");
+await readPool();
+ok("a non-Base endpoint prices nothing", (await txt("#poolInfo")).includes("Not priced"));
+ok("and says which chain answered", (await txt("#chainBadge")).includes("not Base"));
+ok("no curve is drawn on the wrong chain", !(await page.isVisible("#curveCard")));
+
+console.log("── failure: real CORS block (no access-control-allow-origin)");
+await use("nocors-pool-v3");
+await readPool();
+ok("a CORS-blocked endpoint prices nothing", (await txt("#poolInfo")).includes("Not priced"));
+ok("and names CORS as the likely cause without asserting it as fact",
+   (await txt("#poolInfo")).includes("CORS"), await txt("#poolInfo"));
+ok("and does not pretend to know which of CORS or network it was",
+   (await txt("#poolInfo")).includes("cannot tell"), await txt("#poolInfo"));
+
+console.log("── failure: endpoint answers with HTML, not JSON");
+await use("html");
+await readPool();
+ok("an HTML error page is not mistaken for data",
+   (await txt("#poolInfo")).includes("Not priced"), await txt("#poolInfo"));
+
+console.log("── token ordering: LAPTOP as token0 must price the same");
+await use("pool-v3");
+await readPool();
+const fwd = await page.$$eval("#curve tr", rs => rs.slice(1).map(r =>
+  r.querySelectorAll("td")[3].textContent));
+await use("pool-rev");
+await readPool();
+const rev = await page.$$eval("#curve tr", rs => rs.slice(1).map(r =>
+  r.querySelectorAll("td")[3].textContent));
+ok("slippage ladder is identical whichever slot LAPTOP occupies",
+   JSON.stringify(fwd) === JSON.stringify(rev), `fwd ${fwd}\n         rev ${rev}`);
+
+await use("pool-v2");
+await readPool();
+const v2fwd = await page.$$eval("#curve tr", rs => rs.slice(1).map(r =>
+  r.querySelectorAll("td")[1].textContent));
+await use("pool-rev-v2");
+await readPool();
+const v2rev = await page.$$eval("#curve tr", rs => rs.slice(1).map(r =>
+  r.querySelectorAll("td")[1].textContent));
+ok("constant-product reserves are read by token, not by slot position",
+   JSON.stringify(v2fwd) === JSON.stringify(v2rev),
+   `fwd ${v2fwd}\n         rev ${v2rev}`);
+
+console.log("── a 6-decimal quote asset");
+await use("pool-usdc");
+await readPool();
+const usdcHead = await page.$eval("#curve tr th", n => n.textContent);
+ok("ladder is denominated in USDC", usdcHead.includes("USDC"), usdcHead);
+const usdcRows = await page.$$eval("#curve tr", rs => rs.slice(1).map(r =>
+  r.querySelectorAll("td")[0].textContent));
+ok("uses the stablecoin ladder, not the ETH one",
+   usdcRows[0].replace(/,/g, "") === "100", JSON.stringify(usdcRows.slice(0, 3)));
+ok("decimals are handled: fills are plausible, not off by 1e12",
+   await page.evaluate(() => {
+     const o = parseFloat(document.querySelectorAll("#curve tr")[1]
+       .querySelectorAll("td")[1].textContent.replace(/,/g, ""));
+     return o > 100 && o < 100000;   // 100 USDC at ~10 LAPTOP/USDC, minus slippage
+   }));
+
+console.log("── failure: the pool balance cannot be read");
+await use("pool-nobal");
+await readPool();
+ok("an unreadable balance never becomes a phantom cap",
+   !(await txt("#curve")).includes("more than the pool holds"));
+ok("and the ceiling claim is simply omitted rather than guessed",
+   !(await txt("#curveCard")).includes("No trade can take"));
+
+console.log("── deep link from the checker");
+await page.evaluate(u => localStorage.setItem("twd.rpc", u), MOCK + "/pool-v3");
+await page.goto(SITE + "/size.html?pool=" + POOL, { waitUntil: "domcontentloaded" });
+await page.waitForTimeout(1100);
+ok("a ?pool= link reads without any typing", (await txt("#curveBadge")).includes("best case"));
+eq("and the address is shown in the field", (await page.inputValue("#pool")).toLowerCase(), POOL);
+
+await page.goto(SITE + "/size.html?pool=0xdeadbeef", { waitUntil: "domcontentloaded" });
+await page.waitForTimeout(500);
+ok("a malformed ?pool= is rejected like typed input", await page.isVisible("#poolErr"));
+
+await page.evaluate(u => localStorage.setItem("twd.rpc", u), MOCK + "/pool-foreign");
+await page.goto(SITE + "/size.html?pool=" + POOL, { waitUntil: "domcontentloaded" });
+await page.waitForTimeout(1100);
+ok("a deep link to a pool with no LAPTOP side is still refused",
+   (await txt("#curveNote")).includes("Neither side"));
 
 console.log("── layout and static checks");
 await use("pool-v3");

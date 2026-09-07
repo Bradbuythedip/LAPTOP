@@ -29,9 +29,15 @@ const eq = (name, got, want) => ok(name, got === want, `got  ${got}\n         wa
 // static server for web/
 const site = http.createServer((req, res) => {
   const f = path.join(ROOT, "web", req.url === "/" ? "index.html" : req.url);
-  fs.readFile(f, (e, d) => {
+  // web/bg.png is supplied by the site owner and is not in the repo. For tests, fall back
+  // to a clearly-named fixture so the background code path is exercised either way.
+  const target = (!fs.existsSync(f) && f.endsWith("bg.png"))
+    ? path.join(ROOT, "test", "fixture-bg.png") : f;
+  fs.readFile(target, (e, d) => {
     if (e) { res.writeHead(404); res.end(); return; }
-    res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+    const ct = f.endsWith(".png") ? "image/png"
+             : f.endsWith(".svg") ? "image/svg+xml" : "text/html; charset=utf-8";
+    res.writeHead(200, { "content-type": ct });
     res.end(d);
   });
 });
@@ -228,6 +234,37 @@ await page.waitForTimeout(1200);
 ok("incomplete result labelled INCOMPLETE", (await txt("#liquidity")).includes("INCOMPLETE"));
 ok("retry affordance offered", (await txt("#ledger")).includes("Retry"));
 
+console.log("── failure: real CORS block — the verdict must survive it");
+await useScenario("nocors-happy");
+await type("0xB095274743941e953c746F9C228DA9c18Bb6ec29");
+ok("identity verdict still renders with every read blocked",
+   (await txt("#verdictArea")).includes("MATCHES PUBLISHED CONTRACT"));
+ok("chain cannot be confirmed", (await txt("#chainBadge")).includes("unknown"));
+ok("on-chain claims are suppressed rather than guessed",
+   (await txt("#evidence")).includes("Not shown"));
+ok("the relay is offered once direct reads are impossible",
+   await page.isVisible("#relayWrap"));
+ok("and the relay's cost is stated up front",
+   (await txt("#relayWrap")).includes("sees every address"));
+
+console.log("── failure: endpoint answers with HTML, not JSON");
+await useScenario("html");
+await type("0xB095274743941e953c746F9C228DA9c18Bb6ec29");
+ok("an HTML error page is not mistaken for chain data",
+   (await txt("#chainBadge")).includes("unknown"));
+ok("identity verdict is unaffected by a broken endpoint",
+   (await txt("#verdictArea")).includes("MATCHES PUBLISHED CONTRACT"));
+
+console.log("── flow: found pools hand off to the size curve");
+await useScenario("pools");
+await page.click("#refreshLiq");
+await page.waitForTimeout(1200);
+const sizeHref = await page.$eval("#liquidity a[href*='size.html']", a => a.getAttribute("href"))
+  .catch(() => null);
+ok("each found pool links straight into the size curve", !!sizeHref, String(sizeHref));
+ok("the link carries the pool address, so nothing is retyped",
+   /\/size\.html\?pool=0x[0-9a-fA-F]{40}$/.test(sizeHref || ""), String(sizeHref));
+
 console.log("── flow: batch-unsupported endpoint falls back");
 await useScenario("nobatch");
 await type("0xB095274743941e953c746F9C228DA9c18Bb6ec29");
@@ -258,6 +295,66 @@ ok("invalid input shows inline error", await page.isVisible("#inerr"));
 ok("invalid input renders no verdict", !(await page.isVisible("#verdictArea")));
 const kept = await page.inputValue("#addr");
 eq("typed text never mutated by the tool", kept, "0xnothex");
+
+console.log("── a known non-LAPTOP token is identified, not just rejected");
+await useScenario("happy");
+await type("0x06cC93FF9013B150445fF850D8D9285D6022eBa3");
+ok("verdict is still DOES NOT MATCH", (await txt("#verdictArea")).includes("DOES NOT MATCH"));
+ok("the token is named so the user knows what they have",
+   (await txt("#verdictArea")).includes("POT PAL"));
+ok("and told plainly it will not get them LAPTOP",
+   (await txt("#verdictArea")).includes("will not get you LAPTOP"));
+ok("recognition never becomes endorsement",
+   !(await txt("#verdictArea")).includes("MATCHES"));
+
+console.log("── background art and the $TWD watermark");
+const bg = await page.evaluate(() => {
+  const before = getComputedStyle(document.body, "::before");
+  const after = getComputedStyle(document.body, "::after");
+  return {
+    img: before.backgroundImage, imgOpacity: parseFloat(before.opacity),
+    mark: after.backgroundImage, markOpacity: parseFloat(after.opacity),
+    zIdxBefore: before.zIndex, zIdxAfter: after.zIndex,
+    pointerBefore: before.pointerEvents, pointerAfter: after.pointerEvents,
+  };
+});
+ok("background image layer is applied", /bg\.png/.test(bg.img), bg.img);
+ok("background art is subdued enough to read over", bg.imgOpacity > 0 && bg.imgOpacity <= 0.2,
+   String(bg.imgOpacity));
+ok("$TWD watermark tiles the page", /svg\+xml/.test(bg.mark) && /%24TWD/.test(bg.mark));
+ok("watermark is faint", bg.markOpacity > 0 && bg.markOpacity <= 0.1, String(bg.markOpacity));
+ok("both layers sit behind the content", Number(bg.zIdxBefore) < 0 && Number(bg.zIdxAfter) < 0);
+ok("neither layer can swallow a tap",
+   bg.pointerBefore === "none" && bg.pointerAfter === "none");
+const src = fs.readFileSync(path.join(ROOT, "web", "index.html"), "utf8");
+const twdCount = (src.match(/\$TWD/g) || []).length + (src.match(/%24TWD/g) || []).length;
+ok("$TWD appears many times on the page", twdCount >= 6, "count=" + twdCount);
+ok("the ticker is visible in the header, not only in the watermark",
+   (await txt("h1")).includes("$TWD"));
+
+// The whole point is that the art never competes with the answer.
+await useScenario("happy");
+await type("0xB095274743941e953c746F9C228DA9c18Bb6ec29");
+ok("verdict box keeps an opaque ground over the art", await page.evaluate(() => {
+  const v = document.querySelector(".verdict");
+  const bgc = getComputedStyle(v).backgroundColor;
+  const m = bgc.match(/rgba?\(([^)]+)\)/);
+  if (!m) return false;
+  const parts = m[1].split(",").map(s => parseFloat(s));
+  return parts.length < 4 || parts[3] >= 0.95;   // no alpha, or effectively opaque
+}));
+ok("page still fits 375px with the art in place",
+   (await page.evaluate(() => document.documentElement.scrollWidth)) <= 375);
+
+// And that it degrades to nothing if the image is absent.
+// The meaningful property: no behaviour depends on the image. It is referenced once, from
+// a decorative CSS layer, and never from script - so a missing or blocked bg.png costs a
+// picture and leaves every number and verdict intact.
+const scriptBody = (src.match(/<script[\s\S]*?<\/script>/g) || []).join("");
+ok("no script references bg.png, so nothing functional depends on it",
+   !/bg\.png/.test(scriptBody));
+const cssDecl = (src.match(/url\(["']?\/bg\.png/g) || []).length;
+eq("bg.png is loaded from exactly one place", cssDecl, 1);
 
 console.log("── static checks");
 const html = fs.readFileSync(path.join(ROOT, "web", "index.html"), "utf8");

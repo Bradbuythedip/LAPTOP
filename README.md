@@ -67,11 +67,13 @@ python3 -m http.server -d web 8000     # then open http://localhost:8000
 Or just open `web/index.html` from disk — it has no build step and no dependencies. Saving the
 file and opening it locally removes the hosting party from the trust question entirely.
 
-Published build `2026-09-07c`:
+Published build `2026-09-07g`:
 
 ```
-sha256(web/index.html) = 33606c985704f0993a09db79256cbcd7aab6b9dc95486fa6d295f1f1f69fdde1
-sha256(web/size.html)  = 05704d99de9e547b2c4e817e1cf78064985e322c8d9817ad5177fc256a811266
+sha256(web/index.html) = 54bb7a48fac63481cb6c6f44082a933a3261b9f58cc35579ea3090cb30077e26
+sha256(web/size.html)  = cbd07bf51533d4608e61c99770224e041b290441866741620af778e753308c02
+sha256(web/route.html) = 458bbce337055b92096389e29a35096f48766e89d4190708206df85a608f1c67
+sha256(web/buy.html)   = e872b6e3fc5503db7c67720d8327654fdfd9ed249f2f16051e59e5bf782aecdd
 ```
 
 ### Tests
@@ -80,9 +82,9 @@ sha256(web/size.html)  = 05704d99de9e547b2c4e817e1cf78064985e322c8d9817ad5177fc2
 sh test/run-all.sh         # everything below, no network touched
 ```
 
-**248 assertions across five suites.**
+**406 assertions across eight suites.**
 
-`test/run.mjs` — 72, drives the real page in Chromium against `test/mock-rpc.mjs`: Keccak
+`test/run.mjs` — 97, drives the real page in Chromium against `test/mock-rpc.mjs`: Keccak
 vectors, the four EIP-55 reference addresses, the v4 poolId derivation checked against a real
 Base pool id, ABI-string decoding (including a 10-character name, whose length word contains a
 hex letter, and truncated/absurd offsets), result-length discipline, and full flows for the
@@ -102,9 +104,136 @@ of the JavaScript, plus properties a size curve lives or dies on: output rises w
 effective price strictly worsens, a fee costs exactly its rate at the limit, deeper liquidity
 fills better, and no fill can exceed the output-side virtual reserve. Emits the fixture below.
 
-`test/run-size.mjs` — 48, asserts `web/size.html` agrees with that Python fixture to 1e-12,
+`test/run-potpal.mjs` — 50, asserts the simulator deploys nothing, calls no network, keeps its
+disclaimers, and enforces the real protocol limits (420 trillion passes, 1 quintillion is
+rejected by uint112).
+
+`test/run-buy.mjs` — 30, drives the venue comparison against a three-venue fixture with
+deliberately different depths and asserts the ranking follows depth, the spread is quantified,
+and no wallet code exists anywhere in the page.
+
+`test/run-route.mjs` — 35, asserts `web/route.html` makes no network request of any
+kind, offers no wallet or deposit address, and gets the Solana-is-not-EVM distinction right.
+
+`test/run-size.mjs` — 66, asserts `web/size.html` agrees with that Python fixture to 1e-12,
 then drives the page against constant-product, concentrated, capped, dry, stable, foreign-token
 and no-code pool fixtures.
+
+## `web/potpal.html` — POT PAL
+
+An unrelated memecoin on the same domain. The contract is
+`0x06cC93FF9013B150445fF850D8D9285D6022eBa3` — **supplied, not verified**: the EIP-55 checksum
+is valid and it is not the LAPTOP address, but this tool has never read it on chain and says so
+on the page.
+
+So the page does not assert anything about it. It **reads the contract live in the visitor's
+browser** — code size, name, symbol, decimals, supply — and shows what is actually there.
+Nothing is hardcoded but the address. If the symbol comes back as something other than POTPAL,
+the page says so rather than glossing it. If there is no code at the address, it says that and
+tells the reader not to trust anything below it. Wrong chain suppresses every read.
+
+It then looks for a POTPAL/WETH pool across the V2 pair, all seven V3 tiers and both Aerodrome
+pools, and links out to a venue. **No wallet connection**, for the same reason `buy.html` has no
+swap button: this domain cannot defend against being cloned, and a clone that can ask for a
+wallet drains people rather than merely misleading them.
+
+The LAPTOP checker also recognises this address now. Pasting it returns `DOES NOT MATCH` — the
+verdict is unchanged — plus a line naming the token and stating plainly that buying it will not
+get you LAPTOP. Recognition is not endorsement, and a test asserts the verdict never softens.
+
+Below the live sections is the original simulator: arithmetic on parameters you type, a model
+rather than a reading.
+
+It is **quoted against ETH and deliberately not paired against LAPTOP**, so it can never appear
+in a LAPTOP pool listing and be mistaken for one — the HUNTER structure documented above. It
+carries an explicit not-affiliated-with-LAPTOP line, and `web/potpal-bg.png` is a slot: no
+artwork is committed for it.
+
+The interesting part of "absurdly high supply" is that it has exact breaking points, and they
+arrive sooner than people expect:
+
+| Limit | Value | What it means |
+| --- | --- | --- |
+| `uint112` | 5.19e33 | Uniswap V2 stores reserves in it. **At 18 decimals a supply above ~5.19 quadrillion cannot be pooled on V2 at all.** 1 quintillion overflows it. |
+| tick range | ±887,272 | v3/v4 represent price as a tick. An extreme token:ETH ratio falls outside what a pool can express. |
+| `uint256` | 1.16e77 | The token itself stops being representable. Far away — it is never the binding constraint. |
+
+420 trillion (the default) sits comfortably inside all three; the page tells you exactly where
+each one stops. It also prices the launch ladder against the seeded reserves with the same exact
+constant-product arithmetic as the size curve, so "5 ETH of depth" turns into "a 5 ETH buy loses
+50% to slippage" — which is the number that actually describes a launch.
+
+Every fiat figure rests on an ETH price you type. Nothing is read live, and FDV is labelled
+arithmetic rather than a valuation.
+
+```
+sha256(web/potpal.html) = d0c3af60d3ef19b72047ab15338086ac8b226ab32459d5bed051fbf36e98506c
+```
+
+## `web/buy.html` — where to buy
+
+The go-to question on launch day is not "can I swap here", it is **"which venue actually gives
+me the most LAPTOP for the size I intend"** — and nobody answers that for a new pool. Every
+aggregator routes for you and shows one number; none of them show you what the alternatives
+would have paid, and on a thin launch pool the gap is large.
+
+Enter an amount, and it reads the Uniswap V2 pair, all seven Base V3 fee tiers, both Aerodrome
+pools and the v4 PoolManager, prices your exact size against each using the same math as the
+size curve, and ranks them by what you end up holding. It then states the spread in the terms
+that matter: *picking the best venue instead of the worst is worth N LAPTOP on this size — X%
+more for the same money.*
+
+Everything the rest of the repo insists on carries over. The chain is confirmed before anything
+is priced. Constant-product venues are exact; concentrated ones are labelled a best case. A fill
+can never exceed what the pool actually holds. Aerodrome stable pools are declined rather than
+priced with the wrong curve. Venues that could not be read are listed under "not priced" instead
+of quietly dropped, so the ranking is always scoped to what was actually read. The v4 gate is
+reported either way — an empty PoolManager proves the branch negative in one call, and a
+non-empty one says plainly that hooked v4 pools cannot be enumerated and may hold a better or
+worse fill than anything listed.
+
+**There is no swap button, and there should not be one.** This repo's own failure analysis says
+the single thing it cannot defend against is being cloned at another address. Today a clone can
+only lie to you. The moment this domain teaches people to connect a wallet, a clone drains them
+instead — the site would become the highest-quality phishing template for its own brand. Staying
+something that *cannot* spend your money is the most valuable property it has, and a test
+asserts no wallet or transaction-construction code exists in the page.
+
+Venue links carry the contract address so nobody retypes it, and the pool address is printed
+beside each link so what the venue loaded can be checked against what was read here.
+
+## `web/route.html` — get ready before launch
+
+**There is no auto-buyer here, and there will not be one.** Buying is a swap against a pool;
+until someone funds a LAPTOP pool there is nothing to swap against, so no transaction can be
+sent on anyone's behalf. That is not a missing feature — the counterparty does not exist yet.
+
+Which means every "preorder" is the same arrangement: somebody holds your money and promises
+tokens later. Building that would mean accepting deposits from the public against a delivery
+promise — money transmission at minimum, plausibly an unregistered offering — and it is
+structurally identical to a presale rug regardless of intent. On a site whose entire purpose is
+stopping people getting fleeced on launch day, it would be the most damaging thing in the repo.
+
+What you can genuinely do is **pre-position**: arrive at launch already holding spendable funds
+on Base, in your own wallet, one transaction from a fill rather than one bridge plus one
+transaction. That is what this page plans.
+
+It takes your chain and asset and lays out the path, including the parts people get wrong:
+
+- **Solana is not an EVM chain**, so an EVM-only bridge cannot route it. The bridge table hides
+  the ones that cannot see Solana when you select it.
+- **Bridge before launch, not during.** Bridging is the slow, congested, failure-prone step and
+  it is entirely removable from the critical path. The fee is the same at a calmer moment.
+- **Keep ETH on Base for gas.** Arriving with only a stablecoin is the most common way people
+  find they are not actually ready — the swap itself costs ETH.
+- **Arrive in the asset the deepest pool quotes.** WETH, USDC and USDbC pools are not
+  interchangeable; buying a USDC pool with WETH costs another hop and another fee.
+
+The page **makes no network request of any kind** — a test asserts nothing leaves the origin.
+No wallet connection, no deposit address, no fetch. It quotes no bridge fees, because it reads
+nothing live and will not print a number it has not measured. Bridges are listed because they
+are non-custodial and widely used, explicitly **not** because this tool has verified any of
+them; it has not.
 
 ## `web/size.html` — the size curve
 
@@ -146,6 +275,115 @@ range with constant `L` concentrated liquidity is exactly constant product over 
 textbook closed form `L·(√P − √P_next)` is algebraically identical but subtracts two nearly-equal
 large numbers, losing ~1e-10 of relative precision to cancellation and underflowing to zero
 outright on small probes. `test/test_size_math.py` holds both forms and asserts they agree.
+
+## Design notes
+
+`docs/premarket-and-tokenomics.md` — an FR/DP treatment of a pre-market order book and of
+token design. Two conclusions worth pulling out:
+
+**An escrowed pre-market is coupled by construction.** The collateral ratio sets both safety
+and liquidity in opposite directions: high collateral means nobody posts a sell order and the
+book is empty; low collateral means defaulting becomes rational exactly when the token moons.
+One DP, two opposed FRs. Decoupling it properly — mark positions against a live index and
+margin-call — re-derives the cash-settled perp, which is to say the escrowed-delivery design
+is the coupled one and the derivative is the decoupled one. Its settlement oracle is also an
+irreducible centralisation, and given 14 copycat contracts across four chains, an oracle
+pointed at the wrong address settles the whole book against the wrong token.
+
+**Single-token designs are maximally coupled.** One instrument typically serves funding,
+alignment, fee capture, governance, collateral and incentives — six rows, one column. That is
+why emissions to bootstrap usage dilute the holders you were trying to align, and why raising
+the in-token fee discourages the usage you paid to acquire. It cannot be tuned out; the endless
+retuning is the diagnostic. Decomposed properly each FR finds a better DP than "issue a token"
+— fund with equity or revenue, align with vesting, price in USD and settle in USDC, govern with
+a non-transferable right, and collateralise with an asset you do not issue, since collateral
+whose value derives from the system it secures falls exactly when it is needed. A design that
+starts from *what functions do I need* and ends at *therefore a token* has usually smuggled in
+an unstated requirement worth naming out loud.
+
+## The flow, and why it is this short
+
+Working back from what the person actually needs at the moment they are deciding:
+
+- **CN1** — don't let me buy the wrong token.
+- **CN2** — don't let me get a terrible fill.
+- **CN3** — don't let this tool fool me.
+
+The first version served CN1 and CN2 across two pages with **a manual copy of a 42-character
+hex string in the middle**: read the checker, find a pool in the venue table, select and copy
+its address, navigate to the size page, paste, read. The user was the data bus between two
+tools.
+
+That is not merely friction. Transporting an address by hand is *the exact failure this
+project exists to prevent* — so the flow for CN2 was actively attacking CN1. In information
+terms the manual step has some probability of success below one, and every bit of `log2(1/p)`
+it contributes is information the design is asking the user to supply. Deleting the step drives
+that term to zero, which is a stronger result than making the step easier.
+
+So every pool the checker finds now links straight into the size curve as
+`/size.html?pool=0x…`. Nobody types or copies a pool address, and the class of error disappears
+rather than being mitigated. The deep link gets **no shortcut past validation** — a URL is an
+untrusted input, anyone can send one, so it runs the same address parse and the same refusal
+when neither side of the pool is the published LAPTOP.
+
+The same pass found that `size.html` had no chain anchoring at all. It would happily price a
+pool on Ethereum, because an address exists on every chain. It now checks `eth_chainId` before
+reading anything and prices nothing at all on a mismatch, matching the checker.
+
+And a recovery path that was invisible in the one state that needed it: when every read is
+CORS-blocked, the tool offers a relay — but the offer sat inside a collapsed "Change endpoint"
+disclosure the user had no reason to open, while the rest of the page was empty. The disclosure
+now opens itself when the offer appears.
+
+## CORS: the one question the suite cannot answer alone
+
+Whether a browser at totalworlddomination.xyz can read *any* Base endpoint directly is the
+single thing that decides whether `relay/` gets deployed, and it needs egress to real Base
+hosts. Run it from a machine that has that:
+
+```bash
+sh test/cors-check.sh                          # the usual public endpoints
+sh test/cors-check.sh https://my-endpoint.example
+```
+
+It checks the three things that matter, in order: the **preflight** must carry
+`access-control-allow-origin` covering our origin (`application/json` is not a CORS-safelisted
+content type, so every one of these requests is preflighted — an endpoint that sets the header
+only on POST still fails), the POST must carry it too, and batching must work or the tool falls
+back to roughly forty sequential reads and gets throttled. It ends with a plain verdict on
+whether the relay is needed.
+
+What the suite *does* test is the code path, with a real browser-level CORS failure rather than
+a simulated one: the mock serves a scenario with no `access-control-allow-origin` from a
+different origin, so Chromium blocks it exactly as it would block a real endpoint. Under that
+block the checker still renders its identity verdict — the property the whole design rests on —
+suppresses every on-chain claim rather than guessing, and surfaces the relay. The browser cannot
+distinguish CORS from "host is down", so the tool does not claim to either; it says so.
+
+## Branding: `web/bg.png` and the $TWD watermark
+
+Both pages carry a full-bleed background image and a tiled `$TWD` watermark. The watermark is
+an inline SVG data URI — no request, no third-party asset — and the ticker also appears in each
+page header and footer.
+
+**`web/bg.png` is not in the repo. Drop your artwork there and it appears on both pages.**
+It is the only external asset either page loads, it is same-origin, and it is referenced from
+exactly one decorative CSS rule and never from script. So if the file is missing, blocked by
+CSP, or the HTML is saved and opened offline, the pages lose a picture and nothing else — every
+verdict, number and failure state is untouched. A test asserts that no script references it.
+
+Recommended: a wide image (roughly 16:9), under ~300KB. It renders at 13% opacity, inverted in
+dark mode, behind cards that sit on a 90%-opaque ground, so nothing ever competes with a verdict
+someone is reading in a hurry. Tests assert the art stays below 20% opacity, the watermark below
+10%, both layers sit behind the content with `pointer-events:none`, and the verdict box keeps an
+effectively opaque background.
+
+`test/fixture-bg.png` is a generated stand-in used only so the test suite exercises the
+background code path. It is not artwork and is not served in production.
+
+Note the CSP in `vercel.json` had `img-src 'none'`, which would have silently blocked the
+background. It is now `img-src 'self' data:` — same-origin images and inline SVG only, still no
+third-party image loads.
 
 ### Deploying
 

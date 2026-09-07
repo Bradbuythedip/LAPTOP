@@ -16,3 +16,12 @@ node test/run.mjs
 echo
 echo "=== browser: web/size.html ==="
 node test/run-size.mjs
+echo
+echo "=== browser: web/route.html ==="
+node test/run-route.mjs
+echo
+echo "=== browser: web/buy.html ==="
+node test/run-buy.mjs
+echo
+echo "=== browser: web/potpal.html ==="
+node test/run-potpal.mjs
