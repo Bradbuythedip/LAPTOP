@@ -23,3 +23,6 @@ echo
 echo "=== browser: web/buy.html ==="
 node test/run-buy.mjs
 echo
+echo "=== browser: web/order.html ==="
+node test/run-order.mjs
+echo
