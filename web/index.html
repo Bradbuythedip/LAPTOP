@@ -104,7 +104,7 @@ td.c{font-family:var(--mono)}
 .footer{color:var(--dim);font-size:11.5px;margin:22px 0 30px;line-height:1.55}
 .hr{height:1px;background:var(--line);margin:14px 0}
 
-/* ---- background art + $TWD watermark ---- */
+/* ---- background art ---- */
 /* bg.png is the ONLY external asset in either page. It is same-origin and purely
    decorative: if it is missing, blocked, or the file is saved and opened offline, the
    page loses a picture and nothing else. Every number stays readable. */
@@ -114,17 +114,9 @@ body::before{
   opacity:.26;
 }
 
-body::after{
-  content:"";position:fixed;inset:0;z-index:-2;pointer-events:none;
-  background-image:url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20width%3D%27190%27%20height%3D%27130%27%3E%3Ctext%20x%3D%278%27%20y%3D%2734%27%20font-family%3D%27ui-monospace%2CMenlo%2Cmonospace%27%20font-size%3D%2715%27%20font-weight%3D%27700%27%20fill%3D%27%23000%27%3E%24TWD%3C%2Ftext%3E%3Ctext%20x%3D%27104%27%20y%3D%2788%27%20font-family%3D%27ui-monospace%2CMenlo%2Cmonospace%27%20font-size%3D%2715%27%20font-weight%3D%27700%27%20fill%3D%27%23000%27%3E%24TWD%3C%2Ftext%3E%3Ctext%20x%3D%2738%27%20y%3D%27122%27%20font-family%3D%27ui-monospace%2CMenlo%2Cmonospace%27%20font-size%3D%2715%27%20font-weight%3D%27700%27%20fill%3D%27%23000%27%3E%24TWD%3C%2Ftext%3E%3C%2Fsvg%3E");
-  background-repeat:repeat;
-  opacity:.05;filter:invert(1);
-}
-
 /* Cards sit on a near-opaque ground so the art shows through the page without ever
    competing with a verdict someone is reading in a hurry. */
 .card{background:var(--cardBg)}
-.ticker{font-family:var(--mono);font-weight:700;letter-spacing:.02em;color:var(--dim)}
 /* Depth. This sits on its own layer at full strength — putting it on the art layer would
    inherit that layer's opacity and do almost nothing. Lit from the centre, near-black by
    the edges, so text always has a dark ground under it. */
@@ -145,9 +137,9 @@ a.cta.sub2{background:transparent;color:var(--fg);border-color:var(--line);font-
 </head>
 <body>
 
-<h1>LAPTOP contract checker <span class="ticker">$TWD</span></h1>
+<h1>LAPTOP contract checker</h1>
 <p class="sub">Checks whether an address is the one published for LAPTOP on Base.
-Read-only. No wallet, ever. &middot; <span class="ticker">$TWD</span> &middot; <a href="/buy.html">where to buy &rarr;</a> &middot; <a href="/potpal.html">POT PAL</a> &middot; <a href="/size.html">size curve</a> &middot; <a href="/route.html">get ready</a></p>
+Read-only. No wallet, ever. &middot; &middot; <a href="/buy.html">where to buy &rarr;</a> &middot; <a href="/size.html">size curve</a> &middot; <a href="/route.html">get ready</a></p>
 
 <!-- FR1 / DP1 : reference provenance, always visible -->
 <div class="card">
@@ -275,7 +267,7 @@ Read-only. No wallet, ever. &middot; <span class="ticker">$TWD</span> &middot; <
   <span class="mono">totalworlddomination.xyz</span>, compare the reference address shown above
   against laptoptoken.com yourself, and use “Change the reference address” if they disagree.
   Saving this file and opening it locally removes the hosting party from the question entirely.</p>
-  <p><span class="ticker">$TWD</span> &middot; totalworlddomination.xyz &middot; Build <span class="mono" id="buildId">2026-09-07a</span> · no analytics, no trackers, no cookies,
+  <p> &middot; totalworlddomination.xyz &middot; Build <span class="mono" id="buildId">2026-09-07a</span> · no analytics, no trackers, no cookies,
   no third-party requests. The address you paste is never sent anywhere unless you turn on the relay.</p>
 </div>
 
@@ -383,14 +375,6 @@ const SEL={
   name:"0x06fdde03", symbol:"0x95d89b41", decimals:"0x313ce567", totalSupply:"0x18160ddd",
 };
 const DEFAULT_RPC="https://mainnet.base.org";
-// Tokens published on this domain, so a visitor who pastes one is told what it is rather than
-// only that it is not LAPTOP. Recognition is not endorsement: the verdict stays DOES NOT MATCH.
-const KNOWN_OTHER={
-  "0x06cc93ff9013b150445ff850d8d9285d6022eba3":
-    {n:"POT PAL",href:"/potpal.html",
-     note:"an unrelated memecoin published on this site. It is not LAPTOP, is not affiliated "
-         +"with LAPTOP, and buying it will not get you LAPTOP."},
-};
 const RELAY_URL="/api/rpc";
 const ZERO32="0x"+"0".repeat(64);
 
@@ -430,8 +414,8 @@ function decodeText(data){
 /* ============================ transport (DP4) ============================ */
 // Every read returns {ok:true,data} or {ok:false,reason} — never a guess, never a pass.
 const RPC={
-  url:localStorage.getItem("twd.rpc")||DEFAULT_RPC,
-  relay:localStorage.getItem("twd.relay")==="1",
+  url:localStorage.getItem("laptop.rpc")||DEFAULT_RPC,
+  relay:localStorage.getItem("laptop.relay")==="1",
   batchWorks:true,
   endpoint(){ return this.relay?RELAY_URL:this.url; },
 };
@@ -524,8 +508,8 @@ const slotHex=v=>"0x"+(v&((1n<<256n)-1n)).toString(16).padStart(64,"0");
 
 /* ============================ state ============================ */
 const S={
-  ref:localStorage.getItem("twd.ref")||C.LAPTOP.a,
-  overridden:localStorage.getItem("twd.ref")!==null,
+  ref:localStorage.getItem("laptop.ref")||C.LAPTOP.a,
+  overridden:localStorage.getItem("laptop.ref")!==null,
   chain:null, chainState:"unknown",
   addr:null, reqId:0,
   liq:null, liqAt:null,
@@ -598,14 +582,6 @@ function renderVerdict(){
     note.appendChild(sz);
   }else{
     note.innerHTML="This is <b>not</b> the address shown above.";
-    const k=KNOWN_OTHER[p.value];
-    if(k){
-      const kb=el("div","warnbox");
-      kb.style.marginTop="10px";
-      kb.innerHTML="This address is <b>"+k.n+"</b> — "+k.note
-        +" <a href=\""+k.href+"\">Details</a>.";
-      note.appendChild(kb);
-    }
     const d=el("div","diff");
     d.appendChild(diffLine("you pasted", p.checksum, toChecksum(S.ref)));
     d.appendChild(diffLine("reference ", toChecksum(S.ref), p.checksum));
@@ -1057,30 +1033,30 @@ $("refApply").addEventListener("click",()=>{
       : "Not a 20-byte address."; e.style.display="block"; return; }
   e.style.display="none";
   S.ref=p.value; S.overridden=(p.value!==C.LAPTOP.a);
-  if(S.overridden) localStorage.setItem("twd.ref",p.value); else localStorage.removeItem("twd.ref");
+  if(S.overridden) localStorage.setItem("laptop.ref",p.value); else localStorage.removeItem("laptop.ref");
   renderRef(); renderVerdict(); renderConstants();
   S.liqAt=null; $("liquidity").textContent="Reference changed — read venues again.";
   $("ledger").innerHTML=""; $("liqBadge").className="badge"; $("liqBadge").textContent="not checked";
 });
 $("refReset").addEventListener("click",()=>{
-  localStorage.removeItem("twd.ref"); S.ref=C.LAPTOP.a; S.overridden=false;
+  localStorage.removeItem("laptop.ref"); S.ref=C.LAPTOP.a; S.overridden=false;
   $("refErr").style.display="none"; renderRef(); renderVerdict(); renderConstants();
 });
 $("rpcApply").addEventListener("click",async()=>{
   const v=$("rpcIn").value.trim();
   if(!/^https:\/\//.test(v)){ alert("Endpoint must be an https:// URL."); return; }
-  RPC.url=v; RPC.batchWorks=true; localStorage.setItem("twd.rpc",v);
+  RPC.url=v; RPC.batchWorks=true; localStorage.setItem("laptop.rpc",v);
   $("rpcShow").textContent=v; S.chainState="unknown";
   await checkChain(); if(S.addr) runChainReads(S.addr);
 });
 $("rpcReset").addEventListener("click",async()=>{
-  localStorage.removeItem("twd.rpc"); RPC.url=DEFAULT_RPC; RPC.batchWorks=true;
+  localStorage.removeItem("laptop.rpc"); RPC.url=DEFAULT_RPC; RPC.batchWorks=true;
   $("rpcIn").value=DEFAULT_RPC; $("rpcShow").textContent=DEFAULT_RPC;
   S.chainState="unknown"; await checkChain(); if(S.addr) runChainReads(S.addr);
 });
 $("relayToggle").addEventListener("change",async e=>{
   RPC.relay=e.target.checked;
-  localStorage.setItem("twd.relay",RPC.relay?"1":"0");
+  localStorage.setItem("laptop.relay",RPC.relay?"1":"0");
   $("txBadge").textContent=RPC.relay?"relay":"direct";
   $("txBadge").className="badge"+(RPC.relay?" warn":"");
   RPC.batchWorks=true; S.chainState="unknown";
@@ -1096,7 +1072,7 @@ if(RPC.relay) $("txBadge").className="badge warn";
 checkChain();
 
 // Exposed for the test suite only. No behaviour depends on this.
-window.__TWD={keccakHex,keccak256,hex,hexToBytes,toChecksum,parseAddress,normalizeInput,
+window.__LAPTOP={keccakHex,keccak256,hex,hexToBytes,toChecksum,parseAddress,normalizeInput,
   poolId,poolStateSlot,slotHex,decodeText,readAddressWord,padAddr,padUint,padInt,
   buildVenuePlan,C,SEL,QUOTES,V3_FEES,S,RPC};
 </script>

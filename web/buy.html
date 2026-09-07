@@ -59,7 +59,6 @@ button.act:disabled{opacity:.45;cursor:default}
 a{color:inherit} a.ext{text-decoration:underline;text-underline-offset:2px}
 .footer{color:var(--dim);font-size:11.5px;margin:22px 0 30px;line-height:1.55}
 .hr{height:1px;background:var(--line);margin:14px 0}
-.ticker{font-family:var(--mono);font-weight:700;letter-spacing:.02em;color:var(--dim)}
 /* Depth. This sits on its own layer at full strength — putting it on the art layer would
    inherit that layer's opacity and do almost nothing. Lit from the centre, near-black by
    the edges, so text always has a dark ground under it. */
@@ -82,18 +81,14 @@ a.cta.sub2{background:transparent;color:var(--fg);border-color:var(--line);font-
 body::before{content:"";position:fixed;inset:0;z-index:-3;pointer-events:none;
   background:url("/bg.png") center center / cover no-repeat;opacity:.26}
 
-body::after{content:"";position:fixed;inset:0;z-index:-2;pointer-events:none;
-  background-image:url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20width%3D%27190%27%20height%3D%27130%27%3E%3Ctext%20x%3D%278%27%20y%3D%2734%27%20font-family%3D%27ui-monospace%2CMenlo%2Cmonospace%27%20font-size%3D%2715%27%20font-weight%3D%27700%27%20fill%3D%27%23000%27%3E%24TWD%3C%2Ftext%3E%3Ctext%20x%3D%27104%27%20y%3D%2788%27%20font-family%3D%27ui-monospace%2CMenlo%2Cmonospace%27%20font-size%3D%2715%27%20font-weight%3D%27700%27%20fill%3D%27%23000%27%3E%24TWD%3C%2Ftext%3E%3Ctext%20x%3D%2738%27%20y%3D%27122%27%20font-family%3D%27ui-monospace%2CMenlo%2Cmonospace%27%20font-size%3D%2715%27%20font-weight%3D%27700%27%20fill%3D%27%23000%27%3E%24TWD%3C%2Ftext%3E%3C%2Fsvg%3E");
-  background-repeat:repeat;opacity:.05;filter:invert(1)}
-
 </style>
 </head>
 <body>
 
-<h1>Where to buy LAPTOP <span class="ticker">$TWD</span></h1>
+<h1>Where to buy LAPTOP</h1>
 <p class="sub">Every Base venue, priced for the size you actually intend, ranked by what you
 end up holding. <a href="/">checker</a> &middot; <a href="/size.html">size curve</a> &middot;
-<a href="/route.html">get ready</a> &middot; <a href="/potpal.html">POT PAL</a></p>
+<a href="/route.html">get ready</a></p>
 
 <div class="card">
   <div class="badbox" style="margin:0">
@@ -144,7 +139,7 @@ end up holding. <a href="/">checker</a> &middot; <a href="/size.html">size curve
   your transaction — on launch day the last one is the norm. Concentrated-liquidity venues are
   priced as a best case, exactly as on the <a href="/size.html" class="ext">size curve</a>.
   Nothing here is advice to buy LAPTOP, or a view on whether it is worth buying.</p>
-  <p><span class="ticker">$TWD</span> &middot; totalworlddomination.xyz &middot; no analytics,
+  <p> &middot; totalworlddomination.xyz &middot; no analytics,
   no trackers, no cookies, no wallet.</p>
 </div>
 
@@ -167,7 +162,7 @@ const SEL={getPair:"0xe6a43905",getPoolV3:"0x1698ee82",getPoolAero:"0x79bc57d5",
   feeTick:"0x22afcccb",slot0:"0x3850c7bd",liquidity:"0x1a686502",getReserves:"0x0902f1ac",
   token0:"0x0dfe1681",decimals:"0x313ce567",balanceOf:"0x70a08231",fee:"0xddca3f43"};
 const CHAIN_ID=8453, Q96=2**96;
-let RPC=localStorage.getItem("twd.rpc")||"https://mainnet.base.org";
+let RPC=localStorage.getItem("laptop.rpc")||"https://mainnet.base.org";
 
 /* ---- swap math: identical to web/size.html, same virtual-reserve form ---- */
 function v2Out(amountIn,reserveIn,reserveOut,feeBps){

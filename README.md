@@ -67,13 +67,13 @@ python3 -m http.server -d web 8000     # then open http://localhost:8000
 Or just open `web/index.html` from disk — it has no build step and no dependencies. Saving the
 file and opening it locally removes the hosting party from the trust question entirely.
 
-Published build `2026-09-07h`:
+Published build `2026-09-07i`:
 
 ```
-sha256(web/index.html) = 3d404113eb1a9f7f7fdd61b39380ceddba340446205c45803951b2468c48e84d
-sha256(web/size.html)  = 8205ce5d3d8c004a4211e6ea924e9888e8f7ded127c54a376a37600ee5f1a359
-sha256(web/route.html) = ffd567425fed38937f0e88ffde98982f9261dc0ebbd281c47c13486a552d97d7
-sha256(web/buy.html)   = bd453a242b859bd8d172ed97d429e4dab929a0be876b34303c3c7c3dde46f703
+sha256(web/index.html) = b05097c8fcc3a28e6017f41cc377f8dd82beb5bc05664bd9887aac02c3b6cb19
+sha256(web/size.html)  = 4c7c7cd590f41871fb4618cdbbec00d0d2b9d28e661055d4613034963e069f52
+sha256(web/route.html) = 0bde847eef1beb9edeeb93b91eceba3e7ea15940aa6ed7cff03fe0b495a1d6c8
+sha256(web/buy.html)   = fb6ed9903f8f1bbecc6bbab6c3d65357e28b71b1679005bc100179f52cab7f7d
 ```
 
 ### Tests
@@ -82,9 +82,9 @@ sha256(web/buy.html)   = bd453a242b859bd8d172ed97d429e4dab929a0be876b34303c3c7c3
 sh test/run-all.sh         # everything below, no network touched
 ```
 
-**417 assertions across eight suites.**
+**368 assertions across seven suites.**
 
-`test/run.mjs` — 105, drives the real page in Chromium against `test/mock-rpc.mjs`: Keccak
+`test/run.mjs` — 108, drives the real page in Chromium against `test/mock-rpc.mjs`: Keccak
 vectors, the four EIP-55 reference addresses, the v4 poolId derivation checked against a real
 Base pool id, ABI-string decoding (including a 10-character name, whose length word contains a
 hex letter, and truncated/absurd offsets), result-length discipline, and full flows for the
@@ -104,71 +104,16 @@ of the JavaScript, plus properties a size curve lives or dies on: output rises w
 effective price strictly worsens, a fee costs exactly its rate at the limit, deeper liquidity
 fills better, and no fill can exceed the output-side virtual reserve. Emits the fixture below.
 
-`test/run-potpal.mjs` — 50, asserts the simulator deploys nothing, calls no network, keeps its
-disclaimers, and enforces the real protocol limits (420 trillion passes, 1 quintillion is
-rejected by uint112).
-
-`test/run-buy.mjs` — 33, drives the venue comparison against a three-venue fixture with
+`test/run-buy.mjs` — 32, drives the venue comparison against a three-venue fixture with
 deliberately different depths and asserts the ranking follows depth, the spread is quantified,
 and no wallet code exists anywhere in the page.
 
-`test/run-route.mjs` — 35, asserts `web/route.html` makes no network request of any
+`test/run-route.mjs` — 34, asserts `web/route.html` makes no network request of any
 kind, offers no wallet or deposit address, and gets the Solana-is-not-EVM distinction right.
 
 `test/run-size.mjs` — 66, asserts `web/size.html` agrees with that Python fixture to 1e-12,
 then drives the page against constant-product, concentrated, capped, dry, stable, foreign-token
 and no-code pool fixtures.
-
-## `web/potpal.html` — POT PAL
-
-An unrelated memecoin on the same domain. The contract is
-`0x06cC93FF9013B150445fF850D8D9285D6022eBa3` — **supplied, not verified**: the EIP-55 checksum
-is valid and it is not the LAPTOP address, but this tool has never read it on chain and says so
-on the page.
-
-So the page does not assert anything about it. It **reads the contract live in the visitor's
-browser** — code size, name, symbol, decimals, supply — and shows what is actually there.
-Nothing is hardcoded but the address. If the symbol comes back as something other than POTPAL,
-the page says so rather than glossing it. If there is no code at the address, it says that and
-tells the reader not to trust anything below it. Wrong chain suppresses every read.
-
-It then looks for a POTPAL/WETH pool across the V2 pair, all seven V3 tiers and both Aerodrome
-pools, and links out to a venue. **No wallet connection**, for the same reason `buy.html` has no
-swap button: this domain cannot defend against being cloned, and a clone that can ask for a
-wallet drains people rather than merely misleading them.
-
-The LAPTOP checker also recognises this address now. Pasting it returns `DOES NOT MATCH` — the
-verdict is unchanged — plus a line naming the token and stating plainly that buying it will not
-get you LAPTOP. Recognition is not endorsement, and a test asserts the verdict never softens.
-
-Below the live sections is the original simulator: arithmetic on parameters you type, a model
-rather than a reading.
-
-It is **quoted against ETH and deliberately not paired against LAPTOP**, so it can never appear
-in a LAPTOP pool listing and be mistaken for one — the HUNTER structure documented above. It
-carries an explicit not-affiliated-with-LAPTOP line, and `web/potpal-bg.png` is a slot: no
-artwork is committed for it.
-
-The interesting part of "absurdly high supply" is that it has exact breaking points, and they
-arrive sooner than people expect:
-
-| Limit | Value | What it means |
-| --- | --- | --- |
-| `uint112` | 5.19e33 | Uniswap V2 stores reserves in it. **At 18 decimals a supply above ~5.19 quadrillion cannot be pooled on V2 at all.** 1 quintillion overflows it. |
-| tick range | ±887,272 | v3/v4 represent price as a tick. An extreme token:ETH ratio falls outside what a pool can express. |
-| `uint256` | 1.16e77 | The token itself stops being representable. Far away — it is never the binding constraint. |
-
-420 trillion (the default) sits comfortably inside all three; the page tells you exactly where
-each one stops. It also prices the launch ladder against the seeded reserves with the same exact
-constant-product arithmetic as the size curve, so "5 ETH of depth" turns into "a 5 ETH buy loses
-50% to slippage" — which is the number that actually describes a launch.
-
-Every fiat figure rests on an ETH price you type. Nothing is read live, and FDV is labelled
-arithmetic rather than a valuation.
-
-```
-sha256(web/potpal.html) = d0c3af60d3ef19b72047ab15338086ac8b226ab32459d5bed051fbf36e98506c
-```
 
 ## `web/buy.html` — where to buy
 
@@ -360,13 +305,13 @@ block the checker still renders its identity verdict — the property the whole 
 suppresses every on-chain claim rather than guessing, and surfaces the relay. The browser cannot
 distinguish CORS from "host is down", so the tool does not claim to either; it says so.
 
-## Branding: `web/bg.png` and the $TWD watermark
+## Branding: `web/bg.png`
 
-Both pages carry a full-bleed background image and a tiled `$TWD` watermark. The watermark is
-an inline SVG data URI — no request, no third-party asset — and the ticker also appears in each
-page header and footer.
+All four pages carry a full-bleed background image. It is the only piece of branding on them —
+no ticker chips, no watermark layer, and no token named anywhere but LAPTOP. A test asserts
+that across every page.
 
-**`web/bg.png` is not in the repo. Drop your artwork there and it appears on both pages.**
+**`web/bg.png` is not in the repo. Drop your artwork there and it appears on all four pages.**
 It is the only external asset either page loads, it is same-origin, and it is referenced from
 exactly one decorative CSS rule and never from script. So if the file is missing, blocked by
 CSP, or the HTML is saved and opened offline, the pages lose a picture and nothing else — every
@@ -374,8 +319,7 @@ verdict, number and failure state is untouched. A test asserts that no script re
 
 Recommended: a wide image (roughly 16:9), under ~300KB. It renders at 26% opacity on a single
 deep dark theme, under a full-strength vignette, behind cards that sit on a 90%-opaque ground, so nothing ever competes with a verdict
-someone is reading in a hurry. Tests assert the art stays below 35% opacity, the watermark below 10%, both layers sit behind
-the content with `pointer-events:none`, the vignette exists on its own layer at full strength
+someone is reading in a hurry. Tests assert the art stays below 35% opacity, sits behind the content with `pointer-events:none`, the vignette exists on its own layer at full strength
 (on the art layer it would inherit that layer's opacity and do nothing), and — rather than any
 proxy for legibility — that the verdict text clears **WCAG AA contrast** once every translucent
 layer behind it is actually composited.

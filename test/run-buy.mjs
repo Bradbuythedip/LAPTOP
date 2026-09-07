@@ -44,7 +44,7 @@ page.on("pageerror", e => pageErrors.push(e.message));
 await page.goto(SITE + "/buy.html", { waitUntil: "domcontentloaded" });
 const txt = async s => (await page.textContent(s).catch(() => "")) || "";
 const use = async scn => {
-  await page.evaluate(u => localStorage.setItem("twd.rpc", u), MOCK + "/" + scn);
+  await page.evaluate(u => localStorage.setItem("laptop.rpc", u), MOCK + "/" + scn);
   await page.reload({ waitUntil: "domcontentloaded" }); await page.waitForTimeout(200);
 };
 const compare = async () => { await page.click("#go"); await page.waitForTimeout(1400); };
@@ -130,7 +130,6 @@ console.log("── layout");
 await page.fill("#amt", "1000"); await compare();
 ok("no horizontal scroll at 375px",
    (await page.evaluate(() => document.documentElement.scrollWidth)) <= 375);
-ok("$TWD appears", (src.match(/\$TWD|%24TWD/g) || []).length >= 4);
 ok("never tells anyone to buy", !/\byou should buy\b|\bbuy now\b/i.test(await txt("body")));
 ok("no page errors", pageErrors.length === 0, pageErrors.join("; "));
 

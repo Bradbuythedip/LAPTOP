@@ -62,7 +62,7 @@ a{color:inherit} a.ext{font-family:var(--mono);font-size:12px}
   border-top-color:var(--dim);border-radius:50%;animation:sp .7s linear infinite}
 @keyframes sp{to{transform:rotate(360deg)}}
 
-/* ---- background art + $TWD watermark ---- */
+/* ---- background art ---- */
 /* bg.png is the ONLY external asset in either page. It is same-origin and purely
    decorative: if it is missing, blocked, or the file is saved and opened offline, the
    page loses a picture and nothing else. Every number stays readable. */
@@ -72,17 +72,9 @@ body::before{
   opacity:.26;
 }
 
-body::after{
-  content:"";position:fixed;inset:0;z-index:-2;pointer-events:none;
-  background-image:url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20width%3D%27190%27%20height%3D%27130%27%3E%3Ctext%20x%3D%278%27%20y%3D%2734%27%20font-family%3D%27ui-monospace%2CMenlo%2Cmonospace%27%20font-size%3D%2715%27%20font-weight%3D%27700%27%20fill%3D%27%23000%27%3E%24TWD%3C%2Ftext%3E%3Ctext%20x%3D%27104%27%20y%3D%2788%27%20font-family%3D%27ui-monospace%2CMenlo%2Cmonospace%27%20font-size%3D%2715%27%20font-weight%3D%27700%27%20fill%3D%27%23000%27%3E%24TWD%3C%2Ftext%3E%3Ctext%20x%3D%2738%27%20y%3D%27122%27%20font-family%3D%27ui-monospace%2CMenlo%2Cmonospace%27%20font-size%3D%2715%27%20font-weight%3D%27700%27%20fill%3D%27%23000%27%3E%24TWD%3C%2Ftext%3E%3C%2Fsvg%3E");
-  background-repeat:repeat;
-  opacity:.05;filter:invert(1);
-}
-
 /* Cards sit on a near-opaque ground so the art shows through the page without ever
    competing with a verdict someone is reading in a hurry. */
 .card{background:var(--cardBg)}
-.ticker{font-family:var(--mono);font-weight:700;letter-spacing:.02em;color:var(--dim)}
 /* Depth. This sits on its own layer at full strength — putting it on the art layer would
    inherit that layer's opacity and do almost nothing. Lit from the centre, near-black by
    the edges, so text always has a dark ground under it. */
@@ -103,9 +95,9 @@ a.cta.sub2{background:transparent;color:var(--fg);border-color:var(--line);font-
 </head>
 <body>
 
-<h1>LAPTOP size curve <span class="ticker">$TWD</span></h1>
+<h1>LAPTOP size curve</h1>
 <p class="sub">What each size actually gets you, after slippage and fee, from a real pool.
-Read-only. No wallet. <span class="ticker">$TWD</span> <a href="/">← checker</a> &middot; <a href="/buy.html">where to buy</a> &middot; <a href="/potpal.html">POT PAL</a> &middot; <a href="/route.html">get ready</a></p>
+Read-only. No wallet. <a href="/">← checker</a> &middot; <a href="/buy.html">where to buy</a> &middot; <a href="/route.html">get ready</a></p>
 
 <div class="card">
   <label for="pool">Pool address (V2, Aerodrome, V3 or Slipstream)</label>
@@ -154,7 +146,7 @@ Read-only. No wallet. <span class="ticker">$TWD</span> <a href="/">← checker</
   transaction — on launch day that is the norm, not the exception. Any hook on a v4 pool that
   taxes or blocks the swap. Price impact is not the same as loss: it is what you pay to move the
   price, and you pay it again in reverse when you sell.</p>
-  <p><span class="ticker">$TWD</span> &middot; totalworlddomination.xyz. No analytics, no trackers, no cookies. Nothing you type leaves your browser except the
+  <p> &middot; totalworlddomination.xyz. No analytics, no trackers, no cookies. Nothing you type leaves your browser except the
   pool address, which goes to the RPC endpoint so it can be read.</p>
 </div>
 
@@ -174,7 +166,7 @@ const SEL={slot0:"0x3850c7bd",liquidity:"0x1a686502",fee:"0xddca3f43",tickSpacin
   stable:"0x22be3de1",getReserves:"0x0902f1ac",token0:"0x0dfe1681",token1:"0xd21220a7",
   decimals:"0x313ce567",symbol:"0x95d89b41",balanceOf:"0x70a08231",factory:"0xc45a0155",
   getFee:"0xcc56b2c5"};
-const DEFAULT_RPC=localStorage.getItem("twd.rpc")||"https://mainnet.base.org";
+const DEFAULT_RPC=localStorage.getItem("laptop.rpc")||"https://mainnet.base.org";
 const Q96=2**96;
 const CHAIN_ID=8453;
 
