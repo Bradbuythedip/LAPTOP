@@ -43,7 +43,8 @@ button.act:disabled{opacity:.45;cursor:default}
 .badge.good{background:var(--okbg);border-color:var(--ok);color:var(--ok)}
 .badge.bad{background:var(--badbg);border-color:var(--bad);color:var(--bad)}
 .badge.warn{background:var(--warnbg);border-color:var(--warn);color:var(--warn)}
-.hdr{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px}
+.hdr{display:flex;justify-content:space-between;align-items:center;gap:8px;
+  margin-bottom:8px;flex-wrap:wrap}
 .hdr h2{font-size:13.5px;margin:0;font-weight:600}
 table{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:6px}
 th,td{text-align:right;padding:6px 5px;border-bottom:1px solid var(--line)}
@@ -89,7 +90,11 @@ Read-only. No wallet. <a href="/">← contract checker</a></p>
 </div>
 
 <div class="card" id="poolCard" style="display:none">
-  <div class="hdr"><h2>Pool</h2><span class="badge" id="poolBadge">—</span></div>
+  <div class="hdr"><h2>Pool</h2>
+    <span style="display:flex;gap:6px;flex-wrap:wrap">
+      <span class="badge" id="chainBadge">chain not checked</span>
+      <span class="badge" id="poolBadge">—</span>
+    </span></div>
   <div id="poolInfo"></div>
 </div>
 
@@ -138,6 +143,7 @@ const SEL={slot0:"0x3850c7bd",liquidity:"0x1a686502",fee:"0xddca3f43",tickSpacin
   getFee:"0xcc56b2c5"};
 const DEFAULT_RPC=localStorage.getItem("twd.rpc")||"https://mainnet.base.org";
 const Q96=2**96;
+const CHAIN_ID=8453;
 
 /* ---------------- swap math ----------------
    Exposed on window.__SIZE for the test suite. Kept free of DOM so it can be
@@ -242,6 +248,19 @@ function okWord(res){
 }
 
 /* ---------------- reading a pool ---------------- */
+// Chain first. The same address holds different code on different chains, so a pool read
+// without knowing which chain answered is not a number, it is a guess.
+async function checkChain(){
+  const b=$("chainBadge");
+  const r=await rpcCall("eth_chainId",[]);
+  if(!r.ok){ b.className="badge bad"; b.textContent="chain unknown"; b.title=r.reason;
+    return {ok:false,reason:r.reason}; }
+  let id; try{ id=Number(BigInt(r.data)); }catch(e){ id=NaN; }
+  if(id===CHAIN_ID){ b.className="badge good"; b.textContent="Base · 8453 ✓"; return {ok:true}; }
+  b.className="badge bad"; b.textContent="chain "+id+" — not Base";
+  return {ok:false,chain:id};
+}
+
 async function readPool(addr){
   const code=await rpcCall("eth_getCode",[addr,"latest"]);
   if(!code.ok) return {err:"could not read the address: "+code.reason};
@@ -389,6 +408,19 @@ async function go(){
   $("poolCard").style.display="block";
   $("poolInfo").innerHTML='<span class="spin"></span> <span class="dim">reading pool state…</span>';
   $("curveCard").style.display="none";
+  const chain=await checkChain();
+  if(!chain.ok){
+    $("go").disabled=false; $("go").textContent="Read pool";
+    $("poolBadge").className="badge bad"; $("poolBadge").textContent="not priced";
+    $("poolInfo").innerHTML="";
+    $("poolInfo").appendChild(el("div","warnbox", chain.chain!==undefined
+      ? "Not priced: the endpoint reports chain "+chain.chain+", not Base 8453. The same "
+        +"address holds different code on a different chain, so any number here would be "
+        +"about something else."
+      : "Not priced: the chain could not be confirmed ("+chain.reason+"). Every number "
+        +"below would be unanchored."));
+    return;
+  }
   const pool=await readPool(raw.toLowerCase());
   $("go").disabled=false; $("go").textContent="Read pool";
   if(pool.err){
@@ -506,6 +538,16 @@ function renderCustom(c,pool){
   }
   out.appendChild(box);
 }
+
+// A pool address arriving in the URL is treated exactly like a typed one: same validation,
+// same refusal when neither side is LAPTOP. A deep link is an untrusted input - anyone can
+// send one - so it gets no shortcut past any check.
+(function fromUrl(){
+  const q=new URLSearchParams(location.search).get("pool");
+  if(!q) return;
+  $("pool").value=q;
+  go();
+})();
 
 $("go").addEventListener("click",go);
 $("pool").addEventListener("keydown",e=>{if(e.key==="Enter")go();});

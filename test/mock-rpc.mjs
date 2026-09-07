@@ -15,6 +15,11 @@ const FOREIGN1 = "0xbbbb000000000000000000000000000000000002";
 // sqrtP = sqrt(1e5) = 316.227766..., L = 10e18 * sqrtP
 const SQRT_P_X96 = BigInt(Math.floor(316.22776601683796 * 2 ** 96));
 const V3_LIQ = 3162277660168379331998n;
+// Reversed ordering: LAPTOP is token0, so price = WETH per LAPTOP = 1e-5.
+const SQRT_P_REV_X96 = BigInt(Math.floor(0.0031622776601683794 * 2 ** 96));
+// USDC-quoted (6 decimals on one side): 1 USDC = 10 LAPTOP, so raw price = 1e13.
+const SQRT_P_USDC_X96 = BigInt(Math.floor(3162277.6601683795 * 2 ** 96));
+const V3_LIQ_USDC = 158113883008418966n;
 
 const W0 = "0x" + "0".repeat(64);
 const word = h => h.replace(/^0x/, "").toLowerCase().padStart(64, "0");
@@ -62,35 +67,40 @@ function handle(scn, req) {
 
     // ---- size-curve pool fixtures ----
     if (scn.startsWith("pool-")) {
+      const rev = scn.startsWith("pool-rev"), usdcQ = scn === "pool-usdc";
       const foreign = scn === "pool-foreign";
-      const t0 = foreign ? FOREIGN0 : WETH;
-      const t1 = foreign ? FOREIGN1 : LAPTOP;
+      const t0 = foreign ? FOREIGN0 : rev ? LAPTOP : usdcQ ? USDC : WETH;
+      const t1 = foreign ? FOREIGN1 : rev ? WETH : LAPTOP;
+      const decOf = a => (a === USDC ? 6 : 18);
+      const symOf = a => a === LAPTOP ? "LAPTOP" : a === WETH ? "WETH"
+                       : a === USDC ? "USDC" : "FOO";
+      const sqrtX = usdcQ ? SQRT_P_USDC_X96 : rev ? SQRT_P_REV_X96 : SQRT_P_X96;
+      const liq = usdcQ ? V3_LIQ_USDC : V3_LIQ;
       if (to === POOL) {
+        const v2like = scn === "pool-v2" || scn === "pool-stable" || scn === "pool-rev-v2";
         if (sel === "0x0dfe1681") return { result: addrWord(t0) };            // token0
         if (sel === "0xd21220a7") return { result: addrWord(t1) };            // token1
-        const v2like = scn === "pool-v2" || scn === "pool-stable";
-        if (sel === "0x3850c7bd") {                                          // slot0
-          if (v2like) return { result: "0x" };
-          return { result: uintWord(SQRT_P_X96) + "0".repeat(64 * 6) };
-        }
-        if (sel === "0x1a686502") {                                          // liquidity
-          if (v2like) return { result: "0x" };
-          if (scn === "pool-dry") return { result: W0 };
-          return { result: uintWord(V3_LIQ) };
-        }
+        if (sel === "0x3850c7bd")                                            // slot0
+          return v2like ? { result: "0x" }
+                        : { result: uintWord(sqrtX) + "0".repeat(64 * 6) };
+        if (sel === "0x1a686502")                                            // liquidity
+          return v2like ? { result: "0x" }
+               : scn === "pool-dry" ? { result: W0 } : { result: uintWord(liq) };
         if (sel === "0x0902f1ac") {                                          // getReserves
           if (!v2like) return { result: "0x" };
-          return { result: uintWord(10n * 10n ** 18n) +
-                           uintWord(1000000n * 10n ** 18n).slice(2) + W0.slice(2) };
+          // token0 reserve first. Reversed pools put LAPTOP in slot 0.
+          const rL = 1000000n * 10n ** 18n, rW = 10n * 10n ** 18n;
+          return { result: uintWord(rev ? rL : rW) + uintWord(rev ? rW : rL).slice(2)
+                           + W0.slice(2) };
         }
         if (sel === "0xddca3f43") return { result: uintWord(3000) };          // fee
         if (sel === "0x22be3de1") return { result: scn === "pool-stable" ? uintWord(1) : W0 };
         return { result: "0x" };
       }
-      if (sel === "0x313ce567") return { result: uintWord(18) };              // decimals
-      if (sel === "0x95d89b41")                                               // symbol
-        return { result: strWord(to === LAPTOP ? "LAPTOP" : to === WETH ? "WETH" : "FOO") };
+      if (sel === "0x313ce567") return { result: uintWord(decOf(to)) };       // decimals
+      if (sel === "0x95d89b41") return { result: strWord(symOf(to)) };        // symbol
       if (sel === "0x70a08231") {                                            // balanceOf(pool)
+        if (scn === "pool-nobal") return { error: { code: -32000, message: "execution reverted" } };
         if (to === LAPTOP)
           return { result: uintWord(scn === "pool-cap" ? 1000n * 10n ** 18n
                                                        : 1000000n * 10n ** 18n) };
@@ -139,17 +149,33 @@ function handle(scn, req) {
 }
 
 const server = http.createServer((req, res) => {
-  const scn = (req.url || "/happy").split("?")[0].replace(/^\//, "") || "happy";
+  let scn = (req.url || "/happy").split("?")[0].replace(/^\//, "") || "happy";
+  // "nocors-<scenario>" serves the scenario WITHOUT any access-control-allow-origin.
+  // application/json is not a CORS-safelisted content type, so the browser preflights
+  // every one of these requests; withholding the header on OPTIONS blocks them outright.
+  const noCors = scn.startsWith("nocors");
+  if (noCors) scn = scn.replace(/^nocors-?/, "") || "happy";
   let body = "";
   req.on("data", c => (body += c));
   req.on("end", () => {
-    res.setHeader("access-control-allow-origin", "*");
-    res.setHeader("access-control-allow-headers", "content-type");
+    if (!noCors) {
+      res.setHeader("access-control-allow-origin", "*");
+      res.setHeader("access-control-allow-headers", "content-type");
+    }
     res.setHeader("content-type", "application/json");
-    if (req.method === "OPTIONS") { res.writeHead(204); res.end(); return; }
+    if (req.method === "OPTIONS") { res.writeHead(noCors ? 403 : 204); res.end(); return; }
     let parsed;
-    try { parsed = JSON.parse(body); } catch { res.writeHead(400); res.end("{}"); return; }
+    if (scn === "html") { parsed = {}; }
+    else {
+      try { parsed = JSON.parse(body); } catch { res.writeHead(400); res.end("{}"); return; }
+    }
 
+    if (scn === "html") {
+      res.setHeader("content-type", "text/html");
+      res.writeHead(200);
+      res.end("<!doctype html><html><body><h1>429 Too Many Requests</h1></body></html>");
+      return;
+    }
     if (Array.isArray(parsed)) {
       if (scn === "nobatch") { // endpoint refuses batches
         res.writeHead(200);

@@ -67,11 +67,11 @@ python3 -m http.server -d web 8000     # then open http://localhost:8000
 Or just open `web/index.html` from disk — it has no build step and no dependencies. Saving the
 file and opening it locally removes the hosting party from the trust question entirely.
 
-Published build `2026-09-07c`:
+Published build `2026-09-07d`:
 
 ```
-sha256(web/index.html) = 33606c985704f0993a09db79256cbcd7aab6b9dc95486fa6d295f1f1f69fdde1
-sha256(web/size.html)  = 05704d99de9e547b2c4e817e1cf78064985e322c8d9817ad5177fc256a811266
+sha256(web/index.html) = a3efdd5b3cb50e2321ef11eaa0eb7ce8152c9116ca3882c8d9c147d26b2dc62d
+sha256(web/size.html)  = a86836b7da74ffe15cfd57a2b41fa12df0957dff927b071347ad8c1620655caf
 ```
 
 ### Tests
@@ -80,9 +80,9 @@ sha256(web/size.html)  = 05704d99de9e547b2c4e817e1cf78064985e322c8d9817ad5177fc2
 sh test/run-all.sh         # everything below, no network touched
 ```
 
-**248 assertions across five suites.**
+**275 assertions across five suites.**
 
-`test/run.mjs` — 72, drives the real page in Chromium against `test/mock-rpc.mjs`: Keccak
+`test/run.mjs` — 81, drives the real page in Chromium against `test/mock-rpc.mjs`: Keccak
 vectors, the four EIP-55 reference addresses, the v4 poolId derivation checked against a real
 Base pool id, ABI-string decoding (including a 10-character name, whose length word contains a
 hex letter, and truncated/absurd offsets), result-length discipline, and full flows for the
@@ -102,7 +102,7 @@ of the JavaScript, plus properties a size curve lives or dies on: output rises w
 effective price strictly worsens, a fee costs exactly its rate at the limit, deeper liquidity
 fills better, and no fill can exceed the output-side virtual reserve. Emits the fixture below.
 
-`test/run-size.mjs` — 48, asserts `web/size.html` agrees with that Python fixture to 1e-12,
+`test/run-size.mjs` — 66, asserts `web/size.html` agrees with that Python fixture to 1e-12,
 then drives the page against constant-product, concentrated, capped, dry, stable, foreign-token
 and no-code pool fixtures.
 
@@ -146,6 +146,65 @@ range with constant `L` concentrated liquidity is exactly constant product over 
 textbook closed form `L·(√P − √P_next)` is algebraically identical but subtracts two nearly-equal
 large numbers, losing ~1e-10 of relative precision to cancellation and underflowing to zero
 outright on small probes. `test/test_size_math.py` holds both forms and asserts they agree.
+
+## The flow, and why it is this short
+
+Working back from what the person actually needs at the moment they are deciding:
+
+- **CN1** — don't let me buy the wrong token.
+- **CN2** — don't let me get a terrible fill.
+- **CN3** — don't let this tool fool me.
+
+The first version served CN1 and CN2 across two pages with **a manual copy of a 42-character
+hex string in the middle**: read the checker, find a pool in the venue table, select and copy
+its address, navigate to the size page, paste, read. The user was the data bus between two
+tools.
+
+That is not merely friction. Transporting an address by hand is *the exact failure this
+project exists to prevent* — so the flow for CN2 was actively attacking CN1. In information
+terms the manual step has some probability of success below one, and every bit of `log2(1/p)`
+it contributes is information the design is asking the user to supply. Deleting the step drives
+that term to zero, which is a stronger result than making the step easier.
+
+So every pool the checker finds now links straight into the size curve as
+`/size.html?pool=0x…`. Nobody types or copies a pool address, and the class of error disappears
+rather than being mitigated. The deep link gets **no shortcut past validation** — a URL is an
+untrusted input, anyone can send one, so it runs the same address parse and the same refusal
+when neither side of the pool is the published LAPTOP.
+
+The same pass found that `size.html` had no chain anchoring at all. It would happily price a
+pool on Ethereum, because an address exists on every chain. It now checks `eth_chainId` before
+reading anything and prices nothing at all on a mismatch, matching the checker.
+
+And a recovery path that was invisible in the one state that needed it: when every read is
+CORS-blocked, the tool offers a relay — but the offer sat inside a collapsed "Change endpoint"
+disclosure the user had no reason to open, while the rest of the page was empty. The disclosure
+now opens itself when the offer appears.
+
+## CORS: the one question the suite cannot answer alone
+
+Whether a browser at totalworlddomination.xyz can read *any* Base endpoint directly is the
+single thing that decides whether `relay/` gets deployed, and it needs egress to real Base
+hosts. Run it from a machine that has that:
+
+```bash
+sh test/cors-check.sh                          # the usual public endpoints
+sh test/cors-check.sh https://my-endpoint.example
+```
+
+It checks the three things that matter, in order: the **preflight** must carry
+`access-control-allow-origin` covering our origin (`application/json` is not a CORS-safelisted
+content type, so every one of these requests is preflighted — an endpoint that sets the header
+only on POST still fails), the POST must carry it too, and batching must work or the tool falls
+back to roughly forty sequential reads and gets throttled. It ends with a plain verdict on
+whether the relay is needed.
+
+What the suite *does* test is the code path, with a real browser-level CORS failure rather than
+a simulated one: the mock serves a scenario with no `access-control-allow-origin` from a
+different origin, so Chromium blocks it exactly as it would block a real endpoint. Under that
+block the checker still renders its identity verdict — the property the whole design rests on —
+suppresses every on-chain claim rather than guessing, and surfaces the relay. The browser cannot
+distinguish CORS from "host is down", so the tool does not claim to either; it says so.
 
 ### Deploying
 

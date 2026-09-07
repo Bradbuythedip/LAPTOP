@@ -585,7 +585,13 @@ async function checkChain(){
   return false;
 }
 function maybeOfferRelay(reason){
-  if(/CORS|unreachable|timed out/.test(reason||"")) $("relayWrap").style.display="block";
+  if(!/CORS|unreachable|timed out/.test(reason||"")) return;
+  $("relayWrap").style.display="block";
+  // Open the disclosure it lives in. A recovery path folded inside a panel the user has no
+  // reason to open is not a recovery path - and this is the one state where they cannot
+  // read anything at all until they act.
+  const d=$("relayWrap").closest("details");
+  if(d) d.open=true;
 }
 
 /* ============================ FR5 : evidence ============================ */
@@ -826,7 +832,7 @@ async function readVenues(){
       +"Each is listed below; check reserves before believing any of them."));
     box.appendChild(b);
     const t=el("table");
-    t.innerHTML="<tr><th>Venue</th><th>Quote</th><th>Pool</th></tr>";
+    t.innerHTML="<tr><th>Venue</th><th>Quote</th><th>Pool</th><th></th></tr>";
     for(const f of found){
       const tr=el("tr");
       tr.appendChild(el("td",null,f.venue));
@@ -834,6 +840,12 @@ async function readVenues(){
       const td=el("td","c");
       const a=el("a","ext",short(f.addr)); a.href=scan(f.addr); a.target="_blank"; a.rel="noopener noreferrer";
       td.appendChild(a); tr.appendChild(td);
+      // Hand the pool straight to the size curve. Making the user copy a 42-character
+      // address by hand, on a phone, is both friction and a fresh chance to paste the
+      // wrong thing - which is the exact failure this whole tool exists to prevent.
+      const td2=el("td");
+      const sz=el("a","ext","size ↗"); sz.href="/size.html?pool="+f.addr;
+      td2.appendChild(sz); tr.appendChild(td2);
       t.appendChild(tr);
     }
     const w=el("div","scroll"); w.appendChild(t); box.appendChild(w);

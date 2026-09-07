@@ -228,6 +228,37 @@ await page.waitForTimeout(1200);
 ok("incomplete result labelled INCOMPLETE", (await txt("#liquidity")).includes("INCOMPLETE"));
 ok("retry affordance offered", (await txt("#ledger")).includes("Retry"));
 
+console.log("── failure: real CORS block — the verdict must survive it");
+await useScenario("nocors-happy");
+await type("0xB095274743941e953c746F9C228DA9c18Bb6ec29");
+ok("identity verdict still renders with every read blocked",
+   (await txt("#verdictArea")).includes("MATCHES PUBLISHED CONTRACT"));
+ok("chain cannot be confirmed", (await txt("#chainBadge")).includes("unknown"));
+ok("on-chain claims are suppressed rather than guessed",
+   (await txt("#evidence")).includes("Not shown"));
+ok("the relay is offered once direct reads are impossible",
+   await page.isVisible("#relayWrap"));
+ok("and the relay's cost is stated up front",
+   (await txt("#relayWrap")).includes("sees every address"));
+
+console.log("── failure: endpoint answers with HTML, not JSON");
+await useScenario("html");
+await type("0xB095274743941e953c746F9C228DA9c18Bb6ec29");
+ok("an HTML error page is not mistaken for chain data",
+   (await txt("#chainBadge")).includes("unknown"));
+ok("identity verdict is unaffected by a broken endpoint",
+   (await txt("#verdictArea")).includes("MATCHES PUBLISHED CONTRACT"));
+
+console.log("── flow: found pools hand off to the size curve");
+await useScenario("pools");
+await page.click("#refreshLiq");
+await page.waitForTimeout(1200);
+const sizeHref = await page.$eval("#liquidity a[href*='size.html']", a => a.getAttribute("href"))
+  .catch(() => null);
+ok("each found pool links straight into the size curve", !!sizeHref, String(sizeHref));
+ok("the link carries the pool address, so nothing is retyped",
+   /\/size\.html\?pool=0x[0-9a-fA-F]{40}$/.test(sizeHref || ""), String(sizeHref));
+
 console.log("── flow: batch-unsupported endpoint falls back");
 await useScenario("nobatch");
 await type("0xB095274743941e953c746F9C228DA9c18Bb6ec29");
