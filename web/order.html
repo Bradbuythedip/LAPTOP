@@ -4,13 +4,18 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="referrer" content="no-referrer">
-<meta name="color-scheme" content="dark">
+<meta name="color-scheme" content="light">
 <title>Standing order for LAPTOP</title>
 <style>
 :root{
-  --bg:#0b0704; --fg:#f4ead6; --dim:#9a8973; --line:#2b2116; --card:#150f0a; --cardBg:rgba(22,16,10,.88);
-  --ok:#8fbf7a; --okbg:rgba(58,84,46,.30); --bad:#e58a70; --badbg:rgba(104,44,32,.34);
-  --warn:#dcab5c; --warnbg:rgba(96,68,24,.30); --unk:#bcae99; --unkbg:rgba(244,234,214,.055);
+  /* Light, cool, Ethereum-ish: lavender-white ground, slate text, the ETH blue-violet as the
+     one accent. Every colour here was picked against the composited ground (art + scrim +
+     card), not against a swatch — the suite recomputes the WCAG ratios and fails on a
+     regression, which is the only reason these are the exact values they are. */
+  --bg:#f4f5fb; --fg:#1f2033; --dim:#565a72; --line:#dde0f0; --card:#ffffff; --cardBg:rgba(255,255,255,.92);
+  --eth:#4a63d8; --ethSoft:rgba(74,99,216,.09);
+  --ok:#0c6b3a; --okbg:rgba(12,107,58,.10); --bad:#b3251c; --badbg:rgba(179,37,28,.09);
+  --warn:#7f5600; --warnbg:rgba(127,86,0,.10); --unk:#4b5069; --unkbg:rgba(74,99,216,.07);
   --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
 }
 *{box-sizing:border-box}
@@ -73,17 +78,17 @@ ol,ul{margin:8px 0;padding-left:20px} li{margin:5px 0;font-size:13px}
 html::before{
   content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;
   background:radial-gradient(ellipse 120% 90% at 50% 38%,
-    rgba(11,7,4,0) 0%, rgba(11,7,4,.42) 48%, rgba(9,6,3,.88) 82%, rgba(6,4,2,.97) 100%);
+    rgba(244,245,251,.30) 0%, rgba(245,246,252,.62) 48%, rgba(248,249,253,.90) 82%, rgba(250,251,254,.96) 100%);
 }
 a.cta{display:flex;align-items:center;justify-content:center;gap:8px;
   min-height:52px;padding:14px 18px;margin-top:12px;border-radius:11px;
-  background:var(--ok);color:#0b0704;font-weight:650;font-size:15px;
-  text-decoration:none;border:1px solid var(--ok)}
+  background:var(--eth);color:#fff;font-weight:650;font-size:15px;
+  text-decoration:none;border:1px solid var(--eth)}
 a.cta:hover{filter:brightness(1.08)}
 a.cta.sub2{background:transparent;color:var(--fg);border-color:var(--line);font-weight:500;
   min-height:44px;font-size:13.5px}
 body::before{content:"";position:fixed;inset:0;z-index:-3;pointer-events:none;
-  background:url("/bg.png") center center / cover no-repeat;opacity:.26}
+  background:url("/bg.png") center center / cover no-repeat;opacity:.12}
 </style>
 </head>
 <body>
@@ -92,7 +97,8 @@ body::before{content:"";position:fixed;inset:0;z-index:-3;pointer-events:none;
 <p class="sub">Sign once, walk away, keep the right to cancel. What that can and cannot promise,
 and the ceiling arithmetic nobody does. <a href="/">checker</a> &middot;
 <a href="/size.html">size curve</a> &middot; <a href="/buy.html">where to buy</a> &middot;
-<a href="/route.html">get ready</a></p>
+<a href="/route.html">get ready</a> &middot;
+<a href="/slot.html">getting a slot</a></p>
 
 <div class="card">
   <div class="badbox" style="margin:0">

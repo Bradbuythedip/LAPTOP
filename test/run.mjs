@@ -330,10 +330,62 @@ ok("the vignette sits above the art but below the content",
 ok("neither decorative layer can swallow a tap",
    bg.pointerArt === "none" && bg.pointerVig === "none");
 
+// Not a proxy for legibility — the actual WCAG AA ratio, measured after every translucent
+// layer between the glyph and the page is composited. A theme change that looks fine on a
+// swatch and fails on the real ground is exactly what this is here to catch.
+const relLum = ([r, g, b]) => {
+  const f = v => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; };
+  return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b);
+};
+const contrast = (a, b) => {
+  const [hi, lo] = [relLum(a), relLum(b)].sort((x, y) => y - x);
+  return (hi + 0.05) / (lo + 0.05);
+};
+const parseRGB = s => (s.match(/[\d.]+/g) || []).slice(0, 4).map(Number);
+// Walk from the element outward, compositing every background we meet onto what is behind it,
+// so a card at 92% over a scrim over 12% art over the page colour resolves to one real colour.
+const stackOf = await page.evaluate(() => {
+  const out = [];
+  for (const sel of ["#verdictArea .vtext", "#verdictArea", "h1", ".sub"]) {
+    const el = document.querySelector(sel);
+    if (!el) { out.push(null); continue; }
+    const layers = [];
+    for (let n = el; n && n !== document.documentElement; n = n.parentElement)
+      layers.push(getComputedStyle(n).backgroundColor);
+    layers.push(getComputedStyle(document.documentElement).backgroundColor);
+    // the decorative layers sit behind everything, innermost last
+    const art = getComputedStyle(document.body, "::before");
+    out.push({ sel, color: getComputedStyle(el).color, layers,
+               artOpacity: parseFloat(art.opacity) });
+  }
+  return out;
+});
+{
+  // Worst case for a light theme is the page centre with the darkest possible artwork:
+  // the vignette is weakest there, so nothing lightens the ground back up.
+  const PAGE = [244, 245, 251];
+  const composite = (fg, a, bg) => fg.map((c, i) => a * c + (1 - a) * bg[i]);
+  for (const st of stackOf) {
+    if (!st) continue;
+    const artOn = composite([0, 0, 0], st.artOpacity, PAGE);   // black artwork
+    const scrim = composite(PAGE, 0.30, artOn);                // vignette at its weakest
+    let ground = scrim;
+    for (const l of st.layers.slice().reverse()) {
+      const v = parseRGB(l); if (v.length < 3) continue;
+      const a = v.length === 4 ? v[3] : 1;
+      if (a > 0) ground = composite(v.slice(0, 3), a, ground);
+    }
+    const fg = parseRGB(st.color).slice(0, 3);
+    const r = contrast(fg, ground);
+    ok(`${st.sel} clears WCAG AA over the darkest possible composited ground`,
+       r >= 4.5, `ratio ${r.toFixed(2)} of ${st.color} on rgb(${ground.map(Math.round)})`);
+  }
+}
+
 // The site is about one token. Anything else named on it is either cross-promotion or a
 // chance for a reader to confuse two things, and both are out.
 console.log("── one token, and only one");
-const pages = ["index.html", "size.html", "route.html", "buy.html", "order.html"];
+const pages = ["index.html", "size.html", "route.html", "buy.html", "order.html", "slot.html"];
 for (const f of pages) {
   const t = fs.readFileSync(path.join(ROOT, "web", f), "utf8");
   ok(`${f} never mentions $TWD`, !/\$TWD|%24TWD/.test(t));

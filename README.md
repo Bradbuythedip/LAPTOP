@@ -67,14 +67,15 @@ python3 -m http.server -d web 8000     # then open http://localhost:8000
 Or just open `web/index.html` from disk — it has no build step and no dependencies. Saving the
 file and opening it locally removes the hosting party from the trust question entirely.
 
-Published build `2026-09-07j`:
+Published build `2026-09-07k`:
 
 ```
-sha256(web/index.html) = 7c775b38047c6d10cbe1b1a5c8a10adb80b4bdbfccd550dc4987a38ebd31752e
-sha256(web/size.html)  = 343fd4a61a4eb096b532b22cc0f55c5ddce7768c986d10cd954ef2302cd74fc4
-sha256(web/route.html) = 1412aa5c485046e4d67b0046a300b05ad725284ea7a724806b6f421d4547c925
-sha256(web/buy.html)   = 4b53378ba58f41002484d49ae11fc7c65a355ebeee7855437e989f27dbeb86a5
-sha256(web/order.html) = eacea9aaaffa4cecf0b844714a34e16b92e7d18d72bd76466719ea45d8bd4b66
+sha256(web/index.html) = 6fbe2386f020117966823fb19de27c8fb0b89700932e9497a810190a93927ab4
+sha256(web/size.html)  = 0948acf9ec3fc803731261885b06373c1839ee29b51c0e9cb8f1287a26b1cdad
+sha256(web/route.html) = 7e50b7ad993b7d96cbeb740ad347c0060b7672589d569bc691454f965b15c4c9
+sha256(web/buy.html)   = a1c11dcc49463985028f9330312566c314dcee1455d8b36992e53858f853bccd
+sha256(web/order.html) = 3479449a5d61e4010958cdc27a433d22b8c70ed42bc4cfbe9ec1e9d710650b0c
+sha256(web/slot.html)  = a8e7e0861a1017ea2185d67d3888ad9db75f333c03cd36fe90782e8b9dcc3107
 ```
 
 ### Tests
@@ -83,9 +84,9 @@ sha256(web/order.html) = eacea9aaaffa4cecf0b844714a34e16b92e7d18d72bd76466719ea4
 sh test/run-all.sh         # everything below, no network touched
 ```
 
-**470 assertions across eight suites.**
+**557 assertions across nine suites.**
 
-`test/run.mjs` — 111, drives the real page in Chromium against `test/mock-rpc.mjs`: Keccak
+`test/run.mjs` — 118, drives the real page in Chromium against `test/mock-rpc.mjs`: Keccak
 vectors, the four EIP-55 reference addresses, the v4 poolId derivation checked against a real
 Base pool id, ABI-string decoding (including a 10-character name, whose length word contains a
 hex letter, and truncated/absurd offsets), result-length discipline, and full flows for the
@@ -109,6 +110,8 @@ fills better, and no fill can exceed the output-side virtual reserve. Emits the 
 deliberately different depths and asserts the ranking follows depth, the spread is quantified,
 and no wallet code exists anywhere in the page.
 
+`test/run-slot.mjs` — 80, drives the deposit-contract checker against fixtures for an EOA, each of the three proxy patterns, a contract with no reachable exit, and every way a read can fail — asserting that a failure never becomes a finding.
+
 `test/run-order.mjs` — 99, drives the standing-order page: the ceiling formula against an
 implementation written from the pool identity rather than the page's algebra, the two
 splitting laws below, refusal of ceilings under the fee floor, and the promises the page
@@ -120,6 +123,69 @@ kind, offers no wallet or deposit address, and gets the Solana-is-not-EVM distin
 `test/run-size.mjs` — 66, asserts `web/size.html` agrees with that Python fixture to 1e-12,
 then drives the page against constant-product, concentrated, capped, dry, stable, foreign-token
 and no-code pool fixtures.
+
+## `web/slot.html` — getting a slot
+
+The demand is real and it keeps coming back: *people want to buy before launch, or at least put
+money in to guarantee a slot.* The page answers it rather than refusing it.
+
+**You cannot buy a token that does not exist.** There is no contract, no supply and no pool, so
+nothing can be transferred to you. Sending money before launch is not a purchase — it is
+**unsecured lending to whoever will control the launch**, against a promise to deliver later.
+That is a credit decision, and the only questions that matter are what forces them to deliver and
+what happens to your money if they don't. That is not an argument against preorders; it is the
+question a preorder has to answer, and most don't answer it at all.
+
+Four mechanisms, ranked by who has to be trusted:
+
+| | Mechanism | You must trust | If they don't deliver |
+| --- | --- | --- | --- |
+| 1 | **Allowlist** — your address in a root the launch contract checks | that they honour the list | you lost nothing; you never sent anything |
+| 2 | **Standing order** — a signed off-chain order | nobody | you keep the money |
+| 3 | **Deposit contract with a unilateral exit** — *you* call withdraw | the code, and that it can't change | your money is stuck or gone |
+| 4 | **Sending money to somebody** | everything, with no recourse | there is no step after this one |
+
+### The argument that settles it
+
+Everything people actually want from a preorder — a guaranteed allocation, a known price, not
+having to win a gas war at the open — **an allowlist delivers all three without anyone holding
+your money.** So there is exactly one thing a deposit adds: the launcher gets the money early.
+That can be a legitimate need, but it means when someone insists on custody, custody *is* the
+feature, and the depositor is financing it. The page says that once and moves on.
+
+### The checker
+
+Paste an address someone told you to deposit into, and it reports facts about whether you could
+get your money back. Never a safety rating — a contract can pass every check here and still be
+built to take your money, and the page says so on every result.
+
+- **Is there code at all** — an EOA cannot enforce a refund, a deadline or an allocation.
+- **Upgradeability**, via all four proxy storage slots (EIP-1967 implementation, admin and
+  beacon, plus the legacy OpenZeppelin slot). This is the check that outweighs the rest: if the
+  logic can be swapped, the rules you deposited under can be rewritten afterwards.
+- **A reachable exit**, by scanning the dispatch table for `withdraw()`, `refund()`,
+  `claimRefund()` and friends. Absence on a non-proxy is strong evidence there is no way out;
+  four specific bytes colliding by chance is about 1 in 2³². Presence is reported as *the
+  function exists*, never as *you can get a refund*.
+- **Privileged controls and ownership** — with `owner()` returning nothing, returning the zero
+  address, and reverting kept as three distinct states rather than collapsed into one.
+
+The interaction that matters most is encoded rather than left to the reader: **on a proxy the
+exit scan is suppressed entirely**, because the bytecode at the address is a stub and the real
+logic lives somewhere that can be replaced. Reporting a `withdraw()` found in a proxy stub would
+be reading the wrong contract.
+
+Same result-length discipline as the rest of the repo: 32 zero bytes means the contract answered
+*none*; a short answer, a revert or a transport failure means *could not check*. They are never
+merged, because merging them is how a tool invents a fact. A blocked endpoint reports "nothing
+was checked" and explicitly says that is not a statement about the address.
+
+### The launcher's checklist
+
+The mirror image, since the same properties that protect a buyer are what let a launcher be
+believed: publish a merkle root rather than a deposit address; fix price and per-address cap on
+chain before anyone commits; if you must take deposits make the exit caller-initiated with an
+on-chain deadline and no single-key drain; don't deploy it behind a proxy.
 
 ## `web/order.html` — sign once and walk away
 
@@ -400,25 +466,31 @@ distinguish CORS from "host is down", so the tool does not claim to either; it s
 
 ## Branding: `web/bg.png`
 
-All five pages carry a full-bleed background image. It is the only piece of branding on them —
+All six pages carry a full-bleed background image. It is the only piece of branding on them —
 no ticker chips, no watermark layer, and no token named anywhere but LAPTOP. A test asserts
 that across every page.
 
-**`web/bg.png` is not in the repo. Drop your artwork there and it appears on all five pages.**
+**`web/bg.png` is not in the repo. Drop your artwork there and it appears on all six pages.**
 It is the only external asset either page loads, it is same-origin, and it is referenced from
 exactly one decorative CSS rule and never from script. So if the file is missing, blocked by
 CSP, or the HTML is saved and opened offline, the pages lose a picture and nothing else — every
 verdict, number and failure state is untouched. A test asserts that no script references it.
 
-Recommended: a wide image (roughly 16:9), under ~300KB. It renders at 26% opacity on a single
-deep dark theme, under a full-strength vignette, behind cards that sit on a 90%-opaque ground, so nothing ever competes with a verdict
-someone is reading in a hurry. Tests assert the art stays below 35% opacity, sits behind the content with `pointer-events:none`, the vignette exists on its own layer at full strength
-(on the art layer it would inherit that layer's opacity and do nothing), and — rather than any
-proxy for legibility — that the verdict text clears **WCAG AA contrast** once every translucent
-layer behind it is actually composited.
+Recommended: a wide image (roughly 16:9), under ~300KB. It renders at 12% opacity under a light
+scrim, on cards that sit on a 92%-opaque white, so nothing ever competes with a verdict someone
+is reading in a hurry. Tests assert the art stays below 35% opacity, sits behind the content with
+`pointer-events:none`, the scrim exists on its own layer at full strength (on the art layer it
+would inherit that layer's opacity and do nothing), and — rather than any proxy for legibility —
+that the verdict text, the heading and the sub-line each clear **WCAG AA contrast** once every
+translucent layer between the glyph and the page is actually composited, against the darkest
+artwork the page could be given.
 
-The five LAPTOP pages are a single deep theme now, not light-with-a-dark-variant: near-black
-warm ground, cream text, art at 26% under a vignette that falls to near-black at the edges.
+The six LAPTOP pages are one light theme in the Ethereum register: a lavender-white ground, dark
+slate text, and the ETH blue-violet as the single accent, used for the primary action and nothing
+else. Every colour in `:root` was chosen against the composited ground rather than against a
+swatch, which is the only reason they are the exact values they are — the contrast assertion
+fails on a regression, and it was verified to fail by lightening `--dim` and watching the
+sub-line assertion break.
 
 `test/fixture-bg.png` is a generated stand-in used only so the test suite exercises the
 background code path. It is not artwork and is not served in production.
