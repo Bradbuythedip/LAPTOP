@@ -16,3 +16,6 @@ node test/run.mjs
 echo
 echo "=== browser: web/size.html ==="
 node test/run-size.mjs
+echo
+echo "=== browser: web/route.html ==="
+node test/run-route.mjs

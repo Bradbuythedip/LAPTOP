@@ -1,0 +1,341 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="referrer" content="no-referrer">
+<meta name="color-scheme" content="light dark">
+<title>Get ready to buy LAPTOP</title>
+<style>
+:root{
+  --bg:#fbfaf8; --fg:#16150f; --dim:#6b6862; --line:#e0ddd6; --card:#ffffff; --cardBg:rgba(255,255,255,.90);
+  --ok:#1c6b3f; --okbg:#e8f4ec; --bad:#a4262c; --badbg:#fdecec;
+  --warn:#8a5300; --warnbg:#fdf3e2; --unk:#4a4740; --unkbg:#f0eee9;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme:dark){:root{
+  --bg:#141412; --fg:#eceae4; --dim:#9a968d; --line:#302e2a; --card:#1c1b19; --cardBg:rgba(28,27,25,.90);
+  --ok:#7fd6a0; --okbg:#16281d; --bad:#ff9a9a; --badbg:#2c1717;
+  --warn:#e8bb70; --warnbg:#2a2114; --unk:#b8b4ac; --unkbg:#232220;
+}}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{background:var(--bg);color:var(--fg);
+  font:15px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  -webkit-text-size-adjust:100%;overflow-x:hidden;
+  padding:0 14px env(safe-area-inset-bottom) 14px;max-width:640px;margin:0 auto}
+h1{font-size:17px;margin:16px 0 2px;letter-spacing:-.01em}
+.sub{color:var(--dim);font-size:12.5px;margin:0 0 14px}
+.card{background:var(--cardBg);border:1px solid var(--line);border-radius:10px;padding:12px;margin:10px 0}
+.mono{font-family:var(--mono);font-size:12.5px;word-break:break-all}
+.dim{color:var(--dim)} .tiny{font-size:11.5px}
+label{display:block;font-size:12.5px;color:var(--dim);margin-bottom:5px}
+input,select{width:100%;font-size:16px;padding:11px;border:1.5px solid var(--line);
+  border-radius:9px;background:var(--card);color:var(--fg);font-family:inherit}
+input{font-family:var(--mono)}
+input:focus,select:focus{outline:none;border-color:var(--fg)}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.hdr{display:flex;justify-content:space-between;align-items:center;gap:8px;
+  margin-bottom:8px;flex-wrap:wrap}
+.hdr h2{font-size:13.5px;margin:0;font-weight:600}
+.badge{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;padding:3px 8px;
+  border-radius:999px;border:1px solid var(--line);background:var(--unkbg);color:var(--dim);white-space:nowrap}
+.badge.good{background:var(--okbg);border-color:var(--ok);color:var(--ok)}
+.badge.warn{background:var(--warnbg);border-color:var(--warn);color:var(--warn)}
+.warnbox{background:var(--warnbg);border:1px solid var(--warn);color:var(--warn);
+  border-radius:8px;padding:10px;font-size:12.5px;margin:8px 0}
+.badbox{background:var(--badbg);border:1px solid var(--bad);color:var(--bad);
+  border-radius:8px;padding:11px;font-size:12.5px;margin:8px 0}
+.okbox{background:var(--okbg);border:1px solid var(--ok);color:var(--ok);
+  border-radius:8px;padding:10px;font-size:12.5px;margin:8px 0}
+ol.steps{margin:8px 0 0;padding-left:0;list-style:none;counter-reset:s}
+ol.steps li{counter-increment:s;position:relative;padding:9px 0 9px 30px;
+  border-top:1px solid var(--line);font-size:13px}
+ol.steps li:first-child{border-top:0}
+ol.steps li::before{content:counter(s);position:absolute;left:0;top:9px;
+  width:20px;height:20px;border-radius:50%;background:var(--unkbg);color:var(--dim);
+  font-size:11px;display:flex;align-items:center;justify-content:center;font-weight:600}
+ol.steps li.done::before{background:var(--okbg);color:var(--ok)}
+a{color:inherit} a.ext{text-decoration:underline;text-underline-offset:2px}
+.footer{color:var(--dim);font-size:11.5px;margin:22px 0 30px;line-height:1.55}
+.hr{height:1px;background:var(--line);margin:14px 0}
+.ticker{font-family:var(--mono);font-weight:700;letter-spacing:.02em;color:var(--dim)}
+table{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:6px}
+th,td{text-align:left;padding:6px 5px;border-bottom:1px solid var(--line);vertical-align:top}
+th{color:var(--dim);font-weight:500}
+.scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
+
+/* ---- background art + $TWD watermark ---- */
+body::before{
+  content:"";position:fixed;inset:0;z-index:-2;pointer-events:none;
+  background:url("/bg.png") center center / cover no-repeat;
+  opacity:.13;
+}
+@media (prefers-color-scheme:dark){
+  body::before{opacity:.10;filter:invert(1) hue-rotate(180deg)}
+}
+body::after{
+  content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;
+  background-image:url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20width%3D%27190%27%20height%3D%27130%27%3E%3Ctext%20x%3D%278%27%20y%3D%2734%27%20font-family%3D%27ui-monospace%2CMenlo%2Cmonospace%27%20font-size%3D%2715%27%20font-weight%3D%27700%27%20fill%3D%27%23000%27%3E%24TWD%3C%2Ftext%3E%3Ctext%20x%3D%27104%27%20y%3D%2788%27%20font-family%3D%27ui-monospace%2CMenlo%2Cmonospace%27%20font-size%3D%2715%27%20font-weight%3D%27700%27%20fill%3D%27%23000%27%3E%24TWD%3C%2Ftext%3E%3Ctext%20x%3D%2738%27%20y%3D%27122%27%20font-family%3D%27ui-monospace%2CMenlo%2Cmonospace%27%20font-size%3D%2715%27%20font-weight%3D%27700%27%20fill%3D%27%23000%27%3E%24TWD%3C%2Ftext%3E%3C%2Fsvg%3E");
+  background-repeat:repeat;opacity:.045;
+}
+@media (prefers-color-scheme:dark){ body::after{filter:invert(1);opacity:.06} }
+</style>
+</head>
+<body>
+
+<h1>Get ready to buy LAPTOP <span class="ticker">$TWD</span></h1>
+<p class="sub">Work out what to hold, on which chain, before launch. <span class="ticker">$TWD</span> &middot;
+<a href="/">contract checker</a> &middot; <a href="/size.html">size curve</a></p>
+
+<div class="card">
+  <div class="badbox" style="margin:0">
+    <b>This page never touches your money.</b> There is no wallet connection, no deposit
+    address, and nothing to send anywhere. It tells you what to do in your own wallet, with
+    tools you choose. If any site — including one that looks like this one — asks you to send
+    funds so it can buy LAPTOP for you, that is not a preorder. That is you handing your money
+    to a stranger.
+  </div>
+</div>
+
+<div class="card">
+  <div class="hdr"><h2>You cannot preorder a token that has no market</h2>
+    <span class="badge warn">read this first</span></div>
+  <p style="font-size:13px;margin:0 0 8px">
+    Buying is a swap against a pool. Until someone funds a LAPTOP pool there is no pool to swap
+    against, so there is no transaction anyone can send on your behalf. Nothing technical is
+    missing — the counterparty does not exist yet.
+  </p>
+  <p style="font-size:13px;margin:0">
+    So every "preorder" is the same arrangement: somebody holds your money and promises tokens
+    later. You are trusting them to buy, to buy at a fair price, and to send you the result.
+    You have no claim if they do not. <b>What you can genuinely do is pre-position</b> — arrive
+    at launch already holding spendable funds on Base, in your own wallet, so you are one
+    transaction from a fill instead of one bridge plus one transaction.
+  </p>
+</div>
+
+<div class="card">
+  <div class="hdr"><h2>What do you hold now?</h2></div>
+  <div class="grid">
+    <div>
+      <label for="chain">Chain</label>
+      <select id="chain">
+        <option value="solana">Solana</option>
+        <option value="ethereum">Ethereum</option>
+        <option value="arbitrum">Arbitrum</option>
+        <option value="optimism">Optimism</option>
+        <option value="polygon">Polygon</option>
+        <option value="bnb">BNB Chain</option>
+        <option value="base">Base</option>
+        <option value="cex">On an exchange (Coinbase, Binance…)</option>
+      </select>
+    </div>
+    <div>
+      <label for="asset">Asset</label>
+      <select id="asset"></select>
+    </div>
+  </div>
+  <div style="margin-top:8px">
+    <label for="amt">Amount (optional — only used to label the steps)</label>
+    <input id="amt" inputmode="decimal" placeholder="e.g. 5">
+  </div>
+</div>
+
+<div class="card">
+  <div class="hdr"><h2>Your path to being ready</h2><span class="badge" id="pathBadge">—</span></div>
+  <ol class="steps" id="steps"></ol>
+  <div id="gasNote"></div>
+</div>
+
+<div class="card">
+  <div class="hdr"><h2>What "optimised" actually means here</h2></div>
+  <ol class="steps">
+    <li><b>Arrive in the asset the deepest pool quotes.</b> LAPTOP pools may be quoted in
+      WETH, USDC or USDbC, and they are not interchangeable — a USDC pool cannot be bought
+      with WETH without another swap and another fee. On launch day the
+      <a href="/" class="ext">contract checker</a> lists every pool it finds and which asset
+      each one quotes. Until then, USDC is the more likely quote (the pools observed so far
+      are USDC-quoted) but this is a guess, not a reading.</li>
+    <li><b>Bridge before launch, not during it.</b> Bridging is the slow, congested,
+      failure-prone part, and it is entirely removable from the critical path. Doing it on
+      Thursday puts minutes of bridge latency between you and a price that is moving. Doing it
+      now costs the same fee at a calmer moment.</li>
+    <li><b>Keep gas on Base.</b> Bridging only USDC leaves you holding money you cannot spend,
+      because the swap itself costs ETH. This is the single most common way people arrive
+      "ready" and are not.</li>
+    <li><b>Size from the curve, not from a feeling.</b> Once a pool exists, the
+      <a href="/size.html" class="ext">size curve</a> prices your exact size against it. On a
+      thin launch pool the difference between 1 and 25 is not linear and it is not small.</li>
+  </ol>
+</div>
+
+<div class="card">
+  <div class="hdr"><h2>Bridges</h2><span class="badge warn">none verified by this tool</span></div>
+  <p class="tiny dim" style="margin:0 0 6px">
+    Pick your own and check it yourself. These are listed because they are non-custodial and
+    widely used, not because this tool has audited or verified any of them — it has not. Route
+    aggregators quote live; the fee and time depend on the route and the moment.
+  </p>
+  <div class="scroll"><table id="bridges"></table></div>
+  <p class="tiny dim" style="margin-top:8px">
+    Whatever you use, the funds should land in <b>your own wallet on Base</b>. If a flow asks
+    you to send to an address it controls so it can forward tokens to you later, stop.
+  </p>
+</div>
+
+<div class="card">
+  <div class="hdr"><h2>On launch day</h2></div>
+  <ol class="steps">
+    <li>Check the contract address with the <a href="/" class="ext">checker</a>. It answers
+      offline, so it works even when the RPC does not.</li>
+    <li>Let the checker find the live pools, and follow the <span class="mono">size ↗</span>
+      link on the one you mean to trade.</li>
+    <li>Read the <a href="/size.html" class="ext">size curve</a> for the size you actually
+      intend, not the one you hope for.</li>
+    <li>Swap in a venue you chose, from your own wallet.</li>
+  </ol>
+</div>
+
+<div class="footer">
+  <div class="hr"></div>
+  <p><b>What this page does not do.</b> It does not quote bridge fees, because it reads nothing
+  live and will not print a number it has not measured. It does not route, hold, forward or
+  send anything. It does not tell you to buy LAPTOP, or that LAPTOP is worth buying — that is
+  your decision and this tool has no opinion on it.</p>
+  <p><b>Why there is no auto-buyer here.</b> An automatic buyer that spends your funds needs
+  either your keys or your money, and both answers are the same answer: somebody else holding
+  what is yours. A non-custodial version — you sign, a filler executes when a pool opens —
+  is a real thing that exists, but it is a protocol integration with real counterparty and
+  smart-contract risk, and it is not something to bolt onto a launch in two days.</p>
+  <p><span class="ticker">$TWD</span> &middot; totalworlddomination.xyz &middot;
+  No analytics, no trackers, no cookies. Nothing you type here leaves your browser — this page
+  makes no network requests at all.</p>
+</div>
+
+<script>
+"use strict";
+/* This page reads nothing and sends nothing. Pure function of the two selects. */
+
+const ASSETS={
+  solana:[["SOL","SOL"],["USDC","USDC"]],
+  ethereum:[["ETH","ETH"],["USDC","USDC"],["USDT","USDT"]],
+  arbitrum:[["ETH","ETH"],["USDC","USDC"]],
+  optimism:[["ETH","ETH"],["USDC","USDC"]],
+  polygon:[["POL","POL"],["USDC","USDC"]],
+  bnb:[["BNB","BNB"],["USDC","USDC"]],
+  base:[["ETH","ETH"],["USDC","USDC"],["USDbC","USDbC"]],
+  cex:[["SOL","SOL"],["ETH","ETH"],["USDC","USDC"]],
+};
+const CHAIN_LABEL={solana:"Solana",ethereum:"Ethereum",arbitrum:"Arbitrum",
+  optimism:"Optimism",polygon:"Polygon",bnb:"BNB Chain",base:"Base",cex:"the exchange"};
+
+// Solana is not an EVM chain, so an EVM-only bridge cannot see it. That distinction is the
+// one thing here that will actually waste someone's time if they get it wrong.
+const BRIDGES=[
+  {n:"Jumper (LI.FI)",   sol:true,  note:"aggregates many routes; quotes live"},
+  {n:"Relay",            sol:true,  note:"aggregator, fast for small sizes"},
+  {n:"deBridge",         sol:true,  note:"supports Solana ↔ EVM directly"},
+  {n:"Mayan",            sol:true,  note:"built around Solana ↔ EVM"},
+  {n:"Wormhole Portal",  sol:true,  note:"the underlying messaging layer for several of these"},
+  {n:"Across",           sol:false, note:"EVM only — cannot see Solana"},
+  {n:"Superbridge",      sol:false, note:"Ethereum ↔ Base only; the canonical OP Stack bridge"},
+];
+
+// Returns {steps:[{text, done}], badge, gas} — no network, no side effects.
+function buildRoute(chain, asset, amt){
+  const a = amt && isFinite(parseFloat(amt)) && parseFloat(amt) > 0
+    ? (parseFloat(amt).toLocaleString(undefined,{maximumFractionDigits:6}) + " ") : "";
+  const from = CHAIN_LABEL[chain] || chain;
+  const steps = [];
+  let badge, gas = true;
+
+  if (chain === "base"){
+    badge = "already on Base";
+    steps.push({text:`You hold ${a}${asset} on Base. No bridge needed — you are already where the pool will be.`, done:true});
+    if (asset === "ETH"){
+      steps.push({text:"You have gas. Consider holding some USDC too: the pools observed so far are USDC-quoted, and swapping ETH→USDC on the day costs an extra hop and an extra fee.", done:false});
+      gas = false;
+    } else {
+      steps.push({text:"Make sure you also hold a little ETH on Base for gas. A wallet holding only " + asset + " cannot send the swap.", done:false});
+    }
+    steps.push({text:"On launch day: check the contract, find the pool, read the size curve, swap.", done:false});
+    return {steps, badge, gas};
+  }
+
+  if (chain === "cex"){
+    badge = "withdraw first";
+    steps.push({text:`You hold ${a}${asset} on ${from}. Check whether it can withdraw directly to Base — several exchanges can, which skips bridging entirely and is usually the cheapest path.`, done:false});
+    steps.push({text:"If it can: withdraw to your own Base wallet. If it cannot: withdraw to a chain it does support, then bridge to Base.", done:false});
+    steps.push({text:"Withdrawals can be delayed or paused without warning, especially around a busy launch. This is a reason to move early, not on the day.", done:false});
+    steps.push({text:"Keep a little ETH on Base for gas.", done:false});
+    return {steps, badge, gas};
+  }
+
+  const solana = chain === "solana";
+  badge = solana ? "Solana → Base" : from + " → Base";
+  steps.push({text:`You hold ${a}${asset} on ${from}. LAPTOP is on Base, so this has to move.`, done:true});
+  if (solana){
+    steps.push({text:"Solana is not an EVM chain, so an EVM-only bridge cannot route it. Use one that lists Solana explicitly — the table below marks which do.", done:false});
+  }
+  steps.push({text:`Bridge to Base and receive USDC (more likely to match the pool's quote asset) or ETH. Send it to your own Base address — never to an address a site gives you for safekeeping.`, done:false});
+  steps.push({text:"Do this now rather than on launch day. The bridge is the slow and congested part, and it is the part you can remove from the critical path entirely.", done:false});
+  steps.push({text:"Also arrive with a little ETH on Base for gas — bridging only USDC leaves you holding money you cannot spend.", done:false});
+  steps.push({text:"On launch day: check the contract, find the pool, read the size curve, swap. No bridge in the way.", done:false});
+  return {steps, badge, gas};
+}
+
+const $=id=>document.getElementById(id);
+const el=(t,c,x)=>{const e=document.createElement(t);if(c)e.className=c;if(x!==undefined)e.textContent=x;return e;};
+
+function fillAssets(){
+  const c=$("chain").value, sel=$("asset"), prev=sel.value;
+  sel.innerHTML="";
+  for(const [v,l] of ASSETS[c]||[]){
+    const o=document.createElement("option"); o.value=v; o.textContent=l; sel.appendChild(o);
+  }
+  if([...sel.options].some(o=>o.value===prev)) sel.value=prev;
+}
+function render(){
+  const r=buildRoute($("chain").value,$("asset").value,$("amt").value);
+  $("pathBadge").textContent=r.badge;
+  $("pathBadge").className="badge"+(r.badge==="already on Base"?" good":"");
+  const ol=$("steps"); ol.innerHTML="";
+  for(const s of r.steps){
+    const li=el("li",s.done?"done":undefined);
+    li.textContent=s.text;
+    ol.appendChild(li);
+  }
+  const g=$("gasNote"); g.innerHTML="";
+  if(r.gas) g.appendChild(el("div","warnbox",
+    "Gas: the swap itself costs ETH on Base. Arriving with only a stablecoin is the most "
+    +"common way people find they are not actually ready."));
+}
+function renderBridges(){
+  const solOnly=$("chain").value==="solana";
+  const t=$("bridges");
+  t.innerHTML="<tr><th>Bridge</th><th>Solana</th><th></th></tr>";
+  for(const b of BRIDGES){
+    if(solOnly && !b.sol) continue;
+    const tr=el("tr");
+    tr.appendChild(el("td",null,b.n));
+    tr.appendChild(el("td",null,b.sol?"yes":"no"));
+    tr.appendChild(el("td","dim",b.note));
+    t.appendChild(tr);
+  }
+  if(solOnly){
+    const tr=el("tr");
+    const td=el("td","tiny dim","EVM-only bridges are hidden because you selected Solana.");
+    td.colSpan=3; tr.appendChild(td); t.appendChild(tr);
+  }
+}
+function all(){ fillAssets(); render(); renderBridges(); }
+$("chain").addEventListener("change",all);
+$("asset").addEventListener("change",render);
+$("amt").addEventListener("input",render);
+all();
+
+window.__ROUTE={buildRoute,ASSETS,BRIDGES,CHAIN_LABEL};
+</script>
+</body>
+</html>

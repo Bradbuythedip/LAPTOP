@@ -67,11 +67,12 @@ python3 -m http.server -d web 8000     # then open http://localhost:8000
 Or just open `web/index.html` from disk — it has no build step and no dependencies. Saving the
 file and opening it locally removes the hosting party from the trust question entirely.
 
-Published build `2026-09-07e`:
+Published build `2026-09-07f`:
 
 ```
-sha256(web/index.html) = 111411785740f5cfeb9808dd960bf24f1e10b7dcf5c54f87e2a667f7012533c1
-sha256(web/size.html)  = c3d1aa485b24869cb2baa3b4e0daa65065a81a5c74096cdef08894b92c8822ef
+sha256(web/index.html) = 7f87e882aeb28634c5b5568df77487e120c823a1f9b8af84e9ce89485cebb18b
+sha256(web/size.html)  = ff9eeb89846cc47f6d2be46a5e61622a10f2676c015a4d1df5695b55bfd1640b
+sha256(web/route.html) = c8674ade8957556faac73d2c3a079cc9f9ddb41a11b626691d5dfba48db55638
 ```
 
 ### Tests
@@ -80,7 +81,7 @@ sha256(web/size.html)  = c3d1aa485b24869cb2baa3b4e0daa65065a81a5c74096cdef08894b
 sh test/run-all.sh         # everything below, no network touched
 ```
 
-**287 assertions across five suites.**
+**322 assertions across six suites.**
 
 `test/run.mjs` — 93, drives the real page in Chromium against `test/mock-rpc.mjs`: Keccak
 vectors, the four EIP-55 reference addresses, the v4 poolId derivation checked against a real
@@ -102,9 +103,45 @@ of the JavaScript, plus properties a size curve lives or dies on: output rises w
 effective price strictly worsens, a fee costs exactly its rate at the limit, deeper liquidity
 fills better, and no fill can exceed the output-side virtual reserve. Emits the fixture below.
 
+`test/run-route.mjs` — 35, asserts `web/route.html` makes no network request of any
+kind, offers no wallet or deposit address, and gets the Solana-is-not-EVM distinction right.
+
 `test/run-size.mjs` — 66, asserts `web/size.html` agrees with that Python fixture to 1e-12,
 then drives the page against constant-product, concentrated, capped, dry, stable, foreign-token
 and no-code pool fixtures.
+
+## `web/route.html` — get ready before launch
+
+**There is no auto-buyer here, and there will not be one.** Buying is a swap against a pool;
+until someone funds a LAPTOP pool there is nothing to swap against, so no transaction can be
+sent on anyone's behalf. That is not a missing feature — the counterparty does not exist yet.
+
+Which means every "preorder" is the same arrangement: somebody holds your money and promises
+tokens later. Building that would mean accepting deposits from the public against a delivery
+promise — money transmission at minimum, plausibly an unregistered offering — and it is
+structurally identical to a presale rug regardless of intent. On a site whose entire purpose is
+stopping people getting fleeced on launch day, it would be the most damaging thing in the repo.
+
+What you can genuinely do is **pre-position**: arrive at launch already holding spendable funds
+on Base, in your own wallet, one transaction from a fill rather than one bridge plus one
+transaction. That is what this page plans.
+
+It takes your chain and asset and lays out the path, including the parts people get wrong:
+
+- **Solana is not an EVM chain**, so an EVM-only bridge cannot route it. The bridge table hides
+  the ones that cannot see Solana when you select it.
+- **Bridge before launch, not during.** Bridging is the slow, congested, failure-prone step and
+  it is entirely removable from the critical path. The fee is the same at a calmer moment.
+- **Keep ETH on Base for gas.** Arriving with only a stablecoin is the most common way people
+  find they are not actually ready — the swap itself costs ETH.
+- **Arrive in the asset the deepest pool quotes.** WETH, USDC and USDbC pools are not
+  interchangeable; buying a USDC pool with WETH costs another hop and another fee.
+
+The page **makes no network request of any kind** — a test asserts nothing leaves the origin.
+No wallet connection, no deposit address, no fetch. It quotes no bridge fees, because it reads
+nothing live and will not print a number it has not measured. Bridges are listed because they
+are non-custodial and widely used, explicitly **not** because this tool has verified any of
+them; it has not.
 
 ## `web/size.html` — the size curve
 
