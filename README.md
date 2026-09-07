@@ -67,13 +67,14 @@ python3 -m http.server -d web 8000     # then open http://localhost:8000
 Or just open `web/index.html` from disk — it has no build step and no dependencies. Saving the
 file and opening it locally removes the hosting party from the trust question entirely.
 
-Published build `2026-09-07i`:
+Published build `2026-09-07j`:
 
 ```
-sha256(web/index.html) = b05097c8fcc3a28e6017f41cc377f8dd82beb5bc05664bd9887aac02c3b6cb19
-sha256(web/size.html)  = 4c7c7cd590f41871fb4618cdbbec00d0d2b9d28e661055d4613034963e069f52
-sha256(web/route.html) = 0bde847eef1beb9edeeb93b91eceba3e7ea15940aa6ed7cff03fe0b495a1d6c8
-sha256(web/buy.html)   = fb6ed9903f8f1bbecc6bbab6c3d65357e28b71b1679005bc100179f52cab7f7d
+sha256(web/index.html) = 7c775b38047c6d10cbe1b1a5c8a10adb80b4bdbfccd550dc4987a38ebd31752e
+sha256(web/size.html)  = 343fd4a61a4eb096b532b22cc0f55c5ddce7768c986d10cd954ef2302cd74fc4
+sha256(web/route.html) = 1412aa5c485046e4d67b0046a300b05ad725284ea7a724806b6f421d4547c925
+sha256(web/buy.html)   = 4b53378ba58f41002484d49ae11fc7c65a355ebeee7855437e989f27dbeb86a5
+sha256(web/order.html) = eacea9aaaffa4cecf0b844714a34e16b92e7d18d72bd76466719ea45d8bd4b66
 ```
 
 ### Tests
@@ -82,9 +83,9 @@ sha256(web/buy.html)   = fb6ed9903f8f1bbecc6bbab6c3d65357e28b71b1679005bc100179f
 sh test/run-all.sh         # everything below, no network touched
 ```
 
-**368 assertions across seven suites.**
+**470 assertions across eight suites.**
 
-`test/run.mjs` — 108, drives the real page in Chromium against `test/mock-rpc.mjs`: Keccak
+`test/run.mjs` — 111, drives the real page in Chromium against `test/mock-rpc.mjs`: Keccak
 vectors, the four EIP-55 reference addresses, the v4 poolId derivation checked against a real
 Base pool id, ABI-string decoding (including a 10-character name, whose length word contains a
 hex letter, and truncated/absurd offsets), result-length discipline, and full flows for the
@@ -108,12 +109,104 @@ fills better, and no fill can exceed the output-side virtual reserve. Emits the 
 deliberately different depths and asserts the ranking follows depth, the spread is quantified,
 and no wallet code exists anywhere in the page.
 
+`test/run-order.mjs` — 99, drives the standing-order page: the ceiling formula against an
+implementation written from the pool identity rather than the page's algebra, the two
+splitting laws below, refusal of ceilings under the fee floor, and the promises the page
+declines to make.
+
 `test/run-route.mjs` — 34, asserts `web/route.html` makes no network request of any
 kind, offers no wallet or deposit address, and gets the Solana-is-not-EVM distinction right.
 
 `test/run-size.mjs` — 66, asserts `web/size.html` agrees with that Python fixture to 1e-12,
 then drives the page against constant-product, concentrated, capped, dry, stable, foreign-token
 and no-code pool fixtures.
+
+## `web/order.html` — sign once and walk away
+
+The need this answers, in the customer's words: *put money in before launch, don't be awake for
+it, get filled near the opening price, and take the money back if it doesn't happen.*
+
+**Three of those four are deliverable. The fill is not.** A fill needs a counterparty, and no
+signature, contract or service conjures one. Guaranteed fill and guaranteed price are opposites:
+a market buy at open guarantees you end up holding something, at whatever price the first blocks
+decide; a signed standing order guarantees you never pay above your number, and may simply not
+fill. The page puts both halves side by side and refuses to pretend otherwise.
+
+The mechanism is an **off-chain EIP-712 order on an established settlement protocol** — not a
+contract written for one launch, including one written here, which is why there isn't one. It
+decomposes cleanly, which is the whole argument for it:
+
+| FR | DP |
+| --- | --- |
+| Commit without a second signature at execution | A signed off-chain order on an existing settlement layer |
+| Bound the price paid | The order's limit price |
+| Recover the funds at any time | Cancellation — and beneath it, funds that never left the wallet |
+| Know that it executed | The protocol's own notifications, the wallet, or an explorer watch |
+
+That matrix is **decoupled**: pick the settlement layer first and the other three follow from it.
+An escrow contract holding deposits routes *every* FR through one DP — it is **coupled**, with a
+single point of failure and an operator you have to trust — which is the principled version of
+why this repo doesn't ship one. "Withdraw at any time" is also not a withdrawal in the signed
+design: the money never moved, so there is nothing to withdraw.
+
+### The ceiling has to clear your own slippage
+
+The quiet failure mode is setting the ceiling at the price you saw, so your own order pushes the
+price past it and it can never fill. For a constant-product pool seeded with `E` on the quote
+side, a buy of `S` pays
+
+```
+effective price = seed price × ( 1/(1-fee) + S/E )
+```
+
+Exact, not an approximation — `out = T·S'/(E+S')` with `S' = S(1-f)`, so the ratio to `E/T`
+collapses to `1/(1-f) + S/E`. Spend a tenth of the quote side and you pay about a tenth over
+seed, plus the fee; spend the whole depth and you pay more than double. The page inverts it too:
+given a ceiling you like, the largest order that still fits under it is `E·(C - 1/(1-f))`, and a
+ceiling below `1/(1-f)` admits nothing at any size, because the fee alone exceeds it.
+
+The seed depth is a guess, so the page always shows the answer across a range of depths rather
+than one number.
+
+### Splitting: the tests corrected the page
+
+The first draft claimed constant-product pricing is path-independent, so splitting an order into
+tranches costs nothing. **The test suite caught that as false.** The fee stays *in* the pool, so
+each tranche deepens it against the next one and the input reserve grows by the full input rather
+than the post-fee amount. Splitting against an untouched pool is therefore slightly **worse**:
+
+| Tranches | vs one order |
+| --- | --- |
+| 2 | −0.0065% |
+| 4 | −0.0098% |
+| 10 | −0.0118% |
+| 100 | −0.0131% |
+
+Two laws come out of it, and both are asserted rather than described: **n tranches pay
+`(1 − 1/n)` of a ceiling**, and that ceiling is about **half the pool fee times your share of the
+pool** while the share is small (the rule over-predicts badly once your share approaches the
+whole pool — also tested). So the folklore is wrong twice: a split is not free, and against a
+static pool it is never the cheaper path. Split to reduce how wrong you can be — an open spikes
+and settles, and one order at the top fills at the top — and price it as insurance you pay a
+little for, not as a discount.
+
+### What it refuses to do
+
+No wallet, no signing, no network request of any kind — same rule as `buy.html`, for the same
+reason: this domain cannot defend against being cloned, and a clone that can ask for a wallet
+drains people rather than merely misleading them. It hands off to CoW Swap and 1inch with the
+LAPTOP address printed for character-by-character comparison, and **every deep link is marked
+unverified from here** and paired with a manual recipe, because this environment has no egress
+and could not check any of them.
+
+It also states the parts nobody puts in the UI: the approval is the real risk surface, not the
+order (approve the exact amount, never unlimited); cancellation is a race only when the order is
+fillable right now, which is the one asterisk on "withdraw at any time"; the page cannot notify
+you of a fill because it only runs while you're looking at it, so the notification has to come
+from the order book, the wallet, or an explorer watch — set up *before* signing, since "your
+order filled, click to claim" is a message to expect and ignore. And the likeliest way a
+launch-day order dies is not price at all: **fillers route through liquidity they have indexed,
+and a pool minutes old may not be in that set.**
 
 ## `web/buy.html` — where to buy
 
@@ -307,11 +400,11 @@ distinguish CORS from "host is down", so the tool does not claim to either; it s
 
 ## Branding: `web/bg.png`
 
-All four pages carry a full-bleed background image. It is the only piece of branding on them —
+All five pages carry a full-bleed background image. It is the only piece of branding on them —
 no ticker chips, no watermark layer, and no token named anywhere but LAPTOP. A test asserts
 that across every page.
 
-**`web/bg.png` is not in the repo. Drop your artwork there and it appears on all four pages.**
+**`web/bg.png` is not in the repo. Drop your artwork there and it appears on all five pages.**
 It is the only external asset either page loads, it is same-origin, and it is referenced from
 exactly one decorative CSS rule and never from script. So if the file is missing, blocked by
 CSP, or the HTML is saved and opened offline, the pages lose a picture and nothing else — every
@@ -324,7 +417,7 @@ someone is reading in a hurry. Tests assert the art stays below 35% opacity, sit
 proxy for legibility — that the verdict text clears **WCAG AA contrast** once every translucent
 layer behind it is actually composited.
 
-The four LAPTOP pages are a single deep theme now, not light-with-a-dark-variant: near-black
+The five LAPTOP pages are a single deep theme now, not light-with-a-dark-variant: near-black
 warm ground, cream text, art at 26% under a vignette that falls to near-black at the edges.
 
 `test/fixture-bg.png` is a generated stand-in used only so the test suite exercises the
