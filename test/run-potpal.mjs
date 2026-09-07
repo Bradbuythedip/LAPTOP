@@ -11,6 +11,14 @@ const ok = (n, c, x) => { if (c) { pass++; results.push("  ok   " + n); }
   else { fail++; results.push("  FAIL " + n + (x ? "\n         " + x : "")); } };
 const eq = (n, g, w) => ok(n, g === w, `got  ${g}\n         want ${w}`);
 
+import { spawn } from "node:child_process";
+const MOCK_PORT = process.env.MOCK_PORT || 8671;
+const MOCK = "http://127.0.0.1:" + MOCK_PORT;
+const mockProc = spawn(process.execPath, [path.join(ROOT, "test", "mock-rpc.mjs")], {
+  env: { ...process.env, MOCK_PORT: String(MOCK_PORT) }, stdio: "ignore" });
+process.on("exit", () => mockProc.kill());
+await new Promise(r => setTimeout(r, 700));
+
 const site = http.createServer((req, res) => {
   const rel = (req.url || "/").split("?")[0];
   const f = path.join(ROOT, "web", rel === "/" ? "index.html" : rel.replace(/^\//, ""));
@@ -30,7 +38,10 @@ const page = await ctx.newPage();
 const pageErrors = [], requests = [];
 page.on("pageerror", e => pageErrors.push(e.message));
 page.on("request", r => requests.push(r.url()));
-await page.goto(SITE + "/potpal.html", { waitUntil: "networkidle" });
+await page.goto(SITE + "/potpal.html", { waitUntil: "domcontentloaded" });
+await page.evaluate(u => localStorage.setItem("twd.rpc", u), MOCK + "/potpal");
+await page.reload({ waitUntil: "domcontentloaded" });
+await page.waitForTimeout(1200);
 const txt = async s => (await page.textContent(s).catch(() => "")) || "";
 const src = fs.readFileSync(path.join(ROOT, "web", "potpal.html"), "utf8");
 
@@ -38,11 +49,12 @@ console.log("── it simulates, it does not deploy");
 ok("no wallet or signing code",
    !/window\.ethereum|eth_requestAccounts|sendTransaction|signTypedData|privateKey|mnemonic/i.test(src));
 ok("no contract deployment", !/eth_sendRawTransaction|deployContract|ContractFactory/i.test(src));
-ok("no network calls at all", !/\bfetch\s*\(|XMLHttpRequest|WebSocket/.test(src));
-const external = requests.filter(u => !u.startsWith(SITE));
-ok("nothing leaves the origin", external.length === 0, external.join(", "));
-ok("says plainly nothing is deployed", (await txt("body")).includes("Nothing here is deployed"));
-ok("says nothing is for sale", (await txt("body")).includes("nothing is for sale"));
+ok("no websocket or XHR", !/XMLHttpRequest|WebSocket/.test(src));
+ok("states it will never ask for a wallet", (await txt("body")).includes("never will"));
+ok("tells the reader a wallet prompt here means it is not this page",
+   (await txt("body")).includes("close it"));
+ok("says the simulator is a model, not a reading",
+   (await txt("body")).includes("not a reading of anything"));
 
 console.log("── it disclaims affiliation and refuses the LAPTOP pair");
 const body = await txt("body");
@@ -110,6 +122,50 @@ ok("the background is a named slot", src.includes("/potpal-bg.png"));
 ok("the page says so when the file is absent", (await txt("#artNone")).includes("this is a slot"));
 ok("no artwork is committed for it", !fs.existsSync(path.join(ROOT, "web", "potpal-bg.png")));
 
+console.log("── live: the deployed contract is read, not asserted");
+const useScn = async scn => {
+  await page.evaluate(u => localStorage.setItem("twd.rpc", u), MOCK + "/" + scn);
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await page.waitForTimeout(1200);
+};
+ok("the address is shown in full and linked to basescan",
+   (await txt("#ctAddr")).toLowerCase().includes("0x06cc93ff9013b150445ff850d8d9285d6022eba3"));
+ok("name is read from chain", (await txt("#liveInfo")).includes("POT PAL"));
+ok("symbol is read from chain", (await txt("#liveInfo")).includes("POTPAL"));
+ok("supply is read from chain", (await txt("#liveInfo")).includes("420 trillion"));
+ok("the badge says it was read, not assumed", (await txt("#liveBadge")).includes("read from chain"));
+ok("the address is still labelled unverified", (await txt("body")).includes("unverified"));
+
+await useScn("potpal-wrongsym");
+ok("a symbol that is not POTPAL is called out",
+   (await txt("#liveInfo")).includes("is not POTPAL"), await txt("#liveInfo"));
+
+await useScn("potpal-nocode");
+ok("no contract at the address is stated plainly",
+   (await txt("#liveInfo")).includes("no contract at this address"));
+ok("and the reader is told not to trust what follows",
+   (await txt("#liveInfo")).includes("should be trusted"));
+
+await useScn("wrongchain");
+ok("wrong chain suppresses the reads", (await txt("#liveInfo")).includes("Not shown"));
+ok("and suppresses the venues too", (await txt("#market")).includes("not checked"));
+
+console.log("── live: venues");
+await useScn("potpal");
+ok("a found pool is listed", (await txt("#market")).includes("Uniswap V2"));
+const tradeHref = await page.$eval("#market a", a => a.getAttribute("href")).catch(() => "");
+ok("the trade link carries the POTPAL address",
+   tradeHref.toLowerCase().includes("0x06cc93ff9013b150445ff850d8d9285d6022eba3"), tradeHref);
+ok("a pool existing is not called liquidity",
+   (await txt("#market")).includes("does not mean it holds"));
+
+await useScn("potpal-nopool");
+ok("no pool is stated as no pool, scoped to what was checked",
+   (await txt("#market")).includes("No POTPAL/WETH pool found"));
+ok("and says nobody can buy it yet",
+   (await txt("#market")).includes("nobody can buy this yet"));
+
+await useScn("potpal");
 console.log("── layout");
 ok("no horizontal scroll at 375px",
    (await page.evaluate(() => document.documentElement.scrollWidth)) <= 375);

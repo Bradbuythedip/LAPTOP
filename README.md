@@ -70,7 +70,7 @@ file and opening it locally removes the hosting party from the trust question en
 Published build `2026-09-07g`:
 
 ```
-sha256(web/index.html) = d8195c985c22a0acc5dc675763c4c261165ec4f611bf9bb0693f798dae4a345c
+sha256(web/index.html) = 54bb7a48fac63481cb6c6f44082a933a3261b9f58cc35579ea3090cb30077e26
 sha256(web/size.html)  = cbd07bf51533d4608e61c99770224e041b290441866741620af778e753308c02
 sha256(web/route.html) = 458bbce337055b92096389e29a35096f48766e89d4190708206df85a608f1c67
 sha256(web/buy.html)   = e872b6e3fc5503db7c67720d8327654fdfd9ed249f2f16051e59e5bf782aecdd
@@ -82,9 +82,9 @@ sha256(web/buy.html)   = e872b6e3fc5503db7c67720d8327654fdfd9ed249f2f16051e59e5b
 sh test/run-all.sh         # everything below, no network touched
 ```
 
-**386 assertions across eight suites.**
+**406 assertions across eight suites.**
 
-`test/run.mjs` — 93, drives the real page in Chromium against `test/mock-rpc.mjs`: Keccak
+`test/run.mjs` — 97, drives the real page in Chromium against `test/mock-rpc.mjs`: Keccak
 vectors, the four EIP-55 reference addresses, the v4 poolId derivation checked against a real
 Base pool id, ABI-string decoding (including a 10-character name, whose length word contains a
 hex letter, and truncated/absurd offsets), result-length discipline, and full flows for the
@@ -104,7 +104,7 @@ of the JavaScript, plus properties a size curve lives or dies on: output rises w
 effective price strictly worsens, a fee costs exactly its rate at the limit, deeper liquidity
 fills better, and no fill can exceed the output-side virtual reserve. Emits the fixture below.
 
-`test/run-potpal.mjs` — 34, asserts the simulator deploys nothing, calls no network, keeps its
+`test/run-potpal.mjs` — 50, asserts the simulator deploys nothing, calls no network, keeps its
 disclaimers, and enforces the real protocol limits (420 trillion passes, 1 quintillion is
 rejected by uint112).
 
@@ -119,11 +119,30 @@ kind, offers no wallet or deposit address, and gets the Solana-is-not-EVM distin
 then drives the page against constant-product, concentrated, capped, dry, stable, foreign-token
 and no-code pool fixtures.
 
-## `web/potpal.html` — POT PAL deployment simulator
+## `web/potpal.html` — POT PAL
 
-An unrelated memecoin on the same domain, and a simulator rather than a launcher: it does
-arithmetic on parameters you type and shows what a deployment would look like. No wallet, no
-contract, no network call of any kind — a test asserts nothing leaves the origin.
+An unrelated memecoin on the same domain. The contract is
+`0x06cC93FF9013B150445fF850D8D9285D6022eBa3` — **supplied, not verified**: the EIP-55 checksum
+is valid and it is not the LAPTOP address, but this tool has never read it on chain and says so
+on the page.
+
+So the page does not assert anything about it. It **reads the contract live in the visitor's
+browser** — code size, name, symbol, decimals, supply — and shows what is actually there.
+Nothing is hardcoded but the address. If the symbol comes back as something other than POTPAL,
+the page says so rather than glossing it. If there is no code at the address, it says that and
+tells the reader not to trust anything below it. Wrong chain suppresses every read.
+
+It then looks for a POTPAL/WETH pool across the V2 pair, all seven V3 tiers and both Aerodrome
+pools, and links out to a venue. **No wallet connection**, for the same reason `buy.html` has no
+swap button: this domain cannot defend against being cloned, and a clone that can ask for a
+wallet drains people rather than merely misleading them.
+
+The LAPTOP checker also recognises this address now. Pasting it returns `DOES NOT MATCH` — the
+verdict is unchanged — plus a line naming the token and stating plainly that buying it will not
+get you LAPTOP. Recognition is not endorsement, and a test asserts the verdict never softens.
+
+Below the live sections is the original simulator: arithmetic on parameters you type, a model
+rather than a reading.
 
 It is **quoted against ETH and deliberately not paired against LAPTOP**, so it can never appear
 in a LAPTOP pool listing and be mistaken for one — the HUNTER structure documented above. It
@@ -148,7 +167,7 @@ Every fiat figure rests on an ETH price you type. Nothing is read live, and FDV 
 arithmetic rather than a valuation.
 
 ```
-sha256(web/potpal.html) = 20f8d9c71fed560c4c865bec9834a9d870ebd7075e1b98fd7eb28b6dbb335c40
+sha256(web/potpal.html) = d0c3af60d3ef19b72047ab15338086ac8b226ab32459d5bed051fbf36e98506c
 ```
 
 ## `web/buy.html` — where to buy

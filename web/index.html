@@ -138,7 +138,7 @@ body::after{
 
 <h1>LAPTOP contract checker <span class="ticker">$TWD</span></h1>
 <p class="sub">Checks whether an address is the one published for LAPTOP on Base.
-Read-only. No wallet, ever. &middot; <span class="ticker">$TWD</span> &middot; <a href="/buy.html">where to buy &rarr;</a> &middot; <a href="/size.html">size curve</a> &middot; <a href="/route.html">get ready</a></p>
+Read-only. No wallet, ever. &middot; <span class="ticker">$TWD</span> &middot; <a href="/buy.html">where to buy &rarr;</a> &middot; <a href="/potpal.html">POT PAL</a> &middot; <a href="/size.html">size curve</a> &middot; <a href="/route.html">get ready</a></p>
 
 <!-- FR1 / DP1 : reference provenance, always visible -->
 <div class="card">
@@ -374,6 +374,14 @@ const SEL={
   name:"0x06fdde03", symbol:"0x95d89b41", decimals:"0x313ce567", totalSupply:"0x18160ddd",
 };
 const DEFAULT_RPC="https://mainnet.base.org";
+// Tokens published on this domain, so a visitor who pastes one is told what it is rather than
+// only that it is not LAPTOP. Recognition is not endorsement: the verdict stays DOES NOT MATCH.
+const KNOWN_OTHER={
+  "0x06cc93ff9013b150445ff850d8d9285d6022eba3":
+    {n:"POT PAL",href:"/potpal.html",
+     note:"an unrelated memecoin published on this site. It is not LAPTOP, is not affiliated "
+         +"with LAPTOP, and buying it will not get you LAPTOP."},
+};
 const RELAY_URL="/api/rpc";
 const ZERO32="0x"+"0".repeat(64);
 
@@ -573,6 +581,14 @@ function renderVerdict(){
       +"nothing more — it does not say the token is safe, sound, or worth buying.";
   }else{
     note.innerHTML="This is <b>not</b> the address shown above.";
+    const k=KNOWN_OTHER[p.value];
+    if(k){
+      const kb=el("div","warnbox");
+      kb.style.marginTop="10px";
+      kb.innerHTML="This address is <b>"+k.n+"</b> — "+k.note
+        +" <a href=\""+k.href+"\">Details</a>.";
+      note.appendChild(kb);
+    }
     const d=el("div","diff");
     d.appendChild(diffLine("you pasted", p.checksum, toChecksum(S.ref)));
     d.appendChild(diffLine("reference ", toChecksum(S.ref), p.checksum));

@@ -296,6 +296,17 @@ ok("invalid input renders no verdict", !(await page.isVisible("#verdictArea")));
 const kept = await page.inputValue("#addr");
 eq("typed text never mutated by the tool", kept, "0xnothex");
 
+console.log("── a known non-LAPTOP token is identified, not just rejected");
+await useScenario("happy");
+await type("0x06cC93FF9013B150445fF850D8D9285D6022eBa3");
+ok("verdict is still DOES NOT MATCH", (await txt("#verdictArea")).includes("DOES NOT MATCH"));
+ok("the token is named so the user knows what they have",
+   (await txt("#verdictArea")).includes("POT PAL"));
+ok("and told plainly it will not get them LAPTOP",
+   (await txt("#verdictArea")).includes("will not get you LAPTOP"));
+ok("recognition never becomes endorsement",
+   !(await txt("#verdictArea")).includes("MATCHES"));
+
 console.log("── background art and the $TWD watermark");
 const bg = await page.evaluate(() => {
   const before = getComputedStyle(document.body, "::before");

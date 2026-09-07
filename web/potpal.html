@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="referrer" content="no-referrer">
-<title>POT PAL — deployment simulator</title>
+<title>POT PAL</title>
 <style>
 :root{
   --bg:#171009; --fg:#f2e8d5; --dim:#a2917a; --line:#3a2c1d; --card:rgba(30,22,14,.82);
@@ -82,9 +82,11 @@ a{color:var(--fg)}
 
 <div class="card">
   <div class="badbox" style="margin:0">
-    <b>Nothing here is deployed and nothing is for sale.</b> This page is a simulator: it does
-    arithmetic on parameters you type and shows what a deployment would look like. There is no
-    wallet connection, no contract, no token, and nothing to buy.
+    <b>This page never asks you to connect a wallet, and never will.</b> It reads public chain
+    state and does arithmetic. It cannot move your money, and neither can anything pretending to
+    be it. If a page at this address ever asks you to connect a wallet or approve a transaction,
+    it is not this page — close it. The simulator further down is a model of parameters you
+    type, not a reading of anything.
   </div>
   <div class="warnbox">
     <b>POT PAL is not affiliated with LAPTOP</b> or with laptoptoken.com, and is not endorsed by
@@ -92,6 +94,29 @@ a{color:var(--fg)}
     anagram. Quoted against ETH — <b>not</b> paired against LAPTOP, so it can never appear in a
     LAPTOP pool listing and be mistaken for one.
   </div>
+</div>
+
+<div class="card">
+  <div class="hdr"><h2>The deployed contract</h2>
+    <span class="badge" id="liveBadge">reading…</span></div>
+  <div class="kv"><span>address</span><span id="ctAddr"></span></div>
+  <div id="liveInfo"></div>
+  <p class="tiny sub" style="margin:10px 0 0">
+    Everything above the line is read from the chain in your browser when this page loads.
+    Nothing about this contract is hardcoded except the address itself, and the address is
+    <b>unverified</b> — it was supplied, not confirmed by this tool. Check it on basescan.
+  </p>
+</div>
+
+<div class="card">
+  <div class="hdr"><h2>Where to buy</h2><span class="badge" id="mktBadge">—</span></div>
+  <div id="market"></div>
+  <p class="tiny sub" style="margin:10px 0 0">
+    No wallet connection here, on purpose — the same reason
+    <a href="/buy.html">the LAPTOP venue comparison</a> has no swap button. This domain cannot
+    defend against being cloned, and a clone that can ask for a wallet drains people instead of
+    merely misleading them. Trade from your own wallet, in a venue you chose.
+  </p>
 </div>
 
 <div class="card">
@@ -106,7 +131,7 @@ a{color:var(--fg)}
       <input id="sup" inputmode="numeric" value="420000000000000"></div>
   </div>
   <p class="tiny sub" style="margin:9px 0 0">
-    420 trillion by default. Push it higher and the checks below will tell you exactly where it
+    A model, not a reading — edit freely. 420 trillion by default. Push it higher and the checks below will tell you exactly where it
     stops being deployable — the limits are real and they arrive sooner than people expect.
   </p>
 </div>
@@ -147,6 +172,87 @@ a{color:var(--fg)}
 "use strict";
 const U112=(2n**112n)-1n, U256=(2n**256n)-1n, TICK_MAX=887272;
 const WETH="0x4200000000000000000000000000000000000006";
+// Supplied, not verified. This tool has never read this address on chain, and says so.
+const POTPAL="0x06cc93ff9013b150445ff850d8d9285d6022eba3";
+const CHAIN_ID=8453;
+const V2F="0x8909dc15e40173ff4699343b6eb8132c65e18ec6";
+const V3F="0x33128a8fc17869897dce68ed026d694621f6fdfd";
+const AEROF="0x420dd381b31aef6683db6b902084cb0ffece40da";
+const V3_FEES=[100,200,300,400,500,3000,10000];
+const SEL={code:"",name:"0x06fdde03",symbol:"0x95d89b41",decimals:"0x313ce567",
+  totalSupply:"0x18160ddd",balanceOf:"0x70a08231",getPair:"0xe6a43905",
+  getPoolV3:"0x1698ee82",getPoolAero:"0x79bc57d5",getReserves:"0x0902f1ac",token0:"0x0dfe1681"};
+let RPC=localStorage.getItem("twd.rpc")||"https://mainnet.base.org";
+
+const padA=a=>a.replace(/^0x/,"").toLowerCase().padStart(64,"0");
+const padU=n=>BigInt(n).toString(16).padStart(64,"0");
+const w32=(d,i)=>d.replace(/^0x/,"").substr(i*64,64);
+const bigW=w=>w?BigInt("0x"+w):0n;
+
+async function rpc(method,params,ms=12000){
+  const c=new AbortController(), t=setTimeout(()=>c.abort(),ms);
+  try{
+    const r=await fetch(RPC,{method:"POST",headers:{"content-type":"application/json"},
+      body:JSON.stringify({jsonrpc:"2.0",id:1,method,params}),signal:c.signal,
+      cache:"no-store",referrerPolicy:"no-referrer"});
+    if(!r.ok) return {ok:false,reason:r.status===429?"rate limited (429)":"HTTP "+r.status};
+    const j=await r.json();
+    if(j.error) return {ok:false,reason:"node error"};
+    return {ok:true,data:j.result};
+  }catch(e){
+    return {ok:false,reason:e.name==="AbortError"?"timed out"
+      :"blocked or unreachable (CORS or network — the browser cannot tell these apart)"};
+  }finally{clearTimeout(t);}
+}
+async function rpcBatch(calls){
+  const c=new AbortController(), t=setTimeout(()=>c.abort(),20000);
+  try{
+    const r=await fetch(RPC,{method:"POST",headers:{"content-type":"application/json"},
+      body:JSON.stringify(calls.map((x,i)=>({jsonrpc:"2.0",id:i,method:x.m,params:x.p}))),
+      signal:c.signal,cache:"no-store",referrerPolicy:"no-referrer"});
+    if(!r.ok) throw new Error("http");
+    const j=await r.json();
+    if(!Array.isArray(j)) throw new Error("nobatch");
+    const out=new Array(calls.length);
+    for(const it of j){ const i=typeof it.id==="number"?it.id:0;
+      out[i]=it.error?{ok:false,reason:"node error"}:{ok:true,data:it.result}; }
+    for(let i=0;i<out.length;i++) if(!out[i]) out[i]={ok:false,reason:"missing"};
+    return out;
+  }catch(e){
+    const out=[]; for(const x of calls) out.push(await rpc(x.m,x.p)); return out;
+  }finally{clearTimeout(t);}
+}
+const ecall=(to,data)=>({m:"eth_call",p:[{to,data},"latest"]});
+
+// Same discipline as the rest of the site: 32 zero bytes is an answer, "0x" is not.
+function addrWord(res){
+  if(!res.ok) return {s:"unknown",why:res.reason};
+  const d=res.data;
+  if(!d||d==="0x") return {s:"unknown",why:"empty return"};
+  const h=d.replace(/^0x/,"");
+  if(h.length<64) return {s:"unknown",why:"short return"};
+  const w=w32(d,0);
+  return /^0{64}$/.test(w)?{s:"none"}:{s:"found",a:"0x"+w.slice(24)};
+}
+function decodeText(data){
+  if(!data||data==="0x") return null;
+  const h=data.replace(/^0x/,"");
+  if(h.length===64){
+    const b=[]; for(let i=0;i<64;i+=2){const v=parseInt(h.substr(i,2),16); if(v)b.push(v);}
+    const s=String.fromCharCode(...b);
+    return /^[\x20-\x7e]*$/.test(s)?s:null;
+  }
+  if(h.length<128) return null;
+  try{
+    const off=Number(BigInt("0x"+h.substr(0,64)));
+    if(!Number.isSafeInteger(off)||off*2+64>h.length) return null;
+    const len=Number(BigInt("0x"+h.substr(off*2,64)));
+    if(len>512||off*2+64+len*2>h.length) return null;
+    const hh=h.substr(off*2+64,len*2), b=[];
+    for(let i=0;i<hh.length;i+=2) b.push(parseInt(hh.substr(i,2),16));
+    return String.fromCharCode(...b);
+  }catch(e){ return null; }
+}
 
 // Constant product, exact — the same arithmetic a V2 pool runs.
 function v2Out(amountIn,reserveIn,reserveOut,feeBps){
@@ -320,6 +426,132 @@ function render(){
   }
 }
 
+/* ---------------- live: the deployed contract ---------------- */
+const scan=a=>"https://basescan.org/address/"+a;
+const short=a=>a.slice(0,10)+"…"+a.slice(-6);
+
+async function readLive(){
+  const badge=$("liveBadge"), box=$("liveInfo");
+  const a=el("a",null,POTPAL); a.href=scan(POTPAL); a.target="_blank"; a.rel="noopener noreferrer";
+  $("ctAddr").innerHTML=""; $("ctAddr").appendChild(a);
+
+  const ch=await rpc("eth_chainId",[]);
+  let chainOk=false;
+  if(ch.ok){ try{ chainOk = Number(BigInt(ch.data))===CHAIN_ID; }catch(e){} }
+  if(!chainOk){
+    badge.className="badge bad"; badge.textContent="chain not confirmed";
+    box.innerHTML=""; box.appendChild(el("div","warnbox",
+      "Not shown: the endpoint did not confirm Base 8453"+(ch.ok?"":" ("+ch.reason+")")
+      +". The same address holds different code on a different chain, so anything read here "
+      +"would be about something else."));
+    $("mktBadge").className="badge bad"; $("mktBadge").textContent="chain not confirmed";
+    $("market").innerHTML=""; $("market").appendChild(el("div","warnbox",
+      "Venues not checked — the chain could not be confirmed."));
+    return null;
+  }
+
+  const code=await rpc("eth_getCode",[POTPAL,"latest"]);
+  if(!code.ok){
+    badge.className="badge bad"; badge.textContent="could not read";
+    box.innerHTML=""; box.appendChild(el("div","warnbox","Could not read this address: "+code.reason));
+    return null;
+  }
+  if(!code.data||code.data==="0x"){
+    badge.className="badge bad"; badge.textContent="no contract";
+    box.innerHTML=""; box.appendChild(el("div","badbox",
+      "There is no contract at this address on Base right now. Either the deployment has not "
+      +"landed, or the address is wrong. Nothing below should be trusted until this reads as code."));
+    return null;
+  }
+
+  const r=await rpcBatch([ecall(POTPAL,SEL.name),ecall(POTPAL,SEL.symbol),
+                          ecall(POTPAL,SEL.decimals),ecall(POTPAL,SEL.totalSupply)]);
+  const name=r[0].ok?decodeText(r[0].data):null;
+  const sym=r[1].ok?decodeText(r[1].data):null;
+  const dec=(r[2].ok&&r[2].data&&r[2].data!=="0x")?Number(bigW(w32(r[2].data,0))):null;
+  const sup=(r[3].ok&&r[3].data&&r[3].data!=="0x")?bigW(w32(r[3].data,0)):null;
+
+  box.innerHTML="";
+  const add=(k,v)=>{const d=el("div","kv");d.appendChild(el("span",null,k));
+    d.appendChild(el("span",null,v));box.appendChild(d);};
+  add("code",((code.data.length-2)/2)+" bytes");
+  add("name",name===null?"could not read":name);
+  add("symbol",sym===null?"could not read":sym);
+  add("decimals",dec===null?"could not read":String(dec));
+  if(sup!==null&&dec!==null){
+    const whole=sup/(10n**BigInt(dec));
+    add("total supply",fmtBig(whole)+" ("+whole.toLocaleString()+")");
+  } else add("total supply","could not read");
+
+  const failed=[name,sym,dec,sup].filter(x=>x===null).length;
+  badge.className="badge"+(failed?" warn":" ok");
+  badge.textContent=failed?failed+" field(s) unread":"read from chain";
+
+  // A name that does not look like POT PAL is worth saying out loud rather than glossing.
+  if(sym!==null&&!/^POT\s*PAL$/i.test(sym.replace(/\s+/g,"")) && !/POTPAL/i.test(sym)){
+    box.appendChild(el("div","warnbox",
+      "The symbol at this address reads \""+sym+"\", which is not POTPAL. Either this is not the "
+      +"contract you meant, or the token was deployed under a different symbol."));
+  }
+  return {dec};
+}
+
+/* ---------------- live: venues ---------------- */
+async function readMarket(dec){
+  const badge=$("mktBadge"), box=$("market");
+  badge.className="badge"; badge.textContent="reading…";
+  box.innerHTML='<span class="sub tiny">looking for a POTPAL/WETH pool…</span>';
+
+  const plan=[ecall(V2F,SEL.getPair+padA(POTPAL)+padA(WETH))], meta=[{v:"Uniswap V2"}];
+  for(const f of V3_FEES){
+    plan.push(ecall(V3F,SEL.getPoolV3+padA(POTPAL)+padA(WETH)+padU(f)));
+    meta.push({v:"Uniswap V3 "+(f/10000)+"%"});
+  }
+  for(const st of [false,true]){
+    plan.push(ecall(AEROF,SEL.getPoolAero+padA(POTPAL)+padA(WETH)+padU(st?1:0)));
+    meta.push({v:"Aerodrome "+(st?"stable":"volatile")});
+  }
+  const res=await rpcBatch(plan);
+  const found=[], failed=[];
+  res.forEach((x,i)=>{ const a=addrWord(x);
+    if(a.s==="found") found.push({...meta[i],pool:a.a});
+    else if(a.s==="unknown") failed.push({...meta[i],why:a.why}); });
+
+  box.innerHTML="";
+  if(!found.length){
+    badge.className="badge"+(failed.length?" warn":""); badge.textContent="no pool yet";
+    box.appendChild(el("div","warnbox",
+      "No POTPAL/WETH pool found in "+(meta.length-failed.length)+" of "+meta.length
+      +" venues checked"+(failed.length?", "+failed.length+" could not be read":"")
+      +". Until a pool is funded there is nothing to swap against — nobody can buy this yet, "
+      +"including on any site that offers to."));
+    return;
+  }
+  badge.className="badge ok"; badge.textContent=found.length+" pool"+(found.length>1?"s":"");
+  for(const f of found){
+    const d=el("div","kv");
+    d.appendChild(el("span",null,f.v));
+    const right=el("span");
+    const a=el("a",null,"trade ↗");
+    a.href="https://app.uniswap.org/swap?chain=base&inputCurrency="+WETH+"&outputCurrency="+POTPAL;
+    if(f.v.startsWith("Aerodrome"))
+      a.href="https://aerodrome.finance/swap?from="+WETH+"&to="+POTPAL;
+    a.target="_blank"; a.rel="noopener noreferrer";
+    right.appendChild(a);
+    right.appendChild(document.createTextNode("  "+short(f.pool)));
+    d.appendChild(right); box.appendChild(d);
+  }
+  box.appendChild(el("p","tiny sub",
+    "A pool existing does not mean it holds anything worth trading. Check the depth before you "
+    +"size, and verify the token in the venue against the address above — a link is not a "
+    +"guarantee the venue loaded what you meant."));
+  if(failed.length) box.appendChild(el("div","warnbox",
+    failed.length+" venue(s) could not be read, so this list is scoped to what was: "
+    +failed.map(f=>f.v).join(", ")+"."));
+}
+
+(async()=>{ const info=await readLive(); if(info) await readMarket(info.dec); })();
+
 // Hide the placeholder caption only once the artwork actually loads.
 (function(){
   const img=new Image();
@@ -332,7 +564,7 @@ for(const id of ["name","sym","dec","sup","seedTok","seedEth","ethUsd"])
   $(id).addEventListener("input",render);
 render();
 
-window.__POTPAL={simulate,v2Out,fmtBig,U112,U256,TICK_MAX};
+window.__POTPAL={simulate,v2Out,fmtBig,U112,U256,TICK_MAX,POTPAL,decodeText,addrWord};
 </script>
 </body>
 </html>
