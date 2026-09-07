@@ -67,11 +67,11 @@ python3 -m http.server -d web 8000     # then open http://localhost:8000
 Or just open `web/index.html` from disk — it has no build step and no dependencies. Saving the
 file and opening it locally removes the hosting party from the trust question entirely.
 
-Published build `2026-09-07d`:
+Published build `2026-09-07e`:
 
 ```
-sha256(web/index.html) = a3efdd5b3cb50e2321ef11eaa0eb7ce8152c9116ca3882c8d9c147d26b2dc62d
-sha256(web/size.html)  = a86836b7da74ffe15cfd57a2b41fa12df0957dff927b071347ad8c1620655caf
+sha256(web/index.html) = 111411785740f5cfeb9808dd960bf24f1e10b7dcf5c54f87e2a667f7012533c1
+sha256(web/size.html)  = c3d1aa485b24869cb2baa3b4e0daa65065a81a5c74096cdef08894b92c8822ef
 ```
 
 ### Tests
@@ -80,9 +80,9 @@ sha256(web/size.html)  = a86836b7da74ffe15cfd57a2b41fa12df0957dff927b071347ad8c1
 sh test/run-all.sh         # everything below, no network touched
 ```
 
-**275 assertions across five suites.**
+**287 assertions across five suites.**
 
-`test/run.mjs` — 81, drives the real page in Chromium against `test/mock-rpc.mjs`: Keccak
+`test/run.mjs` — 93, drives the real page in Chromium against `test/mock-rpc.mjs`: Keccak
 vectors, the four EIP-55 reference addresses, the v4 poolId derivation checked against a real
 Base pool id, ABI-string decoding (including a 10-character name, whose length word contains a
 hex letter, and truncated/absurd offsets), result-length discipline, and full flows for the
@@ -205,6 +205,31 @@ different origin, so Chromium blocks it exactly as it would block a real endpoin
 block the checker still renders its identity verdict — the property the whole design rests on —
 suppresses every on-chain claim rather than guessing, and surfaces the relay. The browser cannot
 distinguish CORS from "host is down", so the tool does not claim to either; it says so.
+
+## Branding: `web/bg.png` and the $TWD watermark
+
+Both pages carry a full-bleed background image and a tiled `$TWD` watermark. The watermark is
+an inline SVG data URI — no request, no third-party asset — and the ticker also appears in each
+page header and footer.
+
+**`web/bg.png` is not in the repo. Drop your artwork there and it appears on both pages.**
+It is the only external asset either page loads, it is same-origin, and it is referenced from
+exactly one decorative CSS rule and never from script. So if the file is missing, blocked by
+CSP, or the HTML is saved and opened offline, the pages lose a picture and nothing else — every
+verdict, number and failure state is untouched. A test asserts that no script references it.
+
+Recommended: a wide image (roughly 16:9), under ~300KB. It renders at 13% opacity, inverted in
+dark mode, behind cards that sit on a 90%-opaque ground, so nothing ever competes with a verdict
+someone is reading in a hurry. Tests assert the art stays below 20% opacity, the watermark below
+10%, both layers sit behind the content with `pointer-events:none`, and the verdict box keeps an
+effectively opaque background.
+
+`test/fixture-bg.png` is a generated stand-in used only so the test suite exercises the
+background code path. It is not artwork and is not served in production.
+
+Note the CSP in `vercel.json` had `img-src 'none'`, which would have silently blocked the
+background. It is now `img-src 'self' data:` — same-origin images and inline SVG only, still no
+third-party image loads.
 
 ### Deploying
 

@@ -39,9 +39,15 @@ const eq = (name, got, want) => ok(name, got === want, `got  ${got}\n         wa
 const site = http.createServer((req, res) => {
   const rel = (req.url || "/").split("?")[0];
   const f = path.join(ROOT, "web", rel === "/" ? "index.html" : rel.replace(/^\//, ""));
-  fs.readFile(f, (e, d) => {
+  // web/bg.png is supplied by the site owner and is not in the repo. For tests, fall back
+  // to a clearly-named fixture so the background code path is exercised either way.
+  const target = (!fs.existsSync(f) && f.endsWith("bg.png"))
+    ? path.join(ROOT, "test", "fixture-bg.png") : f;
+  fs.readFile(target, (e, d) => {
     if (e) { res.writeHead(404); res.end(); return; }
-    res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+    const ct = f.endsWith(".png") ? "image/png"
+             : f.endsWith(".svg") ? "image/svg+xml" : "text/html; charset=utf-8";
+    res.writeHead(200, { "content-type": ct });
     res.end(d);
   });
 });
