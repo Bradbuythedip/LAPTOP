@@ -65,6 +65,43 @@ function handle(scn, req) {
     const data = (params[0].data || "").toLowerCase();
     const sel = data.slice(0, 10);
 
+    // ---- multi-venue comparison fixture: three pools of different depth ----
+    if (scn === "venues") {
+      const V2P = "0xaa11111111111111111111111111111111111111";
+      const V3P = "0xbb22222222222222222222222222222222222222";
+      const AEP = "0xcc33333333333333333333333333333333333333";
+      if (sel === "0xe6a43905") return { result: addrWord(V2P) };            // V2 getPair
+      if (sel === "0x1698ee82") {                                           // V3 getPool
+        const fee = BigInt("0x" + data.slice(10 + 128, 10 + 192));
+        return fee === 3000n ? { result: addrWord(V3P) } : { result: W0 };
+      }
+      if (sel === "0x79bc57d5") {                                           // Aerodrome
+        const stable = BigInt("0x" + data.slice(10 + 128, 10 + 192));
+        return stable === 0n ? { result: addrWord(AEP) } : { result: W0 };
+      }
+      if (sel === "0x0dfe1681") return { result: addrWord(USDC) };          // token0 = USDC
+      if (sel === "0x3850c7bd")
+        return to === V3P ? { result: uintWord(SQRT_P_USDC_X96) + "0".repeat(64 * 6) }
+                          : { result: "0x" };
+      if (sel === "0x1a686502")
+        return to === V3P ? { result: uintWord(V3_LIQ_USDC) } : { result: "0x" };
+      if (sel === "0xddca3f43") return { result: uintWord(3000) };
+      if (sel === "0x0902f1ac") {
+        if (to === V2P) return { result: uintWord(200000n * 10n ** 6n)       // deepest: 200k USDC
+                                 + uintWord(2000000n * 10n ** 18n).slice(2) + W0.slice(2) };
+        if (to === AEP) return { result: uintWord(5000n * 10n ** 6n)         // thin: 5k USDC
+                                 + uintWord(50000n * 10n ** 18n).slice(2) + W0.slice(2) };
+        return { result: "0x" };
+      }
+      if (sel === "0x313ce567") return { result: uintWord(to === USDC ? 6 : 18) };
+      if (sel === "0x70a08231") {
+        const who = "0x" + data.slice(10 + 24, 10 + 64);
+        if (who === POOL_MGR) return { result: W0 };                        // nothing in v4
+        return { result: uintWord(500000n * 10n ** 18n) };
+      }
+      return { result: "0x" };
+    }
+
     // ---- size-curve pool fixtures ----
     if (scn.startsWith("pool-")) {
       const rev = scn.startsWith("pool-rev"), usdcQ = scn === "pool-usdc";

@@ -67,12 +67,13 @@ python3 -m http.server -d web 8000     # then open http://localhost:8000
 Or just open `web/index.html` from disk — it has no build step and no dependencies. Saving the
 file and opening it locally removes the hosting party from the trust question entirely.
 
-Published build `2026-09-07f`:
+Published build `2026-09-07g`:
 
 ```
-sha256(web/index.html) = 7f87e882aeb28634c5b5568df77487e120c823a1f9b8af84e9ce89485cebb18b
-sha256(web/size.html)  = ff9eeb89846cc47f6d2be46a5e61622a10f2676c015a4d1df5695b55bfd1640b
-sha256(web/route.html) = c8674ade8957556faac73d2c3a079cc9f9ddb41a11b626691d5dfba48db55638
+sha256(web/index.html) = d8195c985c22a0acc5dc675763c4c261165ec4f611bf9bb0693f798dae4a345c
+sha256(web/size.html)  = cbd07bf51533d4608e61c99770224e041b290441866741620af778e753308c02
+sha256(web/route.html) = 458bbce337055b92096389e29a35096f48766e89d4190708206df85a608f1c67
+sha256(web/buy.html)   = e872b6e3fc5503db7c67720d8327654fdfd9ed249f2f16051e59e5bf782aecdd
 ```
 
 ### Tests
@@ -81,7 +82,7 @@ sha256(web/route.html) = c8674ade8957556faac73d2c3a079cc9f9ddb41a11b626691d5dfba
 sh test/run-all.sh         # everything below, no network touched
 ```
 
-**322 assertions across six suites.**
+**352 assertions across seven suites.**
 
 `test/run.mjs` — 93, drives the real page in Chromium against `test/mock-rpc.mjs`: Keccak
 vectors, the four EIP-55 reference addresses, the v4 poolId derivation checked against a real
@@ -103,12 +104,48 @@ of the JavaScript, plus properties a size curve lives or dies on: output rises w
 effective price strictly worsens, a fee costs exactly its rate at the limit, deeper liquidity
 fills better, and no fill can exceed the output-side virtual reserve. Emits the fixture below.
 
+`test/run-buy.mjs` — 30, drives the venue comparison against a three-venue fixture with
+deliberately different depths and asserts the ranking follows depth, the spread is quantified,
+and no wallet code exists anywhere in the page.
+
 `test/run-route.mjs` — 35, asserts `web/route.html` makes no network request of any
 kind, offers no wallet or deposit address, and gets the Solana-is-not-EVM distinction right.
 
 `test/run-size.mjs` — 66, asserts `web/size.html` agrees with that Python fixture to 1e-12,
 then drives the page against constant-product, concentrated, capped, dry, stable, foreign-token
 and no-code pool fixtures.
+
+## `web/buy.html` — where to buy
+
+The go-to question on launch day is not "can I swap here", it is **"which venue actually gives
+me the most LAPTOP for the size I intend"** — and nobody answers that for a new pool. Every
+aggregator routes for you and shows one number; none of them show you what the alternatives
+would have paid, and on a thin launch pool the gap is large.
+
+Enter an amount, and it reads the Uniswap V2 pair, all seven Base V3 fee tiers, both Aerodrome
+pools and the v4 PoolManager, prices your exact size against each using the same math as the
+size curve, and ranks them by what you end up holding. It then states the spread in the terms
+that matter: *picking the best venue instead of the worst is worth N LAPTOP on this size — X%
+more for the same money.*
+
+Everything the rest of the repo insists on carries over. The chain is confirmed before anything
+is priced. Constant-product venues are exact; concentrated ones are labelled a best case. A fill
+can never exceed what the pool actually holds. Aerodrome stable pools are declined rather than
+priced with the wrong curve. Venues that could not be read are listed under "not priced" instead
+of quietly dropped, so the ranking is always scoped to what was actually read. The v4 gate is
+reported either way — an empty PoolManager proves the branch negative in one call, and a
+non-empty one says plainly that hooked v4 pools cannot be enumerated and may hold a better or
+worse fill than anything listed.
+
+**There is no swap button, and there should not be one.** This repo's own failure analysis says
+the single thing it cannot defend against is being cloned at another address. Today a clone can
+only lie to you. The moment this domain teaches people to connect a wallet, a clone drains them
+instead — the site would become the highest-quality phishing template for its own brand. Staying
+something that *cannot* spend your money is the most valuable property it has, and a test
+asserts no wallet or transaction-construction code exists in the page.
+
+Venue links carry the contract address so nobody retypes it, and the pool address is printed
+beside each link so what the venue loaded can be checked against what was read here.
 
 ## `web/route.html` — get ready before launch
 
