@@ -49,6 +49,42 @@ function handle(scn, req) {
   }
   if (method === "eth_blockNumber") return { result: "0x1470c27" };
 
+  // ---- deposit-contract fixtures for web/slot.html ----
+  // Bytecode is synthesised as a dispatch table: the selectors present are the point.
+  if (scn.startsWith("slot-")) {
+    const W0 = "0x" + "0".repeat(64);
+    const word = a => "0x" + a.replace(/^0x/, "").padStart(64, "0");
+    const IMPL = "0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc";
+    const BEACON = "0xa3f0ad74e5423aebfd80d3ef4346578335a9a72aeaee59ff6cb3582b35133d50";
+    const ZOS = "0x7050c9e0f4ca769c69bd3a8ef740bc37934f8e2c036e5a723fd8ee048ed3f8c3";
+    const OWNER = "0x1111111111111111111111111111111111111111";
+    const dispatch = sels => "0x6080604052" + sels.map(x => "63" + x + "14").join("") + "00".repeat(80);
+    if (method === "eth_getCode") {
+      if (scn === "slot-eoa") return { result: "0x" };
+      if (scn === "slot-proxy") return { result: dispatch(["5c60da1b"]) };
+      if (scn === "slot-noexit") return { result: dispatch(["8da5cb5b", "f2fde38b"]) };
+      if (scn === "slot-unreadable") return { error: { code: -32000, message: "node error" } };
+      return { result: dispatch(["3ccfd60b", "590e1ae3", "8da5cb5b", "f2fde38b", "715018a6"]) };
+    }
+    if (method === "eth_getStorageAt") {
+      const slot = (params[1] || "").toLowerCase();
+      if (scn === "slot-proxy" && slot === IMPL) return { result: word("0x2222222222222222222222222222222222222222") };
+      if (scn === "slot-beacon" && slot === BEACON) return { result: word("0x3333333333333333333333333333333333333333") };
+      if (scn === "slot-zos" && slot === ZOS) return { result: word("0x4444444444444444444444444444444444444444") };
+      if (scn === "slot-proxy" && slot === "0xb53127684a568b3173ae13b9f8a6016e243e63b6e8ee1178d6a717850b5d6103")
+        return { result: word(OWNER) };
+      if (scn === "slot-slotunreadable") return { error: { code: -32000, message: "node error" } };
+      return { result: W0 };
+    }
+    if (method === "eth_getBalance") return { result: "0x" + (5n * 10n ** 18n).toString(16) };
+    if (method === "eth_call") {
+      if (scn === "slot-renounced") return { result: W0 };
+      if (scn === "slot-noowner") return { result: "0x" };
+      if (scn === "slot-ownerfail") return { error: { code: 3, message: "execution reverted" } };
+      return { result: word(OWNER) };
+    }
+  }
+
   if (method === "eth_getCode") {
     const [addr, blk] = params;
     if (scn === "pool-nocode") return { result: "0x" };

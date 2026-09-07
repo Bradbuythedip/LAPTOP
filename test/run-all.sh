@@ -26,3 +26,6 @@ echo
 echo "=== browser: web/order.html ==="
 node test/run-order.mjs
 echo
+echo "=== browser: web/slot.html ==="
+node test/run-slot.mjs
+echo
