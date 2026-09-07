@@ -107,6 +107,48 @@ body::before{
   </div>
 </div>
 
+<div class="card" id="phantomCard">
+  <div class="hdr"><h2>Using Phantom?</h2><span class="badge warn">read this one first</span></div>
+  <div class="badbox">
+    <b>LAPTOP is on Base. There is no LAPTOP on Solana.</b> If you search a Solana app for
+    LAPTOP and something comes up, <b>it is not this token</b> — and it will be there, because a
+    Base launch with a Phantom-heavy audience is exactly the setup a lookalike is built for.
+    Check every address against the <a href="/">contract checker</a> before you spend anything.
+    Nothing you can buy on Solana becomes LAPTOP later.
+  </div>
+  <div class="okbox">
+    <b>The good news: Phantom already speaks Base.</b> You do not need a second wallet and you
+    may not need a bridge UI at all — Phantom can hold ETH and USDC on Base in the same app you
+    already have, and swap into it. Switch networks in Phantom and check for yourself; this tool
+    has no network access and cannot confirm it for you.
+  </div>
+  <p style="font-size:13px;margin:8px 0 6px"><b>What you are doing is moving your own money to
+  your own address.</b> There is nothing to deposit into and nobody to deposit with. No page,
+  including this one, should ever be the thing holding your funds between now and launch.</p>
+  <ol>
+    <li><b>Turn on Base in Phantom</b> and switch to it. Your Solana balances stay where they
+    are; Base is a separate account inside the same wallet.</li>
+    <li><b>Get value onto Base.</b> Phantom's own swap may route Solana → Base directly. If it
+    will not, use one of the bridges below that lists Solana explicitly — an EVM-only bridge
+    cannot see Solana at all.</li>
+    <li><b>Keep some ETH on Base for gas.</b> <b>This is where people get stuck.</b> Base gas is
+    paid in ETH, so a wallet holding only USDC on Base cannot send anything — not a swap, not
+    even a rescue. A few dollars of ETH is enough, and without it the rest of this is wasted.</li>
+    <li><b>Verify the address on launch day</b> with the <a href="/">checker</a>, then use
+    <a href="/buy.html">where to buy</a> to see which venue actually fills your size best.</li>
+    <li><b>If you would rather not be awake for it</b>, a <a href="/order.html">standing
+    order</a> lets you set a ceiling and walk away, with the money staying in your wallet until
+    it fills.</li>
+  </ol>
+  <p class="tiny dim" style="margin:0"><b>Why there is no Connect button here, and never will
+  be.</b> This site's one safety rule only works if it is absolute: <i>a page at this address
+  that asks you to connect a wallet is a fake — close it.</i> That rule costs you one extra tap
+  on launch day and it is the only defence that works against a cloned site, because a clone can
+  copy every pixel of this page but it cannot make our prompt appear when we never prompt. The
+  moment we add a Connect button, the rule dies and the clone's prompt looks exactly like ours.
+  So: connect Phantom to the venue you swap on, after you have checked the address here.</p>
+</div>
+
 <div class="card">
   <div class="hdr"><h2>You cannot preorder a token that has no market</h2>
     <span class="badge warn">read this first</span></div>

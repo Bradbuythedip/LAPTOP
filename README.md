@@ -67,12 +67,12 @@ python3 -m http.server -d web 8000     # then open http://localhost:8000
 Or just open `web/index.html` from disk — it has no build step and no dependencies. Saving the
 file and opening it locally removes the hosting party from the trust question entirely.
 
-Published build `2026-09-07k`:
+Published build `2026-09-07l`:
 
 ```
-sha256(web/index.html) = 6fbe2386f020117966823fb19de27c8fb0b89700932e9497a810190a93927ab4
+sha256(web/index.html) = bbf991aa4eaef87644123235494544f186fd07c5a82b90c3d34aaa19422707b2
 sha256(web/size.html)  = 0948acf9ec3fc803731261885b06373c1839ee29b51c0e9cb8f1287a26b1cdad
-sha256(web/route.html) = 7e50b7ad993b7d96cbeb740ad347c0060b7672589d569bc691454f965b15c4c9
+sha256(web/route.html) = 4703174e57e34af2d2b23c2a1ce7877b6f1a636f885c6eeb395b98876ab3c2ff
 sha256(web/buy.html)   = a1c11dcc49463985028f9330312566c314dcee1455d8b36992e53858f853bccd
 sha256(web/order.html) = 3479449a5d61e4010958cdc27a433d22b8c70ed42bc4cfbe9ec1e9d710650b0c
 sha256(web/slot.html)  = a8e7e0861a1017ea2185d67d3888ad9db75f333c03cd36fe90782e8b9dcc3107
@@ -84,7 +84,7 @@ sha256(web/slot.html)  = a8e7e0861a1017ea2185d67d3888ad9db75f333c03cd36fe90782e8
 sh test/run-all.sh         # everything below, no network touched
 ```
 
-**557 assertions across nine suites.**
+**574 assertions across nine suites.**
 
 `test/run.mjs` — 118, drives the real page in Chromium against `test/mock-rpc.mjs`: Keccak
 vectors, the four EIP-55 reference addresses, the v4 poolId derivation checked against a real
@@ -117,12 +117,35 @@ implementation written from the pool identity rather than the page's algebra, th
 splitting laws below, refusal of ceilings under the fee floor, and the promises the page
 declines to make.
 
-`test/run-route.mjs` — 34, asserts `web/route.html` makes no network request of any
+`test/run-route.mjs` — 51, asserts `web/route.html` makes no network request of any
 kind, offers no wallet or deposit address, and gets the Solana-is-not-EVM distinction right.
 
 `test/run-size.mjs` — 66, asserts `web/size.html` agrees with that Python fixture to 1e-12,
 then drives the page against constant-product, concentrated, capped, dry, stable, foreign-token
 and no-code pool fixtures.
+
+### The Phantom track
+
+Phantom users are the most exposed audience this launch has, and for a reason that has nothing to
+do with Phantom: **LAPTOP is on Base, and a Base launch with a Solana-native audience is exactly
+the setup a lookalike is built for.** Search a Solana app for LAPTOP and something will come up.
+It will not be this token, and nothing bought there becomes this token later. That warning leads
+the section, ahead of any instructions.
+
+The useful part after that is that the bridge problem may not exist: Phantom supports Base
+natively, so the same app can hold ETH and USDC there — marked unverified from here, like every
+other external claim on this site. Then the step that actually strands people: **Base gas is paid
+in ETH, so a wallet holding only USDC on Base cannot send anything**, not a swap and not a rescue.
+
+### Why there is no Connect button, in the page's own words
+
+The site's one safety rule is only worth anything if it is absolute: *a page at this address that
+asks you to connect a wallet is a fake — close it.* A clone can copy every pixel of these pages,
+but it cannot make our prompt appear when we never prompt. Adding a Connect button would cost
+that rule and hand the clone a prompt indistinguishable from ours, in exchange for saving one tap
+on launch day. So the section touches no wallet object at all — **not even to detect that one is
+installed** — and a test asserts that, then sends the reader to connect Phantom to the venue they
+swap on instead, after checking the address here.
 
 ## `web/slot.html` — getting a slot
 
