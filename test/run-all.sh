@@ -8,5 +8,11 @@ echo
 echo "=== python: patched script integration ==="
 python3 test/test_scripts.py
 echo
+echo "=== python: size-curve reference math ==="
+python3 test/test_size_math.py
+echo
 echo "=== browser: web/index.html ==="
 node test/run.mjs
+echo
+echo "=== browser: web/size.html ==="
+node test/run-size.mjs

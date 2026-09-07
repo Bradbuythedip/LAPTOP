@@ -173,6 +173,16 @@ def dead_call(to, data):
 eq("v4 state under a failing endpoint -> unknown, never 'absent'",
    L.v4_pool_state(dead_call, PID)[0], "unknown")
 
+# liquidity is a uint128 alone in its slot: the high 128 bits are structurally zero.
+# Nonzero high bits mean we are reading the wrong slot, and must surface as unknown rather
+# than as an astronomically large liquidity figure.
+eq("liquidity word with junk in the high half -> unknown, not a nonsense number",
+   L.v4_pool_state(v4_caller(SQRT, (1 << 200) | 500), PID)[0], "unknown")
+eq("a full-range uint128 liquidity value is still accepted",
+   L.v4_pool_state(v4_caller(SQRT, (1 << 128) - 1), PID)[0], "active")
+eq("_liquidity_from_word masks to 128 bits", L._liquidity_from_word((1 << 128) - 1), (1 << 128) - 1)
+eq("_liquidity_from_word rejects high bits", L._liquidity_from_word(1 << 128), None)
+
 # ================================================================ derivations
 print("── derivations (cross-checked against the JS implementation)")
 eq("pool_id reproduces the real Base USDC/WETH 0.05% pool id",

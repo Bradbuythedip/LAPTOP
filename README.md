@@ -4,8 +4,10 @@ On-chain tooling built while tracing the `$LAPTOP` token before its Sept 9, 2026
 
 Two halves:
 
-- **`web/`** — a contract checker for people who are about to buy. One self-contained HTML file,
-  no wallet, no transactions. Deployed at [totalworlddomination.xyz](https://totalworlddomination.xyz).
+- **`web/`** — two read-only tools for people who are about to buy, at
+  [totalworlddomination.xyz](https://totalworlddomination.xyz). One self-contained HTML file each,
+  no wallet, no transactions: `index.html` answers *is this the right contract*, `size.html`
+  answers *what does my size actually get me*.
 - **`*.py`** — the tracing and execution tooling: find the pools, watch for the first real
   liquidity, execute a Uniswap v4 swap, execute a classic V2/V3/Aerodrome swap.
 
@@ -65,10 +67,11 @@ python3 -m http.server -d web 8000     # then open http://localhost:8000
 Or just open `web/index.html` from disk — it has no build step and no dependencies. Saving the
 file and opening it locally removes the hosting party from the trust question entirely.
 
-Published build `2026-09-07b`:
+Published build `2026-09-07c`:
 
 ```
-sha256(web/index.html) = cfc4acfb80082549426f69032fff0bbfe5c989491fd749754f4be5442208edc3
+sha256(web/index.html) = 33606c985704f0993a09db79256cbcd7aab6b9dc95486fa6d295f1f1f69fdde1
+sha256(web/size.html)  = 05704d99de9e547b2c4e817e1cf78064985e322c8d9817ad5177fc256a811266
 ```
 
 ### Tests
@@ -77,7 +80,7 @@ sha256(web/index.html) = cfc4acfb80082549426f69032fff0bbfe5c989491fd749754f4be54
 sh test/run-all.sh         # everything below, no network touched
 ```
 
-**161 assertions across three suites.**
+**248 assertions across five suites.**
 
 `test/run.mjs` — 72, drives the real page in Chromium against `test/mock-rpc.mjs`: Keccak
 vectors, the four EIP-55 reference addresses, the v4 poolId derivation checked against a real
@@ -86,13 +89,63 @@ hex letter, and truncated/absurd offsets), result-length discipline, and full fl
 happy path, pools present, wrong chain, a flaky rate-limited node, and an endpoint that refuses
 JSON-RPC batches. Needs `playwright`.
 
-`test/test_laptop_base.py` — 61, pure functions against a fake `call`, so every failure mode is
+`test/test_laptop_base.py` — 65, pure functions against a fake `call`, so every failure mode is
 directly reachable: none-vs-unknown, Aerodrome's reverting `getPair`, the V3/Aerodrome selector
 collision, tier-enabled vs pool-absent, the three-way v4 state including a packed `slot0`, and
 decoder edge cases.
 
 `test/test_scripts.py` — 28, the patched scripts against a fake node where the *only* pool is
 USDC-quoted — the exact shape that used to print "no liquidity anywhere".
+
+`test/test_size_math.py` — 35, a reference implementation of the swap math written independently
+of the JavaScript, plus properties a size curve lives or dies on: output rises with size,
+effective price strictly worsens, a fee costs exactly its rate at the limit, deeper liquidity
+fills better, and no fill can exceed the output-side virtual reserve. Emits the fixture below.
+
+`test/run-size.mjs` — 48, asserts `web/size.html` agrees with that Python fixture to 1e-12,
+then drives the page against constant-product, concentrated, capped, dry, stable, foreign-token
+and no-code pool fixtures.
+
+## `web/size.html` — the size curve
+
+The number that decides your size, and unlike leverage it exists on day one. Feed it a pool and
+it prices a ladder — 0.1 / 0.25 / 0.5 / 1 / 2 / 5 / 10 / 25 / 50 of the quote asset — showing
+tokens out, effective price and how much worse than spot each fill lands. Plus a box for your
+own size.
+
+Leverage is not the alternative on launch day and this repo does not pretend otherwise. Lending
+markets onboard an asset by governance vote, weeks at minimum; perp venues list after volume
+proves out, not before. The workarounds all fail on day one: borrowing against ETH to buy LAPTOP
+is leverage on your ETH, not on LAPTOP, and gives you two uncorrelated ways to be liquidated; a
+permissionless isolated market needs someone to supply the loan capital, which for an hours-old
+memecoin means you, lending yourself money with extra steps and an oracle you have to stand up.
+An isolated market with a TWAP oracle is a real product about a week after launch, once there is
+enough depth that manipulating the pool to liquidate borrowers is expensive. Thin-pool oracle
+manipulation is the standard attack on exactly that setup, so depth has to come first.
+
+**How trustworthy each number is, by pool type:**
+
+| Pool | Status | Why |
+| --- | --- | --- |
+| Uniswap V2, Aerodrome volatile | **exact** | the same constant-product arithmetic the pool runs, in integers |
+| Uniswap V3, Slipstream | **best case** | assumes current in-range liquidity extends across the whole trade |
+| Aerodrome stable | **declined** | the x³y+y³x curve is not implemented, so it prices nothing rather than pricing it wrong |
+| Uniswap v4 | not supported | a v4 pool is a key in the PoolManager, not an address |
+
+The concentrated-liquidity caveat is the important one. Real pools thin out at range boundaries
+the tool does not read, and when that happens you get **less** than shown — so for a new pool
+with one position, a large size is very likely worse than the number on screen. Every such row
+is labelled a best case rather than an answer.
+
+Two guards on top of the arithmetic: no fill can exceed the pool's actual balance of LAPTOP
+(rows that would are marked as unfillable, whatever the formula says), and the result box is
+graded by severity — a 30%-worse fill is never rendered in the colour that means "fine".
+
+The math is computed over the *virtual* reserves `x = L/√P`, `y = L·√P`, because for a single
+range with constant `L` concentrated liquidity is exactly constant product over those. The
+textbook closed form `L·(√P − √P_next)` is algebraically identical but subtracts two nearly-equal
+large numbers, losing ~1e-10 of relative precision to cancellation and underflowing to zero
+outright on small probes. `test/test_size_math.py` holds both forms and asserts they agree.
 
 ### Deploying
 

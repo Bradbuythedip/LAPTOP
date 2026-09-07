@@ -68,6 +68,7 @@ SEL = {
 POOLS_SLOT = 6          # PoolManager: mapping(PoolId => Pool.State) _pools
 SLOT0_OFFSET = 0        # Pool.State.slot0     - sqrtPriceX96 in the low 160 bits
 LIQUIDITY_OFFSET = 3    # Pool.State.liquidity - ACTIVE (in-range) liquidity only
+LIQ_MASK = (1 << 128) - 1
 
 
 def cs(a: str) -> str:
@@ -253,7 +254,10 @@ def v4_pool_state(call, pid: str):
         if len(raw) >= 64 + 4 * 32:
             words = [raw[64 + i * 32: 96 + i * 32] for i in range(4)]
             slot0 = int.from_bytes(words[SLOT0_OFFSET], "big")
-            liq = int.from_bytes(words[LIQUIDITY_OFFSET], "big")
+            liq = _liquidity_from_word(int.from_bytes(words[LIQUIDITY_OFFSET], "big"))
+            if liq is None:
+                return ("unknown", {"why": "liquidity slot has unexpected high bits - "
+                                           "this is not the slot we think it is"})
             return _classify(slot0, liq)
     except Exception:  # noqa: BLE001
         pass  # fall through to single-slot reads
@@ -263,7 +267,22 @@ def v4_pool_state(call, pid: str):
     lq = read_uint(call, POOL_MANAGER, SEL["extsload"] + pad_uint(base + LIQUIDITY_OFFSET))
     if lq[0] != "found":
         return ("unknown", {"why": lq[1]})
-    return _classify(s0[1], lq[1])
+    liq = _liquidity_from_word(lq[1])
+    if liq is None:
+        return ("unknown", {"why": "liquidity slot has unexpected high bits - "
+                                   "this is not the slot we think it is"})
+    return _classify(s0[1], liq)
+
+
+def _liquidity_from_word(word: int):
+    """Pool.State.liquidity is a uint128 sitting alone in its slot - the member after it is a
+    mapping, which always starts a fresh slot, so the high 128 bits are structurally zero.
+    v4's own StateLibrary truncates with uint128(uint256(...)). If the high half is NOT zero
+    we are not reading the slot we think we are, and reporting the whole 256-bit word as a
+    liquidity figure would be nonsense dressed as data. Returns None in that case."""
+    if word >> 128:
+        return None
+    return word & LIQ_MASK
 
 
 def _classify(slot0: int, liquidity: int):
