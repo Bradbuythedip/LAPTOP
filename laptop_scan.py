@@ -28,6 +28,8 @@ from datetime import datetime, timezone
 from web3 import Web3
 from eth_abi import decode
 
+import laptop_base as LB
+
 CHAIN_ID = 8453
 LAPTOP = Web3.to_checksum_address("0xB095274743941e953c746F9C228DA9c18Bb6ec29")
 POOL_MANAGER = Web3.to_checksum_address("0x498581fF718922c3f8e6A244956aF099B2652b2b")  # Uniswap v4, Base
@@ -223,12 +225,23 @@ def decode_init(log):
             "block": int(log["blockNumber"], 16) if isinstance(log["blockNumber"], str) else log["blockNumber"]}
 
 
-def v4_liquidity(w3, pool_id):
-    base = int.from_bytes(Web3.keccak(bytes.fromhex(pool_id[2:]) + POOLS_SLOT.to_bytes(32, "big")), "big")
-    slot = (base + LIQUIDITY_OFFSET).to_bytes(32, "big")
-    data = "0x1e2eaeaf" + slot.hex()  # extsload(bytes32)
-    raw = rpc(w3.eth.call, {"to": POOL_MANAGER, "data": data})
-    return int.from_bytes(raw, "big")
+def v4_state(w3, pool_id):
+    """Three-way pool state, which reading one slot cannot give you.
+
+    extsload on an unwritten slot returns 32 zero bytes with no error, so liquidity == 0
+    cannot distinguish "this pool key was never created" from "created but empty". v4's own
+    initialization sentinel is slot0.sqrtPriceX96 at offset +0, so read both:
+
+        absent  no pool has ever existed at this key
+        empty   price is set, nothing tradable at it
+        active  in-range liquidity exists
+
+    "active" is ACTIVE (in-range) liquidity: a pool holding real deposits entirely out of
+    range reads zero, so "empty" means "nothing tradable here now", not "holds no tokens".
+    """
+    def c(to, data):
+        return rpc(w3.eth.call, {"to": Web3.to_checksum_address(to), "data": data})
+    return LB.v4_pool_state(c, pool_id)
 
 
 def main():
@@ -315,11 +328,26 @@ def main():
         print("   none found.")
     for lg in inits:
         p = decode_init(lg)
-        liq = v4_liquidity(w3, p["id"])
-        print(f"   pool {p['id']}\n     currencies {p['c0']} / {p['c1']}  initialized at block {p['block']}  live liquidity {liq}")
+        state, info = v4_state(w3, p["id"])
+        liq = info.get("liquidity") if isinstance(info, dict) else None
+        shown = "could not read" if state == "unknown" else f"{liq}"
+        print(f"   pool {p['id']}\n     currencies {p['c0']} / {p['c1']}  "
+              f"initialized at block {p['block']}  in-range liquidity {shown}")
         describe_pool(w3, lg, p)
-        if liq == 0:
-            print("     (initialized but empty: no tokens to buy here)")
+        if state == "absent":
+            print("     (no pool state at this key: nothing was ever initialized here)")
+        elif state == "empty":
+            print("     (initialized but empty: price is set, nothing tradable at it)")
+        elif state == "active":
+            quote = p["c1"] if p["c0"].lower() == LAPTOP.lower() else p["c0"]
+            if not LB.is_tradable_quote(quote):
+                print(f"     (LIVE, but quoted in {LB.quote_label(quote)} - a sidecar, "
+                      f"not a way to buy LAPTOP with money you hold)")
+            else:
+                print(f"     (LIVE in {LB.quote_label(quote)})")
+        else:
+            print(f"     (could not read pool state: {info.get('why') if isinstance(info, dict) else info})")
+            print("     ^ this is an unknown, not an empty pool.")
 
     print("\nDone.")
 

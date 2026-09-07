@@ -28,6 +28,8 @@ import time
 
 from web3 import Web3
 
+import laptop_base as LB
+
 # ---------- constants (Base mainnet) ----------
 CHAIN_ID = 8453
 LAPTOP = Web3.to_checksum_address("0xB095274743941e953c746F9C228DA9c18Bb6ec29")
@@ -40,7 +42,10 @@ UNI_V3_ROUTER02 = Web3.to_checksum_address("0x2626664c2603336E57B271c5C0b26F4217
 UNI_V3_QUOTER2 = Web3.to_checksum_address("0x3d4e44Eb1374240CE5F1B871ab261CD16335B76a")
 AERO_FACTORY = Web3.to_checksum_address("0x420DD381b31aEf6683db6B902084cB0FFECe40Da")
 AERO_ROUTER = Web3.to_checksum_address("0xcF77a3Ba9A5CA399B7c97c74d54e5b1Beb874E43")
-V3_FEES = (100, 500, 3000, 10000)
+# Fee tiers and quote assets come from laptop_base so they cannot drift again. Base uniquely
+# enables the 200/300/400 tiers; probing only four of seven printed "no V3 pool" without
+# having looked at three of them.
+V3_FEES = LB.V3_FEES
 ZERO = "0x0000000000000000000000000000000000000000"
 
 # ---------- minimal ABIs ----------
@@ -144,71 +149,149 @@ def dexscreener_pools(token):
         return []
 
 
-def find_pools(w3, amount_in, me):
-    """Returns list of dicts: {venue, pool, eth_liq_wei, quote_out, build_tx(min_out, deadline)}"""
-    found = []
+def _reader(w3):
+    """Adapter so the shared read helpers in laptop_base can drive this script's RPC."""
+    def call(to, data):
+        return rpc(w3.eth.call, {"to": Web3.to_checksum_address(to), "data": data})
+    return call
 
-    # Uniswap V2
-    f = w3.eth.contract(UNI_V2_FACTORY, abi=V2_FACTORY_ABI)
-    pair = rpc(f.functions.getPair(LAPTOP, WETH).call)
-    print(f"  Uniswap V2 pair:        {pair}")
-    if pair != ZERO:
-        p = w3.eth.contract(pair, abi=V2_PAIR_ABI)
-        r0, r1, _ = rpc(p.functions.getReserves().call)
-        t0 = rpc(p.functions.token0().call)
-        eth_liq = r1 if Web3.to_checksum_address(t0) == LAPTOP else r0
-        router = w3.eth.contract(UNI_V2_ROUTER, abi=V2_ROUTER_ABI)
-        out = rpc(router.functions.getAmountsOut(amount_in, [WETH, LAPTOP]).call)[-1]
 
-        def build(min_out, deadline, _r=router):
-            return _r.functions.swapExactETHForTokensSupportingFeeOnTransferTokens(
-                min_out, [WETH, LAPTOP], me, deadline)
-        found.append({"venue": "Uniswap V2", "pool": pair, "eth_liq": eth_liq, "out": out,
-                      "router": UNI_V2_ROUTER, "build": build})
+def survey_quotes(w3):
+    """Every venue x every quote asset. Returns (rows, unknowns).
 
-    # Uniswap V3
-    f3 = w3.eth.contract(UNI_V3_FACTORY, abi=V3_FACTORY_ABI)
+    This exists because checking only LAPTOP/WETH printed "no liquidity anywhere" while the
+    only observed LAPTOP pools were USDC-quoted. A negative here is scoped to what was
+    actually read: a cell we could not read is an unknown, never a "no".
+    """
+    call = _reader(w3)
+    rows, unknowns = [], []
+
+    def record(venue, qlabel, quote, res):
+        state, val = res
+        if state == "found":
+            rows.append({"venue": venue, "quote": qlabel, "quote_addr": quote, "pool": val})
+        elif state == "unknown":
+            unknowns.append((venue, qlabel, val))
+
+    for qlabel, quote in LB.QUOTES:
+        record("Uniswap V2", qlabel, quote, LB.find_v2_pair(call, LB.LAPTOP, quote))
+
+    # A V3 tier that was never enabled and a tier with no pool both return address(0).
+    # feeAmountTickSpacing is the only thing that tells them apart, so ask once per tier.
+    enabled = {}
     for fee in V3_FEES:
-        time.sleep(0.25)
-        pool = rpc(f3.functions.getPool(LAPTOP, WETH, fee).call)
-        print(f"  Uniswap V3 {fee/1_000_000:.2%} pool:  {pool}")
-        if pool == ZERO:
+        st, v = LB.v3_tier_enabled(call, fee)
+        enabled[fee] = (v if st == "found" else None)
+        if st == "unknown":
+            unknowns.append((f"Uniswap V3 {fee/1e6:.2%}", "-", "tier enablement: " + str(v)))
+    for qlabel, quote in LB.QUOTES:
+        for fee in V3_FEES:
+            if enabled.get(fee) == 0:
+                continue  # tier genuinely not enabled on Base; not a missed pool
+            record(f"Uniswap V3 {fee/1e6:.2%}", qlabel, quote,
+                   LB.find_v3_pool(call, LB.LAPTOP, quote, fee))
+
+    for qlabel, quote in LB.QUOTES:
+        for stable in (False, True):
+            record(f"Aerodrome {'stable' if stable else 'volatile'}", qlabel, quote,
+                   LB.find_aero_pool(call, LB.LAPTOP, quote, stable))
+
+    # Aerodrome Slipstream is a second AMM whose pools are invisible to the v2 factory, and
+    # its factory address could not be verified. Ask the registry instead of guessing.
+    st, facs = LB.aero_factories(call)
+    if st != "found":
+        unknowns.append(("Aerodrome registry", "-", str(facs)))
+    else:
+        for fac in facs:
+            if fac.lower() == LB.AERO_FACTORY:
+                continue
+            probed = False
+            for qlabel, quote in LB.QUOTES:
+                for spacing in LB.CL_TICK_SPACINGS:
+                    r = LB.find_cl_pool(call, fac, LB.LAPTOP, quote, spacing)
+                    if r[0] != "unknown":
+                        probed = True
+                    record(f"Aerodrome CL ts={spacing} @{fac[:10]}", qlabel, quote, r)
+            if not probed:
+                unknowns.append((f"factory {fac}", "-", "not readable with any known ABI"))
+    return rows, unknowns
+
+
+def find_pools(w3, amount_in, me):
+    """Returns list of dicts: {venue, pool, eth_liq, out, router, build}
+
+    Only WETH-quoted pools are returned as buyable: this script spends ETH, and routing
+    through a USDC- or USDbC-quoted pool needs approvals and a multi-hop path it does not
+    build. Non-WETH pools are still reported, loudly, so a filling USDC pool is never
+    invisible - it just is not something this script will trade for you.
+    """
+    rows, unknowns = survey_quotes(w3)
+    cells = len(LB.QUOTES) * (1 + len(V3_FEES) + 2)
+    print(f"  surveyed {cells}+ venue/quote combinations across "
+          f"{', '.join(q for q, _ in LB.QUOTES)}")
+    for venue, qlabel, why in unknowns:
+        print(f"  COULD NOT CHECK  {venue} / {qlabel}: {why}")
+    if unknowns:
+        print("  ^ these are unknowns, not 'no pool'. Any statement below is scoped to what was read.")
+
+    non_weth = [r for r in rows if r["quote_addr"].lower() != WETH.lower()]
+    for r in non_weth:
+        print(f"  FOUND (not buyable here)  {r['venue']}  {r['quote']}-quoted  {r['pool']}")
+    if non_weth:
+        print("  ^ this script spends ETH and does not build multi-hop routes. Use a UI or "
+              "laptop_v4.py for these.")
+
+    found = []
+    for r in rows:
+        if r["quote_addr"].lower() != WETH.lower():
             continue
-        weth = w3.eth.contract(WETH, abi=ERC20_ABI)
-        eth_liq = rpc(weth.functions.balanceOf(pool).call)
-        q = w3.eth.contract(UNI_V3_QUOTER2, abi=V3_QUOTER2_ABI)
+        venue, pool = r["venue"], Web3.to_checksum_address(r["pool"])
         try:
-            out = rpc(q.functions.quoteExactInputSingle((WETH, LAPTOP, amount_in, fee, 0)).call)[0]
+            if venue.startswith("Uniswap V2"):
+                p = w3.eth.contract(pool, abi=V2_PAIR_ABI)
+                r0, r1, _ = rpc(p.functions.getReserves().call)
+                t0 = rpc(p.functions.token0().call)
+                eth_liq = r1 if Web3.to_checksum_address(t0) == LAPTOP else r0
+                router = w3.eth.contract(UNI_V2_ROUTER, abi=V2_ROUTER_ABI)
+                out = rpc(router.functions.getAmountsOut(amount_in, [WETH, LAPTOP]).call)[-1]
+
+                def build(min_out, deadline, _r=router):
+                    return _r.functions.swapExactETHForTokensSupportingFeeOnTransferTokens(
+                        min_out, [WETH, LAPTOP], me, deadline)
+                found.append({"venue": venue, "pool": pool, "eth_liq": eth_liq, "out": out,
+                              "router": UNI_V2_ROUTER, "build": build})
+
+            elif venue.startswith("Uniswap V3"):
+                fee = int(round(float(venue.split()[-1].rstrip('%')) * 10000))
+                weth = w3.eth.contract(WETH, abi=ERC20_ABI)
+                eth_liq = rpc(weth.functions.balanceOf(pool).call)
+                q = w3.eth.contract(UNI_V3_QUOTER2, abi=V3_QUOTER2_ABI)
+                out = rpc(q.functions.quoteExactInputSingle((WETH, LAPTOP, amount_in, fee, 0)).call)[0]
+                router = w3.eth.contract(UNI_V3_ROUTER02, abi=V3_ROUTER02_ABI)
+
+                def build(min_out, deadline, _r=router, _fee=fee):
+                    return _r.functions.exactInputSingle((WETH, LAPTOP, _fee, me, amount_in, min_out, 0))
+                found.append({"venue": venue, "pool": pool, "eth_liq": eth_liq, "out": out,
+                              "router": UNI_V3_ROUTER02, "build": build})
+
+            elif venue.startswith("Aerodrome ") and "CL" not in venue:
+                stable = venue.endswith("stable")
+                p = w3.eth.contract(pool, abi=AERO_POOL_ABI)
+                r0, r1, _ = rpc(p.functions.getReserves().call)
+                t0 = rpc(p.functions.token0().call)
+                eth_liq = r1 if Web3.to_checksum_address(t0) == LAPTOP else r0
+                router = w3.eth.contract(AERO_ROUTER, abi=AERO_ROUTER_ABI)
+                route = [(WETH, LAPTOP, stable, AERO_FACTORY)]
+                out = rpc(router.functions.getAmountsOut(amount_in, route).call)[-1]
+
+                def build(min_out, deadline, _r=router, _route=route):
+                    return _r.functions.swapExactETHForTokens(min_out, _route, me, deadline)
+                found.append({"venue": venue, "pool": pool, "eth_liq": eth_liq, "out": out,
+                              "router": AERO_ROUTER, "build": build})
+            else:
+                print(f"  FOUND (no route built)  {venue}  {pool}")
         except Exception as e:  # noqa: BLE001
-            print(f"    quote failed on {fee} tier: {e}")
-            continue
-        router = w3.eth.contract(UNI_V3_ROUTER02, abi=V3_ROUTER02_ABI)
-
-        def build(min_out, deadline, _r=router, _fee=fee):
-            return _r.functions.exactInputSingle((WETH, LAPTOP, _fee, me, amount_in, min_out, 0))
-        found.append({"venue": f"Uniswap V3 {fee/1_000_000:.2%}", "pool": pool, "eth_liq": eth_liq, "out": out,
-                      "router": UNI_V3_ROUTER02, "build": build})
-
-    # Aerodrome (volatile and stable)
-    fa = w3.eth.contract(AERO_FACTORY, abi=AERO_FACTORY_ABI)
-    for stable in (False, True):
-        time.sleep(0.25)
-        pool = rpc(fa.functions.getPool(LAPTOP, WETH, stable).call)
-        print(f"  Aerodrome {'stable' if stable else 'volatile'} pool: {pool}")
-        if pool == ZERO:
-            continue
-        p = w3.eth.contract(pool, abi=AERO_POOL_ABI)
-        r0, r1, _ = rpc(p.functions.getReserves().call)
-        t0 = rpc(p.functions.token0().call)
-        eth_liq = r1 if Web3.to_checksum_address(t0) == LAPTOP else r0
-        router = w3.eth.contract(AERO_ROUTER, abi=AERO_ROUTER_ABI)
-        route = [(WETH, LAPTOP, stable, AERO_FACTORY)]
-        out = rpc(router.functions.getAmountsOut(amount_in, route).call)[-1]
-
-        def build(min_out, deadline, _r=router, _route=route):
-            return _r.functions.swapExactETHForTokens(min_out, _route, me, deadline)
-        found.append({"venue": f"Aerodrome {'stable' if stable else 'volatile'}", "pool": pool,
-                      "eth_liq": eth_liq, "out": out, "router": AERO_ROUTER, "build": build})
+            print(f"  {venue}: pool {pool} found but could not be quoted ({str(e)[:70]})")
     return found
 
 
