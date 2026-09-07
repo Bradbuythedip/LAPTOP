@@ -82,7 +82,7 @@ sha256(web/buy.html)   = e872b6e3fc5503db7c67720d8327654fdfd9ed249f2f16051e59e5b
 sh test/run-all.sh         # everything below, no network touched
 ```
 
-**352 assertions across seven suites.**
+**386 assertions across eight suites.**
 
 `test/run.mjs` — 93, drives the real page in Chromium against `test/mock-rpc.mjs`: Keccak
 vectors, the four EIP-55 reference addresses, the v4 poolId derivation checked against a real
@@ -104,6 +104,10 @@ of the JavaScript, plus properties a size curve lives or dies on: output rises w
 effective price strictly worsens, a fee costs exactly its rate at the limit, deeper liquidity
 fills better, and no fill can exceed the output-side virtual reserve. Emits the fixture below.
 
+`test/run-potpal.mjs` — 34, asserts the simulator deploys nothing, calls no network, keeps its
+disclaimers, and enforces the real protocol limits (420 trillion passes, 1 quintillion is
+rejected by uint112).
+
 `test/run-buy.mjs` — 30, drives the venue comparison against a three-venue fixture with
 deliberately different depths and asserts the ranking follows depth, the spread is quantified,
 and no wallet code exists anywhere in the page.
@@ -114,6 +118,38 @@ kind, offers no wallet or deposit address, and gets the Solana-is-not-EVM distin
 `test/run-size.mjs` — 66, asserts `web/size.html` agrees with that Python fixture to 1e-12,
 then drives the page against constant-product, concentrated, capped, dry, stable, foreign-token
 and no-code pool fixtures.
+
+## `web/potpal.html` — POT PAL deployment simulator
+
+An unrelated memecoin on the same domain, and a simulator rather than a launcher: it does
+arithmetic on parameters you type and shows what a deployment would look like. No wallet, no
+contract, no network call of any kind — a test asserts nothing leaves the origin.
+
+It is **quoted against ETH and deliberately not paired against LAPTOP**, so it can never appear
+in a LAPTOP pool listing and be mistaken for one — the HUNTER structure documented above. It
+carries an explicit not-affiliated-with-LAPTOP line, and `web/potpal-bg.png` is a slot: no
+artwork is committed for it.
+
+The interesting part of "absurdly high supply" is that it has exact breaking points, and they
+arrive sooner than people expect:
+
+| Limit | Value | What it means |
+| --- | --- | --- |
+| `uint112` | 5.19e33 | Uniswap V2 stores reserves in it. **At 18 decimals a supply above ~5.19 quadrillion cannot be pooled on V2 at all.** 1 quintillion overflows it. |
+| tick range | ±887,272 | v3/v4 represent price as a tick. An extreme token:ETH ratio falls outside what a pool can express. |
+| `uint256` | 1.16e77 | The token itself stops being representable. Far away — it is never the binding constraint. |
+
+420 trillion (the default) sits comfortably inside all three; the page tells you exactly where
+each one stops. It also prices the launch ladder against the seeded reserves with the same exact
+constant-product arithmetic as the size curve, so "5 ETH of depth" turns into "a 5 ETH buy loses
+50% to slippage" — which is the number that actually describes a launch.
+
+Every fiat figure rests on an ETH price you type. Nothing is read live, and FDV is labelled
+arithmetic rather than a valuation.
+
+```
+sha256(web/potpal.html) = 20f8d9c71fed560c4c865bec9834a9d870ebd7075e1b98fd7eb28b6dbb335c40
+```
 
 ## `web/buy.html` — where to buy
 

@@ -1,0 +1,338 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="referrer" content="no-referrer">
+<title>POT PAL — deployment simulator</title>
+<style>
+:root{
+  --bg:#171009; --fg:#f2e8d5; --dim:#a2917a; --line:#3a2c1d; --card:rgba(30,22,14,.82);
+  --ok:#8fbf7a; --okbg:rgba(60,84,48,.30); --bad:#e08a72; --badbg:rgba(96,44,32,.32);
+  --warn:#d9a95c; --warnbg:rgba(94,68,26,.30);
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{background:var(--bg);color:var(--fg);
+  font:15px/1.55 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  -webkit-text-size-adjust:100%;overflow-x:hidden}
+.wrap{max-width:660px;margin:0 auto;padding:0 16px env(safe-area-inset-bottom) 16px}
+
+/* hero */
+.hero{position:relative;min-height:58vh;display:flex;align-items:center;justify-content:center;
+  overflow:hidden;border-bottom:1px solid var(--line)}
+.hero .art{position:absolute;inset:0;background:url("/potpal-bg.png") center center / cover no-repeat;
+  filter:saturate(.85) contrast(1.05)}
+.hero .art::after{content:"";position:absolute;inset:0;
+  background:radial-gradient(ellipse at center,rgba(23,16,9,.15) 0%,rgba(23,16,9,.78) 100%)}
+.hero .none{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+  color:#5b4a35;font-family:var(--mono);font-size:11.5px;text-align:center;padding:20px}
+.wordmark{position:relative;z-index:2;font-size:clamp(52px,17vw,132px);line-height:.94;
+  font-weight:300;letter-spacing:.01em;color:#f5ecd9;
+  text-shadow:0 2px 40px rgba(0,0,0,.55);display:flex;gap:.22em;font-family:Optima,Candara,
+  "Gill Sans","Trebuchet MS",system-ui,sans-serif}
+
+h2{font-size:14px;margin:0;font-weight:600;letter-spacing:.01em}
+.sub{color:var(--dim);font-size:12.5px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;margin:12px 0}
+.hdr{display:flex;justify-content:space-between;align-items:center;gap:8px;
+  margin-bottom:10px;flex-wrap:wrap}
+label{display:block;font-size:12px;color:var(--dim);margin-bottom:5px}
+input,select{width:100%;font-size:16px;padding:11px;border:1.5px solid var(--line);
+  border-radius:9px;background:rgba(0,0,0,.28);color:var(--fg);font-family:var(--mono)}
+input:focus,select:focus{outline:none;border-color:var(--dim)}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:9px}
+.badge{display:inline-flex;align-items:center;font-size:11px;padding:3px 9px;border-radius:999px;
+  border:1px solid var(--line);color:var(--dim);white-space:nowrap}
+.badge.ok{background:var(--okbg);border-color:var(--ok);color:var(--ok)}
+.badge.bad{background:var(--badbg);border-color:var(--bad);color:var(--bad)}
+.badge.warn{background:var(--warnbg);border-color:var(--warn);color:var(--warn)}
+.kv{display:flex;justify-content:space-between;gap:12px;font-size:12.5px;padding:5px 0;
+  border-bottom:1px solid var(--line)}
+.kv:last-child{border-bottom:0}
+.kv span:last-child{font-family:var(--mono);text-align:right;word-break:break-all}
+.okbox{background:var(--okbg);border:1px solid var(--ok);color:var(--ok);
+  border-radius:9px;padding:11px;font-size:12.5px;margin:8px 0}
+.warnbox{background:var(--warnbg);border:1px solid var(--warn);color:var(--warn);
+  border-radius:9px;padding:11px;font-size:12.5px;margin:8px 0}
+.badbox{background:var(--badbg);border:1px solid var(--bad);color:var(--bad);
+  border-radius:9px;padding:12px;font-size:12.5px;margin:8px 0}
+table{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:8px}
+th,td{text-align:right;padding:6px 5px;border-bottom:1px solid var(--line)}
+th:first-child,td:first-child{text-align:left}
+th{color:var(--dim);font-weight:500}
+td.n{font-family:var(--mono)}
+.scroll{overflow-x:auto}
+.footer{color:var(--dim);font-size:11.5px;margin:26px 0 34px;line-height:1.6}
+.hr{height:1px;background:var(--line);margin:16px 0}
+a{color:var(--fg)}
+.tiny{font-size:11.5px}
+</style>
+</head>
+<body>
+
+<div class="hero">
+  <div class="art" id="art"></div>
+  <div class="none" id="artNone">drop your artwork at <b>/potpal-bg.png</b> — this is a slot, not an image</div>
+  <div class="wordmark"><span>POT</span><span>PAL</span></div>
+</div>
+
+<div class="wrap">
+
+<div class="card">
+  <div class="badbox" style="margin:0">
+    <b>Nothing here is deployed and nothing is for sale.</b> This page is a simulator: it does
+    arithmetic on parameters you type and shows what a deployment would look like. There is no
+    wallet connection, no contract, no token, and nothing to buy.
+  </div>
+  <div class="warnbox">
+    <b>POT PAL is not affiliated with LAPTOP</b> or with laptoptoken.com, and is not endorsed by
+    them or by anyone depicted in any artwork. It is an unrelated memecoin that happens to be an
+    anagram. Quoted against ETH — <b>not</b> paired against LAPTOP, so it can never appear in a
+    LAPTOP pool listing and be mistaken for one.
+  </div>
+</div>
+
+<div class="card">
+  <div class="hdr"><h2>Token parameters</h2><span class="badge" id="pBadge">—</span></div>
+  <div class="grid">
+    <div><label for="name">Name</label><input id="name" value="POT PAL"></div>
+    <div><label for="sym">Symbol</label><input id="sym" value="POTPAL"></div>
+  </div>
+  <div class="grid" style="margin-top:9px">
+    <div><label for="dec">Decimals</label><input id="dec" inputmode="numeric" value="18"></div>
+    <div><label for="sup">Total supply (whole tokens)</label>
+      <input id="sup" inputmode="numeric" value="420000000000000"></div>
+  </div>
+  <p class="tiny sub" style="margin:9px 0 0">
+    420 trillion by default. Push it higher and the checks below will tell you exactly where it
+    stops being deployable — the limits are real and they arrive sooner than people expect.
+  </p>
+</div>
+
+<div class="card">
+  <div class="hdr"><h2>Initial pool</h2><span class="sub tiny">POTPAL / WETH on Base</span></div>
+  <div class="grid">
+    <div><label for="seedTok">POT PAL seeded</label>
+      <input id="seedTok" inputmode="numeric" value="420000000000000"></div>
+    <div><label for="seedEth">ETH seeded</label>
+      <input id="seedEth" inputmode="decimal" value="5"></div>
+  </div>
+  <div style="margin-top:9px">
+    <label for="ethUsd">ETH price in USD (your number — nothing is read live)</label>
+    <input id="ethUsd" inputmode="decimal" value="3000">
+  </div>
+</div>
+
+<div id="out"></div>
+
+<div class="footer">
+  <div class="hr"></div>
+  <p><b>What the checks are.</b> Uniswap V2 stores pool reserves as <span class="mono">uint112</span>,
+  so a supply that seems merely silly can be literally impossible to pool. Uniswap V3 and v4
+  represent price as a tick bounded at ±887272, so an extreme ratio of tokens to ETH can fall
+  outside the range a pool can express at all. Both limits are protocol facts, not opinions, and
+  both are checked above against the numbers you typed.</p>
+  <p><b>What this page does not do.</b> It does not deploy, sign, broadcast, or hold anything. It
+  reads nothing live — the ETH price is whatever you type, which is why every fiat figure here is
+  labelled as resting on it. It is not advice to launch a token, and a token being deployable is
+  not a statement that deploying it is a good idea.</p>
+  <p><a href="/">LAPTOP contract checker</a> — an unrelated tool on this domain for verifying
+  which contract you are actually buying.</p>
+</div>
+</div>
+
+<script>
+"use strict";
+const U112=(2n**112n)-1n, U256=(2n**256n)-1n, TICK_MAX=887272;
+const WETH="0x4200000000000000000000000000000000000006";
+
+// Constant product, exact — the same arithmetic a V2 pool runs.
+function v2Out(amountIn,reserveIn,reserveOut,feeBps){
+  const ai=BigInt(amountIn),ri=BigInt(reserveIn),ro=BigInt(reserveOut),f=BigInt(10000-feeBps);
+  if(ai<=0n||ri<=0n||ro<=0n) return 0n;
+  const a=ai*f; return (a*ro)/(ri*10000n+a);
+}
+
+// Everything a deployment would have to satisfy, checked against protocol limits.
+function simulate(p){
+  const out={warnings:[],errors:[]};
+  const dec=BigInt(p.decimals);
+  if(!(p.decimals>=0&&p.decimals<=36)){ out.errors.push("Decimals must be between 0 and 36."); return out; }
+  if(!(p.supply>0n)){ out.errors.push("Supply must be greater than zero."); return out; }
+
+  out.rawSupply = p.supply * (10n**dec);
+  out.uint256Ok = out.rawSupply <= U256;
+  if(!out.uint256Ok) out.errors.push("Raw supply exceeds uint256. This token cannot exist.");
+
+  // V2 reserves are uint112. This is the limit that actually bites first.
+  out.seedRaw = p.seedTokens * (10n**dec);
+  out.v2Ok = out.seedRaw <= U112;
+  out.maxSupplyForV2 = U112 / (10n**dec);
+  if(!out.v2Ok) out.errors.push(
+    "Seeding "+fmtBig(p.seedTokens)+" tokens overflows uint112, so a Uniswap V2 pool is "
+    +"impossible. The ceiling at "+p.decimals+" decimals is "+fmtBig(out.maxSupplyForV2)+" tokens.");
+
+  if(p.seedTokens>p.supply) out.errors.push("You cannot seed more tokens than exist.");
+  if(!(p.seedEth>0)) out.errors.push("Seeded ETH must be greater than zero.");
+
+  if(out.errors.length) return out;
+
+  // Initial price, from the seeded ratio.
+  out.priceEthPerToken = p.seedEth / Number(p.seedTokens);
+  out.tokensPerEth = Number(p.seedTokens) / p.seedEth;
+  // Raw price is what a v3/v4 pool actually stores: raw token1 per raw token0.
+  out.rawPrice = (p.seedEth*1e18) / Number(out.seedRaw);
+  out.tick = Math.log(out.rawPrice)/Math.log(1.0001);
+  out.tickOk = Math.abs(out.tick) <= TICK_MAX;
+  if(!out.tickOk) out.errors.push(
+    "The implied price sits at tick "+Math.round(out.tick).toLocaleString()
+    +", outside the ±887,272 a Uniswap V3 or v4 pool can represent. Seed more ETH or fewer tokens.");
+
+  out.fdvUsd = Number(p.supply) * out.priceEthPerToken * p.ethUsd;
+  out.seededUsd = p.seedEth * p.ethUsd * 2;   // both sides of the pool at the seeded ratio
+  out.floatPct = Number(p.seedTokens)/Number(p.supply);
+
+  // How thin is it really? Price a ladder against the seeded reserves.
+  out.curve=[];
+  const rEth = BigInt(Math.round(p.seedEth*1e18));
+  for(const e of [0.1,0.25,0.5,1,2,5,10,25]){
+    const inRaw=BigInt(Math.round(e*1e18));
+    const got=v2Out(inRaw,rEth,out.seedRaw,30);
+    const tokens=Number(got)/Number(10n**dec);
+    const eff=tokens/e, slip=1-eff/out.tokensPerEth;
+    out.curve.push({eth:e,tokens,slip});
+  }
+
+  if(out.floatPct>0.95) out.warnings.push(
+    "Seeding "+(out.floatPct*100).toFixed(1)+"% of supply leaves almost nothing outside the pool. "
+    +"That is a choice, not a bug, but it means the pool is the entire market.");
+  if(p.seedEth<1) out.warnings.push(
+    "Under 1 ETH of depth means a single buy moves the price a long way. The ladder below shows "
+    +"how far.");
+  const big=out.curve.find(c=>c.slip>0.5);
+  if(big) out.warnings.push(
+    "At "+big.eth+" ETH a buyer already loses "+(big.slip*100).toFixed(0)+"% to slippage.");
+  return out;
+}
+
+function fmtBig(b){
+  const s=b.toString();
+  const units=[[15,"quadrillion"],[12,"trillion"],[9,"billion"],[6,"million"]];
+  for(const [e,n] of units){
+    if(s.length>e){ return (Number(b)/10**e).toLocaleString(undefined,
+      {maximumFractionDigits:2})+" "+n; }
+  }
+  return Number(b).toLocaleString();
+}
+const fmt=(n,d=0)=>!isFinite(n)?"—":n.toLocaleString(undefined,{maximumFractionDigits:d});
+const usd=n=>!isFinite(n)?"—":"$"+n.toLocaleString(undefined,{maximumFractionDigits:0});
+const $=id=>document.getElementById(id);
+const el=(t,c,x)=>{const e=document.createElement(t);if(c)e.className=c;if(x!==undefined)e.textContent=x;return e;};
+
+function read(){
+  const int=v=>{ const s=(v||"").replace(/[^0-9]/g,""); return s?BigInt(s):0n; };
+  return {
+    name:$("name").value, symbol:$("sym").value,
+    decimals:parseInt($("dec").value,10),
+    supply:int($("sup").value),
+    seedTokens:int($("seedTok").value),
+    seedEth:parseFloat($("seedEth").value),
+    ethUsd:parseFloat($("ethUsd").value),
+  };
+}
+
+function render(){
+  const p=read(), r=simulate(p), out=$("out");
+  out.innerHTML="";
+  const b=$("pBadge");
+  b.className="badge"+(r.errors.length?" bad":r.warnings.length?" warn":" ok");
+  b.textContent=r.errors.length?r.errors.length+" blocking":r.warnings.length?"deployable, with caveats":"deployable";
+
+  const c1=el("div","card");
+  c1.appendChild(el("div","hdr")).innerHTML='<h2>Simulated deployment</h2><span class="sub tiny">Base · 8453</span>';
+  const add=(k,v)=>{const d=el("div","kv");d.appendChild(el("span",null,k));
+    d.appendChild(el("span",null,v));c1.appendChild(d);};
+  add("name",p.name||"—");
+  add("symbol",p.symbol||"—");
+  add("decimals",String(p.decimals));
+  add("total supply",fmtBig(p.supply)+" ("+p.supply.toLocaleString()+")");
+  if(r.rawSupply!==undefined) add("raw supply",r.rawSupply.toString());
+  add("quote asset","WETH  "+WETH.slice(0,10)+"…");
+  add("paired against LAPTOP","no — deliberately");
+  out.appendChild(c1);
+
+  for(const e of r.errors){ const d=el("div","card"); d.appendChild(el("div","badbox",e)); out.appendChild(d); }
+  if(r.errors.length) return;
+
+  const c2=el("div","card");
+  c2.appendChild(el("div","hdr")).innerHTML=
+    '<h2>Protocol limits</h2><span class="badge ok">all clear</span>';
+  const chk=(k,pass,note)=>{
+    const d=el("div","kv");
+    d.appendChild(el("span",null,k));
+    const s=el("span",null,(pass?"✓ ":"✕ ")+note);
+    s.style.color=pass?"var(--ok)":"var(--bad)";
+    d.appendChild(s); c2.appendChild(d);
+  };
+  chk("uint256 supply",r.uint256Ok,"fits");
+  chk("uint112 V2 reserve",r.v2Ok,r.v2Ok?"fits (ceiling "+fmtBig(r.maxSupplyForV2)+")":"overflows");
+  chk("v3/v4 tick range",r.tickOk,"tick "+Math.round(r.tick).toLocaleString()+" of ±887,272");
+  out.appendChild(c2);
+
+  const c3=el("div","card");
+  c3.appendChild(el("div","hdr")).innerHTML='<h2>At launch</h2>';
+  const add3=(k,v)=>{const d=el("div","kv");d.appendChild(el("span",null,k));
+    d.appendChild(el("span",null,v));c3.appendChild(d);};
+  add3("initial price",r.priceEthPerToken.toExponential(3)+" ETH per POTPAL");
+  add3("tokens per ETH",fmt(r.tokensPerEth));
+  add3("pool depth",fmt(p.seedEth,3)+" ETH  ·  "+usd(r.seededUsd)+" both sides");
+  add3("supply in the pool",(r.floatPct*100).toFixed(1)+"%");
+  add3("implied FDV",usd(r.fdvUsd)+"  at $"+fmt(p.ethUsd)+"/ETH");
+  c3.appendChild(el("p","tiny sub","FDV rests entirely on the ETH price you typed and on the "
+    +"seeded ratio. It is arithmetic, not a valuation."));
+  out.appendChild(c3);
+
+  const c4=el("div","card");
+  c4.appendChild(el("div","hdr")).innerHTML=
+    '<h2>What buyers would actually get</h2><span class="sub tiny">exact — constant product</span>';
+  const t=el("table");
+  t.innerHTML="<tr><th>ETH in</th><th>POTPAL out</th><th>vs spot</th></tr>";
+  for(const row of r.curve){
+    const tr=el("tr");
+    tr.appendChild(el("td","n",fmt(row.eth,3)));
+    tr.appendChild(el("td","n",fmt(row.tokens)));
+    const s=el("td","n",(row.slip*100).toFixed(1)+"%");
+    if(row.slip>0.5) s.style.color="var(--bad)";
+    else if(row.slip>0.15) s.style.color="var(--warn)";
+    tr.appendChild(s);
+    t.appendChild(tr);
+  }
+  const w=el("div","scroll"); w.appendChild(t); c4.appendChild(w);
+  out.appendChild(c4);
+
+  if(r.warnings.length){
+    const c5=el("div","card");
+    c5.appendChild(el("div","hdr")).innerHTML='<h2>Worth knowing</h2>';
+    for(const wn of r.warnings) c5.appendChild(el("div","warnbox",wn));
+    out.appendChild(c5);
+  }
+}
+
+// Hide the placeholder caption only once the artwork actually loads.
+(function(){
+  const img=new Image();
+  img.onload=()=>{ $("artNone").style.display="none"; };
+  img.onerror=()=>{ $("art").style.display="none"; };
+  img.src="/potpal-bg.png";
+})();
+
+for(const id of ["name","sym","dec","sup","seedTok","seedEth","ethUsd"])
+  $(id).addEventListener("input",render);
+render();
+
+window.__POTPAL={simulate,v2Out,fmtBig,U112,U256,TICK_MAX};
+</script>
+</body>
+</html>
