@@ -374,8 +374,13 @@ function decodeText(data){
   if(h.length<128) return null;
   try{
     const off=Number(BigInt("0x"+h.substr(0,64)));
+    // Bounds-check before slicing: substr past the end returns "" rather than throwing,
+    // so an absurd or truncated offset would decode to an empty string and be rendered
+    // as a successfully-read name. That is a guess wearing an answer's clothes.
+    if(!Number.isSafeInteger(off)||off*2+64>h.length) return null;
     const len=Number(BigInt("0x"+h.substr(off*2,64)));
     if(len>512) return null;
+    if(off*2+64+len*2>h.length) return null;
     const raw=hexToBytes(h.substr(off*2+64,len*2));
     return new TextDecoder().decode(raw);
   }catch(e){ return null; }

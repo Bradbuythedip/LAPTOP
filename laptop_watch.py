@@ -3,7 +3,8 @@
 laptop_watch.py - sit on Base and shout the moment LAPTOP (0xB095...ec29) becomes buyable.
 
 Every --interval seconds it checks three things:
-  1. Uniswap V2 / V3 / Aerodrome: does a LAPTOP/WETH pool exist and hold >= --min-liq-eth?
+  1. Uniswap V2 / V3 / Aerodrome / Slipstream, across WETH, USDC and USDbC quotes
+     (one quote per cycle): does a pool exist, and does a WETH one hold >= --min-liq-eth?
   2. Uniswap v4: any pool containing LAPTOP (Initialize events, hooks included) whose active
      liquidity went from 0 to non-zero. Prints the pool key so it can be traded manually.
   3. Token flow: every new LAPTOP Transfer since the last poll, flagging transfers INTO known
@@ -27,6 +28,8 @@ from datetime import datetime, timezone
 from web3 import Web3
 from eth_abi import decode
 
+import laptop_base as LB
+
 CHAIN_ID = 8453
 LAPTOP = Web3.to_checksum_address("0xB095274743941e953c746F9C228DA9c18Bb6ec29")
 WETH = Web3.to_checksum_address("0x4200000000000000000000000000000000000006")
@@ -34,10 +37,12 @@ POOL_MANAGER = Web3.to_checksum_address("0x498581fF718922c3f8e6A244956aF099B2652
 UNI_V2_FACTORY = Web3.to_checksum_address("0x8909Dc15e40173Ff4699343b6eB8132c65e18eC6")
 UNI_V3_FACTORY = Web3.to_checksum_address("0x33128a8fC17869897dcE68Ed026d694621f6FDfD")
 AERO_FACTORY = Web3.to_checksum_address("0x420DD381b31aEf6683db6B902084cB0FFECe40Da")
-V3_FEES = (100, 500, 3000, 10000)
+V3_FEES = LB.V3_FEES
 ZERO = "0x0000000000000000000000000000000000000000"
-USDC = "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913"
-TRADABLE_QUOTES = {ZERO, WETH.lower(), USDC}
+USDC = LB.USDC
+USDBC = LB.USDBC          # bridged USDbC is a DIFFERENT token, and a real tradable quote
+# Omitting USDbC flagged a USDbC-quoted pool as an untradable sidecar.
+TRADABLE_QUOTES = LB.TRADABLE_QUOTES
 DEX = {POOL_MANAGER.lower(): "v4 PoolManager",
        "0x7c5f5a4bbd8fd63184577525326123b519429bdc": "v4 PositionManager",
        "0x6ff5693b99212da76ad316178a184ab56d299b43": "Universal Router",
@@ -79,27 +84,106 @@ def v2_style_eth(w3, pool, reserves_sel):
     return r1 if t0 == LAPTOP else r0
 
 
-def check_classic(w3):
-    """Returns list of (venue, pool, eth_wei)."""
+def check_classic(w3, quote_label, quote):
+    """One quote asset per call. Returns (venue, pool, liq, quote_label, routable_with_eth).
+
+    Checking only LAPTOP/WETH is how a filling USDC pool stays invisible, but probing every
+    quote every cycle multiplies this loop's RPC cost on an endpoint that already rate-limits.
+    The caller rotates the quote instead, so full coverage takes len(LB.QUOTES) cycles.
+    """
     found = []
-    p = addr_of(call(w3, UNI_V2_FACTORY, SEL["getPair"] + pad(LAPTOP) + pad(WETH)))
-    if p != ZERO:
-        found.append(("Uniswap V2", p, v2_style_eth(w3, p, SEL["getReserves"])))
+    is_weth = quote.lower() == WETH.lower()
+    call_ = _reader(w3)
+
+    def liq_of(fn, label):
+        """Measuring a pool's depth must never take down the rest of the sweep. A pool that
+        exists is the signal; its size is a secondary read that is allowed to fail."""
+        if not is_weth:
+            return 0
+        try:
+            return fn()
+        except Exception as e:  # noqa: BLE001
+            print(f"[{now()}] COULD NOT CHECK depth of {label}: {str(e)[:70]}")
+            return None
+
+    st, pool = LB.find_v2_pair(call_, LB.LAPTOP, quote)
+    if st == "found":
+        p_ = Web3.to_checksum_address(pool)
+        liq = liq_of(lambda: v2_style_eth(w3, p_, SEL["getReserves"]), f"Uniswap V2 {p_}")
+        found.append(("Uniswap V2", p_, liq, quote_label, is_weth))
+    elif st == "unknown":
+        print(f"[{now()}] COULD NOT CHECK Uniswap V2 / {quote_label}: {pool}")
+
     for fee in V3_FEES:
-        p = addr_of(call(w3, UNI_V3_FACTORY, SEL["getPool3"] + pad(LAPTOP) + pad(WETH) + pad(fee)))
-        if p != ZERO:
-            bal = int.from_bytes(call(w3, WETH, SEL["balanceOf"] + pad(p)), "big")
-            found.append((f"Uniswap V3 {fee/1e6:.2%}", p, bal))
-    for stable in (0, 1):
-        p = addr_of(call(w3, AERO_FACTORY, SEL["getPoolAero"] + pad(LAPTOP) + pad(WETH) + pad(stable)))
-        if p != ZERO:
-            found.append((f"Aerodrome {'stable' if stable else 'volatile'}", p, v2_style_eth(w3, p, SEL["getReserves"])))
+        st, pool = LB.find_v3_pool(call_, LB.LAPTOP, quote, fee)
+        if st == "found":
+            p = Web3.to_checksum_address(pool)
+            liq = liq_of(lambda _p=p: int.from_bytes(call(w3, quote, SEL["balanceOf"] + pad(_p)), "big"),
+                         f"Uniswap V3 {fee/1e6:.2%} {p}")
+            found.append((f"Uniswap V3 {fee/1e6:.2%}", p, liq, quote_label, is_weth))
+        elif st == "unknown":
+            print(f"[{now()}] COULD NOT CHECK Uniswap V3 {fee/1e6:.2%} / {quote_label}: {pool}")
+
+    for stable in (False, True):
+        st, pool = LB.find_aero_pool(call_, LB.LAPTOP, quote, stable)
+        if st == "found":
+            p = Web3.to_checksum_address(pool)
+            liq = liq_of(lambda _p=p: v2_style_eth(w3, _p, SEL["getReserves"]),
+                         f"Aerodrome {'stable' if stable else 'volatile'} {p}")
+            found.append((f"Aerodrome {'stable' if stable else 'volatile'}", p, liq, quote_label, is_weth))
+        elif st == "unknown":
+            print(f"[{now()}] COULD NOT CHECK Aerodrome / {quote_label}: {pool}")
+
+    # Slipstream: a second Aerodrome AMM invisible to the v2 factory. Factories are
+    # discovered from the registry rather than hardcoded, since no address was verifiable.
+    for fac in CL_FACTORIES:
+        for spacing in LB.CL_TICK_SPACINGS:
+            st, pool = LB.find_cl_pool(call_, fac, LB.LAPTOP, quote, spacing)
+            if st == "found":
+                found.append((f"Aerodrome CL ts={spacing}", Web3.to_checksum_address(pool),
+                              0, quote_label, False))
     return found
 
 
+CL_FACTORIES = []
+
+
+def _reader(w3):
+    def c(to, data):
+        return call(w3, to, data)
+    return c
+
+
+def discover_cl_factories(w3):
+    """One registry read at startup. Anything the registry lists that we cannot read is
+    reported as a venue we are blind to, rather than silently omitted."""
+    st, facs = LB.aero_factories(_reader(w3))
+    if st != "found":
+        print(f"[{now()}] COULD NOT CHECK Aerodrome factory registry: {facs}")
+        print(f"[{now()}] ^ so this watcher cannot say whether a venue it does not know about exists.")
+        return
+    for f in facs:
+        if f.lower() == LB.AERO_FACTORY:
+            continue
+        r = LB.find_cl_pool(_reader(w3), f, LB.LAPTOP, WETH, 200)
+        if r[0] == "unknown":
+            print(f"[{now()}] registry lists factory {f}, not readable with any known ABI - blind to it")
+        else:
+            CL_FACTORIES.append(f)
+            print(f"[{now()}] watching Aerodrome CL factory {f}")
+
+
 def v4_liquidity(w3, pool_id):
-    base = int.from_bytes(Web3.keccak(bytes.fromhex(pool_id[2:]) + (6).to_bytes(32, "big")), "big")
-    return int.from_bytes(call(w3, POOL_MANAGER, SEL["extsload"] + (base + 3).to_bytes(32, "big").hex()), "big")
+    """Active in-range liquidity, or -2 when the read failed.
+
+    Reading only this slot cannot tell "pool key never existed" from "initialized but empty":
+    an unwritten slot returns 32 zero bytes with no error. Callers that need that distinction
+    should use LB.v4_pool_state, which also reads slot0. -2 is kept distinct from the -1
+    sentinel used for "not seen yet" so a failed read never reads as a liquidity change."""
+    st, info = LB.v4_pool_state(_reader(w3), pool_id)
+    if st == "unknown":
+        return -2
+    return info["liquidity"]
 
 
 def symbol(w3, token):
@@ -132,16 +216,30 @@ def main():
     pm_prev = -1
     print(f"[{now()}] watching LAPTOP from block {last}. Ctrl-C to stop.")
 
+    cycle = 0
+    discover_cl_factories(w3)
     while True:
         try:
             head = w3.eth.block_number
             # 1. classic pools
-            for venue, pool, eth in check_classic(w3):
-                key = (venue, pool)
+            qlabel, quote = LB.QUOTES[cycle % len(LB.QUOTES)]
+            cycle += 1
+            for venue, pool, eth, qlab, routable in check_classic(w3, qlabel, quote):
+                key = (venue, pool, qlab)
                 if key not in seen_classic:
                     seen_classic.add(key)
-                    print(f"[{now()}] POOL {venue} {pool} ETH side {eth/1e18:.4f}")
-                if eth >= w3.to_wei(args.min_liq_eth, "ether") and args.auto and not fired:
+                    if not routable:
+                        side = f"{qlab}-quoted (not ETH-routable)"
+                    elif eth is None:
+                        side = f"{qlab} side unknown (depth read failed)"
+                    else:
+                        side = f"{qlab} side {eth/1e18:.4f}"
+                    print(f"[{now()}] POOL {venue} {pool} {side}")
+                # Only WETH-quoted pools are handed to laptop_buy.py: it spends ETH and does
+                # not build multi-hop routes. A USDC pool is reported, never auto-traded.
+                if (routable and eth is not None
+                        and eth >= w3.to_wei(args.min_liq_eth, "ether")
+                        and args.auto and not fired):
                     fired = True
                     print(f"[{now()}] *** {venue} passes floor. Launching laptop_buy.py --send ***")
                     subprocess.run([sys.executable, os.path.join(os.path.dirname(os.path.abspath(__file__)), "laptop_buy.py"),
@@ -180,6 +278,8 @@ def main():
             # v4 liquidity changes
             for pid, (c0, c1, hooks, prev) in list(pools_v4.items()):
                 liq = v4_liquidity(w3, pid)
+                if liq == -2:
+                    continue  # read failed; never report a failure as a liquidity change
                 if liq != prev:
                     pools_v4[pid] = (c0, c1, hooks, liq)
                     if prev != -1 or liq > 0:

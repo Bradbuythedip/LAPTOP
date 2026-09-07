@@ -80,6 +80,15 @@ const T = await page.evaluate(() => {
           + "4c4150544f50".padEnd(64, "0")),
     dB32: t.decodeText("0x" + "4c4150544f50".padEnd(64, "0")),
     dEmpty: t.decodeText("0x"),
+    // 10 chars: the length word contains a hex letter ("a"). A decoder that forgets the
+    // 0x prefix parses these as decimal and throws on exactly this case.
+    dLong: t.decodeText("0x" + (32).toString(16).padStart(64, "0") + (10).toString(16).padStart(64, "0")
+           + "4c4150544f50434f494e".padEnd(64, "0")),
+    // header promises 32 bytes, only 4 arrive
+    dTrunc: t.decodeText("0x" + (32).toString(16).padStart(64, "0") + (32).toString(16).padStart(64, "0")
+            + "4c415054"),
+    // offset points far past the end of the return data
+    dAbsurd: t.decodeText("0x" + (1n << 200n).toString(16).padStart(64, "0") + "0".repeat(64)),
     // result-length discipline
     rNone: t.readAddressWord({ ok: true, data: "0x" + "0".repeat(64) }).state,
     rEmpty: t.readAddressWord({ ok: true, data: "0x" }).state,
@@ -122,6 +131,9 @@ console.log("── unit: decoders");
 eq("string name decoded", T.dStr, "LAPTOP");
 eq("bytes32 name decoded", T.dB32, "LAPTOP");
 eq("empty returns null", T.dEmpty, null);
+eq("10-char name (hex letter in the length word)", T.dLong, "LAPTOPCOIN");
+eq("truncated string -> null, not a partial name", T.dTrunc, null);
+eq("absurd offset -> null, not an empty name", T.dAbsurd, null);
 
 console.log("── unit: result-length discipline (C8)");
 eq("32 zero bytes  -> none", T.rNone, "none");

@@ -65,23 +65,34 @@ python3 -m http.server -d web 8000     # then open http://localhost:8000
 Or just open `web/index.html` from disk — it has no build step and no dependencies. Saving the
 file and opening it locally removes the hosting party from the trust question entirely.
 
-Published build `2026-09-07a`:
+Published build `2026-09-07b`:
 
 ```
-sha256(web/index.html) = d832e9160633a7255253e9b3a417ce5f9a33060edfc5833b397ca72177c14bc6
+sha256(web/index.html) = cfc4acfb80082549426f69032fff0bbfe5c989491fd749754f4be5442208edc3
 ```
 
 ### Tests
 
 ```bash
-npm i -D playwright        # or reuse a global install
-node test/run.mjs          # starts the mock node itself
+sh test/run-all.sh         # everything below, no network touched
 ```
 
-69 assertions: Keccak against published vectors, the four EIP-55 reference addresses, the v4
-poolId derivation checked against a real Base pool id, result-length discipline, and full browser
-flows against `test/mock-rpc.mjs` covering the happy path, pools present, wrong chain, a flaky
-rate-limited node, and an endpoint that refuses JSON-RPC batches.
+**161 assertions across three suites.**
+
+`test/run.mjs` — 72, drives the real page in Chromium against `test/mock-rpc.mjs`: Keccak
+vectors, the four EIP-55 reference addresses, the v4 poolId derivation checked against a real
+Base pool id, ABI-string decoding (including a 10-character name, whose length word contains a
+hex letter, and truncated/absurd offsets), result-length discipline, and full flows for the
+happy path, pools present, wrong chain, a flaky rate-limited node, and an endpoint that refuses
+JSON-RPC batches. Needs `playwright`.
+
+`test/test_laptop_base.py` — 61, pure functions against a fake `call`, so every failure mode is
+directly reachable: none-vs-unknown, Aerodrome's reverting `getPair`, the V3/Aerodrome selector
+collision, tier-enabled vs pool-absent, the three-way v4 state including a packed `slot0`, and
+decoder edge cases.
+
+`test/test_scripts.py` — 28, the patched scripts against a fake node where the *only* pool is
+USDC-quoted — the exact shape that used to print "no liquidity anywhere".
 
 ### Deploying
 
@@ -137,6 +148,11 @@ python3 laptop_watch.py                       # alert only
 python3 laptop_watch.py --auto --eth 0.01     # hands off to laptop_buy.py on a classic pool
 ```
 
+Polls **one quote asset per cycle**, rotating through WETH, USDC and USDbC, so full coverage
+takes three cycles. Probing all three every cycle would roughly quadruple this loop's RPC cost
+on an endpoint that already rate-limits; rotating keeps the per-cycle budget flat and costs a
+few seconds of latency instead. Only WETH-quoted pools are handed to `laptop_buy.py --send`.
+
 Polls: classic pools crossing `--min-liq-eth`; new v4 pools (flagging whether the quote is tradable
 ETH/WETH/USDC or a sidecar token); PoolManager's LAPTOP balance, which is the single number that says
 whether any LAPTOP has been deposited into v4 at all; and every new transfer, flagging any into a known
@@ -160,12 +176,27 @@ liquidity, and fires when it's non-zero. `--now` skips the wait. `--quote ETH` n
 Without `--send` it prints the pool id and calldata and stops — run that first and check the id against
 the pool you actually mean to trade.
 
+### `laptop_base.py` — shared constants and read discipline
+
+One source of truth for Base addresses, selectors, fee tiers and quote assets, plus the read
+helpers the other scripts use. Every read returns `("found", x)`, `("none", None)` or
+`("unknown", reason)` — never a bare value. The distinction between *none* and *unknown* is the
+point: 32 zero bytes means the contract answered, while a revert, an empty return or a rate
+limit means we do not know, and code that conflates them turns an unreachable endpoint into a
+confident negative.
+
 ### `laptop_buy.py` — buy from V2 / V3 / Aerodrome
 
-Finds a LAPTOP/WETH pair across Uniswap V2, V3 fee tiers and Aerodrome, quotes each, refuses
+Surveys **every venue against every quote asset** (WETH, USDC, USDbC) including all seven Base
+V3 tiers and Aerodrome Slipstream, then quotes each, refuses
 pools below `--min-liq-eth` (default 1 ETH), simulates with `eth_call` + `estimate_gas`, then requires
 `--send` plus typing `BUY`. Also asks the DEX Screener API, which surfaces v4 pools the factories can't
 see (it reports them; it does not route v4 — that's `laptop_v4.py`).
+
+Only WETH-quoted pools are offered as buyable: this script spends ETH and does not build
+multi-hop routes. A USDC- or USDbC-quoted pool is reported loudly with the reason it is not
+tradable here, so a filling pool is never invisible — it just is not something the script will
+trade for you.
 
 `mock_rpc.py` / `mock_rpc2.py` are local JSON-RPC mocks used to test both code paths (pools present and
 absent, supply vaulted and moved) without touching mainnet.
@@ -226,10 +257,16 @@ extsload(bytes32,uint256)             0x35fd631a    batch form — 4 slots in on
 
 ---
 
-## Corrections found while building the checker
+## Corrections — found, then fixed
 
-These are defects in the Python scripts above, found by checking their constants against protocol
-source. They are **not yet fixed in the `.py` files**.
+These were defects in the Python scripts, found by checking their constants against protocol
+source. **All are now fixed**, and each has a regression test in `test/test_scripts.py` or
+`test/test_laptop_base.py`.
+
+The root cause of most of them was duplication: the same addresses, fee tiers and quote assets
+were copy-pasted across three scripts and drifted apart. They now live in one place,
+`laptop_base.py`, which also holds the shared read discipline. A test asserts the scripts really
+do read their constants from it, so this cannot silently drift again.
 
 1. **`laptop_buy.py:43` — `V3_FEES = (100, 500, 3000, 10000)` is incomplete for Base.** Base
    uniquely enables three extra tiers: 200, 300 and 400 bps (tick spacings 4, 6, 8). Uniswap's own
@@ -267,8 +304,20 @@ source. They are **not yet fixed in the `.py` files**.
    Also worth stating plainly: `liquidity` is **active in-range** liquidity — a pool holding real
    deposits entirely out of range reads zero.
 
-The v4 storage derivation itself is correct: `POOLS_SLOT` really is 6, the base slot really is
-`keccak256(poolId ‖ uint256(6))`, and `liquidity` really is at offset +3.
+The v4 storage derivation itself was correct all along: `POOLS_SLOT` really is 6, the base slot
+really is `keccak256(poolId ‖ uint256(6))`, and `liquidity` really is at offset +3.
+
+Two more, found while writing the tests rather than by inspection:
+
+8. **An out-of-bounds ABI string offset decoded to `""` and was reported as a successfully-read
+   name** — a guess wearing an answer's clothes. Both the Python and JavaScript decoders now
+   bounds-check the offset and the declared length before slicing. The same test exists in both
+   languages.
+
+9. **In the first version of the patched watcher, one failing `balanceOf` took down the whole
+   sweep**, losing every other venue for that cycle. Measuring a pool's depth is now allowed to
+   fail on its own: the pool still gets reported, its depth reads "unknown", and a pool whose
+   depth could not be read can never trip the `--auto` buy.
 
 ---
 
