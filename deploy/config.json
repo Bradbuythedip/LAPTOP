@@ -32,7 +32,7 @@
   },
 
   "curve": {
-    "_virtualEth": "Sets what a comfortable buy is denominated in, NOT how deep the book is. 3e18 = a 0.1 ETH buy moves the price 3.3%.",
+    "_virtualEth": "Sets what a comfortable buy is denominated in, NOT how deep the book is. At 3e18 a 0.1 ETH buy raises the ETH reserve 3.3% and the PRICE 6.7% — price is E/T and both sides move, so the price change is roughly double the reserve change. Measured against the compiled curve: spot 3750000 to 4001583, +6.709%.",
     "virtualEth": "3000000000000000000",
     "_bondTarget": "E0*(sqrt(m)-1). At E0=3 and m=10 that is 6.487 ETH of real buys.",
     "bondTarget": "6486832980505137996",

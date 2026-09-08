@@ -51,13 +51,19 @@ console.log(`  initHash   ${initHash}`);
 console.log(dim(`  about ${expected.toLocaleString()} salts on average, ` +
                 `${budget.toLocaleString()} before it gives up\n`));
 
-const out = await new Promise((resolve, reject) => {
+const out = await new Promise(resolve => {
   const k = spawn(process.execPath, [path.join(ROOT, "tools", "vanity-par.mjs"), ...args],
                   { stdio: ["ignore", "pipe", "inherit"] });
   let buf = "";
   k.stdout.on("data", d => { buf += d; process.stdout.write(d); });
-  k.on("close", c => c === 0 ? resolve(buf) : reject(new Error("the grinder found nothing")));
+  // Resolved with null rather than rejected: an unhandled rejection prints a Node stack trace,
+  // and every other refusal in this directory prints a sentence saying what to do.
+  k.on("close", c => resolve(c === 0 ? buf : null));
 });
+if (out === null)
+  die(`no salt ending …${cfg.vanity.suffix} in ${budget.toLocaleString()} tries. Nothing was ` +
+      "sent and nothing recorded, so running it again is free — but at this budget that is " +
+      "already far past the expectation, so check the suffix before you check your luck.");
 
 const salt = (out.match(/^salt\s+(0x[0-9a-f]{64})$/m) || [])[1];
 const address = (out.match(/^address\s+(0x[0-9a-f]{40})$/m) || [])[1];

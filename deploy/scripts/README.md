@@ -141,8 +141,11 @@ The phrase is not a formality: it is the smallest thing that requires reading th
 
 ## The oracle
 
-`deploy/config.json` has `oracle.choice: ""` and nothing can be built while it is blank. There is
-no default, because both real choices are real:
+`deploy/config.json` has `oracle.choice: ""`, and while it is blank nothing that depends on the
+oracle can be built — which is steps 1 and 3 through 6. Step 2 still builds, and should: the
+deployer takes only the owner's address, and making it wait on a decision it does not use would
+be a refusal that teaches the wrong thing about which fields matter. There is no default,
+because both real choices are real:
 
 - **`observational`** — a genuine, ownerless price observation on Base. Rule 1 works once 24
   hours of history exists.
@@ -169,10 +172,18 @@ Read the oracle's verified source yourself; nothing here can do that for you.
   contract's own comment calls this a real trust edge and says a launchpad is meant to pin the
   pool — this sequence has no launchpad, so nothing pins it. Nothing in these scripts can prevent
   it. The fix is a contract change.
-- **A holder cannot sell 100% of a position back to the curve.** `quoteSell` rounds the gross up
-  against `reserveEth` by one wei at the boundary, so selling exactly `sold` reverts with an
-  arithmetic panic and `sold - 1` succeeds. A rounding edge, not a lost balance — but it looks
-  like a honeypot to whoever hits it first.
+- **A holder cannot sell 100% of a position back to the curve.** Rule 2 stops most of them, and
+  it stops them before `quoteSell` is reached: a transfer into the registered curve runs
+  `_chargeWindow` first, so a wallet holding exactly what the curve has `sold` reverts with
+  `CapExceeded` rather than an arithmetic error, and each new window re-baselines on what is
+  left — 20% of a shrinking bag never releases the last slice. A wallet holding at least five
+  times the curve's `sold` clears the cap (your own residual treasury is one, early on), and
+  then it meets the other edge: every buy rounds `tokensOut` up and drifts the constant product
+  down, so `quoteSell(sold)` computes a gross a wei or two above `reserveEth` and `sell(sold)`
+  reverts with an arithmetic panic. Measured: after one 0.1 ETH buy, `sold` panics and
+  `sold - 1` clears; after one of 1 ETH, `sold - 1` panics too. The margin is a function of the
+  trade history, so do not publish a number. Neither edge is a lost balance, and both look like
+  a honeypot to whoever hits them first.
 - **The site still points at nothing.** `web/index.html` holds `const POOL = ""` and
   `const TOKEN = ""`. Filling them in changes those files, so `node tools/stamp.mjs` has to
   republish the hashes.

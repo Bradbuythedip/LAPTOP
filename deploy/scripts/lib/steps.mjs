@@ -613,10 +613,17 @@ export const AFTER_THE_SEQUENCE = [
   },
   {
     title: "A holder cannot sell 100% of a position back to the curve",
-    body: "quoteSell rounds the gross up against reserveEth by one wei at the boundary, so " +
-      "selling exactly `sold` reverts with an arithmetic panic while `sold - 1` succeeds. It " +
-      "is a rounding edge, not a lost balance, but it looks like a honeypot to whoever hits " +
-      "it first, so say it before they do.",
+    body: "Rule 2 stops most of them, and before quoteSell is reached: a transfer into the " +
+      "registered curve runs _chargeWindow first, so a wallet holding exactly what the curve has " +
+      "sold reverts with CapExceeded rather than an arithmetic error, and each new window " +
+      "re-baselines on what is left — 20% of a shrinking bag never releases the last slice. A " +
+      "wallet holding five times the curve's sold clears the cap (your own residual treasury is " +
+      "one, early on) and then meets the other edge: every buy rounds tokensOut up and drifts " +
+      "the constant product down, so quoteSell(sold) computes a gross a wei or two above " +
+      "reserveEth and sell(sold) reverts with an arithmetic panic. Measured: after one 0.1 ETH " +
+      "buy, sold panics and sold - 1 clears; after one of 1 ETH, sold - 1 panics too. The margin " +
+      "is a function of the trade history. Neither edge is a lost balance, and both look like a " +
+      "honeypot to whoever hits them first.",
   },
   {
     title: "This is the curve launch, not the launchpad one",
