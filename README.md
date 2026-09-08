@@ -79,7 +79,7 @@ file and opening it locally removes the hosting party from the trust question en
 Published build `2026-09-08a`:
 
 ```
-sha256(web/index.html)   = ca75f936a28e7057f125efd88753d6d979d0a1d228ca11606d1792dff566bce3
+sha256(web/index.html)   = 671fe8da042810cb2082d2a27cbeb9805dc9f84dadc11321be1ddaa579606f58
 sha256(web/buy.html)     = 22599395fae6b4961e1cacbb5c7c7377d9aad803b503b0f561099e4b939a037d
 sha256(web/checker.html) = dba98abcc786bfe9da93c947c42350d8437d3729cfd7de4171751310e05716eb
 sha256(web/size.html)    = d35504a3248a34fff23257524de797dcb93502f14be87406a0ec28cca14c30c5
@@ -96,7 +96,7 @@ sha256(web/snooze.html)  = af52292a0f32cf44e32e2b609fcc677430dc2d08b29f2effc11a3
 sh test/run-all.sh         # everything below, no network touched
 ```
 
-**1518 assertions across twenty suites.**
+**1571 assertions across twenty suites.**
 
 `test/run.mjs` — 340, drives the real page in Chromium against `test/mock-rpc.mjs`: Keccak vectors,
 the four EIP-55 reference addresses, the v4 poolId derivation checked against a real Base pool
@@ -124,16 +124,23 @@ of the JavaScript, plus properties a size curve lives or dies on: output rises w
 effective price strictly worsens, a fee costs exactly its rate at the limit, deeper liquidity
 fills better, and no fill can exceed the output-side virtual reserve. Emits the fixture below.
 
-`test/run-index.mjs` — 85, drives the $SNOOZE landing page. Most of it is about one
+`test/run-index.mjs` — 138, drives the $SNOOZE landing page. Most of it is about one
 distinction: a plot of a FORMULA and a plot of a MARKET look identical from three feet away, so
 the suite asserts which one is on screen. With nothing deployed the chart shows Rule 1 itself —
 exact, checkable against `burnBps()` in the contract, labelled *this is arithmetic, not a
 market* — and `window.__CHART.marketSeries` is empty. It only becomes a market series when a
 chain read produced one, and a single deposit is never drawn as a line. The launch-day path is
-driven before launch day against a mock node, including a node that refuses `eth_getLogs`, one
-that only serves a short window, and one that is not there at all — none of which may produce a
-number. It also pins the artwork (transparent WebP hero under 120 KB, the baked-in one for
-`og:image`) and checks four phone widths for overflow.
+driven before launch day against a mock node, including one that refuses `eth_getLogs`, one that
+serves a short window, and one that is not there at all — none of which may produce a number.
+
+The rest is the MVP's own rules. The depth-versus-speed table is checked against
+`bond_model.py`'s closed form rather than against the copy that quotes it. Every term with a
+definition attached must be a real `<button>` with an aria-label, must define itself in thirty
+words or fewer, and must carry no border — a word with a box round it is a control, and the
+page is not a control panel. Base blue is asserted to appear as a fill and never as text or a
+border, because #0052ff is 2.91:1 on this ground. The tool links are asserted to have no
+border, no fill and a 36px tap target: an icon in a box reads as *press me*, and these are
+places to go. And the whole rendered page has to come in under 700 words.
 
 `test/run-buy.mjs` — 33, drives the venue comparison against a three-venue fixture with
 deliberately different depths and asserts the ranking follows depth, the spread is quantified,

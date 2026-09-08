@@ -162,71 +162,132 @@ console.log("── the curve is the contract's arithmetic, not a drawing of it"
      (await at(1.2)) < (await at(1.6)) && (await at(1.6)) < (await at(2.4)));
 }
 
-console.log("── the infographic says what the contracts do");
+console.log("── the page says what the mechanism is, in as few words as it takes");
 {
-  ok("the pooled buy is described as one order at one price",
-     /one transaction, one price/i.test(body));
-  ok("Rule 1 is stated as the 24-hour average", /24-hour average/i.test(body));
-  // "the tokens stop existing" is only true at devBps == 0, and the token exposes
-  // supplyOnlyFalls() precisely so a page can stop guessing. snooze.html hedged this and the
-  // landing page did not, which is backwards — the landing page is the one a stranger sees.
-  ok("the burn is named as destruction rather than a fee",
-     /destroyed rather than collected/i.test(body));
-  ok("and the dev-cut exception is stated, not buried",
-     /unless the launcher took a share/i.test(body));
-  ok("and it names the call that settles it", /supplyOnlyFalls\(\)/.test(body));
-  ok("Rule 2 is stated as 20% of balance per day",
-     /20% of its balance per day/i.test(body));
-  // This used to assert "not the deployer", which the contract does not support: launch()
-  // cap-exempts the launcher and _move() skips the haircut for any cap-exempt sender, so that
-  // wallet is outside BOTH rules. run-snooze.mjs proves it by execution. What the page owes a
-  // reader is the true version, prominently, so that is what is asserted.
-  ok("it does not claim the deployer is bound by the cap", !/not the deployer/i.test(body));
-  ok("it says one wallet is outside both rules",
-     /outside both/i.test(body) && /launcher/i.test(body));
-  ok("and says why the exemption has to exist at all",
-     /seeding a pool and selling into it are the same transfer/i.test(body));
-  ok("and names the call a reader can check it with", /capExempt\(\)/.test(body));
-  ok("and that a fresh wallet does not escape it", /the first hop is itself a transfer/i.test(body));
+  ok("it says anyone can launch, which is the whole pitch", /anyone can launch/i.test(body));
+  ok("it says the price is a curve rather than a pool", /a curve, not a pool/i.test(body));
+  ok("it says the curve can only pay out what came in",
+     /only ever pay out the ETH that came in/i.test(body));
+  ok("bonding is described with a number, not a vibe",
+     /2\.16/.test(body) && /bonds/i.test(body));
+  ok("Rule 1 is stated against the 24-hour average", /24-hour average/i.test(body));
+  ok("$SNOOZE is named as the launchpad and LAPTOP as a launch on it",
+     /\$SNOOZE is the launchpad/i.test(body) && /LAPTOP is the first launch/i.test(body));
+  ok("and why holding one gets you the other",
+     /Holding \$SNOOZE is how you get into LAPTOP early/i.test(body));
+  ok("the claim is self-service, because nothing can claim for you",
+     /claimed by you, from your own wallet/i.test(body));
+  // textContent on <body> sweeps up the inline <script> too, which is most of this file and
+  // none of the page. innerText is what a reader actually sees.
+  const seen = await page.evaluate(() => document.body.innerText.replace(/\s+/g, " ").trim());
+  ok("the whole visible page is under 700 words",
+     seen.split(" ").filter(Boolean).length < 700,
+     seen.split(" ").filter(Boolean).length + " words");
 }
 
-console.log("── and it says what they do not do, which is the part that gets left out");
+console.log("── and what it does not do, which is the part a launch page leaves out");
 {
-  ok("the dial is named as the buyer's instant loss too",
+  ok("virtual liquidity is not sold as liquidity",
+     /Virtual liquidity is not liquidity/i.test(body));
+  ok("and it says what is actually behind the price before bonding",
+     /only ETH behind the price is what buyers put in/i.test(body));
+  ok("the burn is named as the buyer's instant loss too",
      /also your instant loss/i.test(body));
-  ok("a slow bleed is admitted to be free", /slow bleed is free/i.test(body));
-  ok("the cap is not sold as a lock", /cap is not a lock/i.test(body));
-  ok("and the compounding is quantified rather than hand-waved",
-     /67% out in five days/i.test(body));
-  ok("an unregistered venue is admitted to be outside both rules",
-     /outside both rules/i.test(body));
-  ok("no oracle means no Rule 1, stated plainly", /No oracle, no Rule 1/i.test(body));
-  ok("and that nothing is settled until freeze() has run",
-     /frozen\(\)/.test(body) && /can exempt any address/i.test(body));
+  ok("a falling market is admitted to burn nothing",
+     /falling market burns nothing/i.test(body));
+  ok("one wallet being outside both rules is on the landing page",
+     /One wallet is outside both rules/i.test(body) && /launcher/i.test(body));
+  ok("and it does not claim the deployer is bound", !/not the deployer/i.test(body));
+  ok("most tokens never bonding is stated as normal, not hidden",
+     /Most tokens never bond/i.test(body) && /normal outcome/i.test(body));
   ok("the absence of an audit is on the page, not only in the repo",
-     /has been audited/i.test(body) && /testnet/i.test(body));
+     /No audit, no testnet/i.test(body));
+  ok("it states plainly that nothing is deployed", /Nothing is deployed/i.test(body));
+  ok("and that anything shown today is not it", /is not it/i.test(body));
 }
 
-console.log("── getting in: the two things that cost money to get wrong");
+console.log("── depth costs speed, with the numbers rather than the adjective");
 {
-  ok("it warns that a plain ETH send will revert",
-     /Do not just send ETH/i.test(body) && /revert/i.test(body));
-  ok("and names the call that actually works", /deposit\(\)/.test(body));
-  ok("it tells you to check the address against the checker first",
-     /check it against/i.test(body) && SRC.includes('href="/checker.html"'));
-  ok("it says an address from a DM or a screenshot is not an address",
-     /is not an address/i.test(body));
-  ok("the exit fee is described as staying with the people who stayed",
-     /never paid to the deployer/i.test(body));
-  // This asserted that the page says "anybody can trigger" a refund, which the contract does
-  // not do: refund() and claim() both read deposited[msg.sender] and there is no refund(address).
-  // The assertion was holding a false sentence in place, which is worse than not testing it.
-  ok("it does not claim a stranger can refund you for you", !/anybody can trigger/i.test(body));
-  ok("it says you have to call refund yourself",
-     /call\s+refund\(\)\s+yourself/i.test(body.replace(/\s+/g, " ")));
-  ok("and that nothing collects what nobody comes back for",
-     /no sweep/i.test(body) || /sits there/i.test(body));
-  ok("with nothing deployed it shows no address at all", (await txt("#poolAddr")) === "no address yet");
+  ok("the trade-off is stated as a trade-off", /Depth costs speed/i.test(body));
+  const rows = await page.$$eval("table tbody tr", rs =>
+    rs.map(r => [...r.querySelectorAll("td")].map(c => c.textContent.trim())));
+  ok("three virtual-ETH settings are tabulated", rows.length === 3, JSON.stringify(rows));
+  // Checked against bond_model.py's closed form, not against the copy that quotes it.
+  for (const r of rows) {
+    const E0 = Number(r[0]), want = E0 * (Math.sqrt(10) - 1);
+    const got = Number(String(r[3]).replace(/[^\d.]/g, ""));
+    ok(`${E0} virtual ETH bonds at E0*(sqrt(10)-1) = ${want.toFixed(1)} ETH`,
+       Math.abs(got - want) < 0.15, `the page says ${got}`);
+  }
+  ok("and it says outright that no row is both", /no row that is both/i.test(body));
+}
+
+console.log("── every word that needs defining has one attached to it");
+{
+  const defs = await page.$$eval(".d", els => els.map(e => ({
+    word: e.textContent.trim(), title: e.dataset.t || "", def: e.dataset.d || "",
+    tag: e.tagName, type: e.getAttribute("type"), aria: e.getAttribute("aria-label"),
+    border: parseFloat(getComputedStyle(e).borderTopWidth) || 0,
+  })));
+  ok("there are definitions on the page", defs.length >= 5, String(defs.length));
+  for (const d of defs) {
+    ok(`"${d.word}" has a definition`, d.def.length > 10, JSON.stringify(d));
+    ok(`"${d.word}" is short enough for a popover`, d.def.split(/\s+/).length <= 30,
+       d.def.split(/\s+/).length + " words");
+    ok(`"${d.word}" is keyboard-reachable and named for a screen reader`,
+       d.tag === "BUTTON" && d.type === "button" && !!d.aria, JSON.stringify(d));
+    ok(`"${d.word}" reads as a word, not as a control`, d.border === 0, String(d.border));
+  }
+  await page.click(".d");
+  ok("clicking a term opens the definition", !(await page.isHidden("#defbox")));
+  ok("and the box names the term", (await txt("#defTitle")).length > 0);
+  await page.click("#defClose");
+  ok("the close control closes it", await page.isHidden("#defbox"));
+  await page.click(".d");
+  await page.keyboard.press("Escape");
+  ok("and so does Escape", await page.isHidden("#defbox"));
+}
+
+console.log("── Base blue where it clears contrast, and nowhere else");
+{
+  ok("the real Base blue is in the palette", /--base:\s*#0052ff/i.test(SRC));
+  ok("with a lifted tint for anything that has to be read", /--baseLt:\s*#5b94ff/i.test(SRC));
+  // #0052ff is 2.91:1 on this ground — under the 4.5 for text and under the 3 for a border.
+  // As a fill with white on it, it is 5.75:1. So it fills and it does not speak.
+  const misuse = await page.evaluate(() => {
+    const out = [];
+    for (const el of document.querySelectorAll("*")) {
+      const st = getComputedStyle(el);
+      if (st.color === "rgb(0, 82, 255)") out.push((el.className || el.tagName) + ":text");
+      if (st.borderTopColor === "rgb(0, 82, 255)" && parseFloat(st.borderTopWidth) > 0)
+        out.push((el.className || el.tagName) + ":border");
+    }
+    return out;
+  });
+  ok("the brand blue is never text and never a border", misuse.length === 0,
+     misuse.join(", "));
+  const chip = await page.$eval(".chain", el => {
+    const st = getComputedStyle(el); return { bg: st.backgroundColor, fg: st.color };
+  });
+  ok("the chain chip fills with it and puts white on top",
+     chip.bg === "rgb(0, 82, 255)" && chip.fg === "rgb(255, 255, 255)", JSON.stringify(chip));
+  ok("and the page names the chain and its id", /Base/.test(body) && /8453/.test(body));
+}
+
+console.log("── the tools are places to go, not a row of buttons");
+{
+  const tools = await page.$$eval(".tools a", els => els.map(e => {
+    const st = getComputedStyle(e);
+    return { text: e.textContent.trim(), border: parseFloat(st.borderTopWidth) || 0,
+             bg: st.backgroundColor, h: e.getBoundingClientRect().height };
+  }));
+  ok("there are tool links", tools.length >= 5, String(tools.length));
+  for (const t of tools) {
+    ok(`"${t.text}" has no button border`, t.border === 0, String(t.border));
+    ok(`"${t.text}" has no button fill`,
+       t.bg === "rgba(0, 0, 0, 0)" || t.bg === "transparent", t.bg);
+    ok(`"${t.text}" is still a big enough tap target`, t.h >= 36, String(t.h));
+  }
 }
 
 console.log("── the artwork is wired the way it was measured");
@@ -268,8 +329,8 @@ console.log("── motion is optional, and layout survives a phone");
   await page.waitForTimeout(80);
   const h = await page.$eval(".chartwrap", el => el.getBoundingClientRect().height);
   ok("the chart is given real room on a desktop, not a strip", h >= 300, String(h));
-  const wide = await page.$eval(".panels", el => getComputedStyle(el).gridTemplateColumns);
-  ok("the panels go two-up on a desktop", wide.split(" ").length === 2, wide);
+  const wide = await page.$eval(".steps", el => getComputedStyle(el).gridTemplateColumns);
+  ok("the steps go two-up on a desktop", wide.split(" ").length === 2, wide);
   await page.setViewportSize({ width: 375, height: 900 });
 }
 

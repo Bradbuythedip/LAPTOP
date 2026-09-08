@@ -26,6 +26,11 @@
   --card:#0e1424;                    /* opaque, for inputs and selects */
   --cardBg:rgba(255,255,255,.045);
   --gold:#f0c040; --goldHi:#ffd970; --goldSoft:rgba(240,192,64,.14);
+  /* Base blue. #0052ff is the real brand colour and it is 2.91:1 on this ground — under the
+     4.5 for text and under the 3 for a border. So it is a FILL, where white on it is 5.75:1,
+     and --baseLt is the tint allowed to speak at 5.68:1. Using the brand blue as text would be
+     the one place on this site where the brand beat the reader. */
+  --base:#0052ff; --baseLt:#5b94ff; --baseSoft:rgba(0,82,255,.16); --onBase:#ffffff;
   --onGold:#140f02;                  /* text ON a gold fill. White on gold is 1.70:1 — unusable */
   --ok:#4fd18a; --okbg:rgba(79,209,138,.13);
   --bad:#ff8178; --badbg:rgba(255,129,120,.13);
@@ -168,6 +173,66 @@ a.cta.sub2:hover{border-color:var(--gold);color:var(--goldHi)}
   color:var(--fg);background:rgba(255,255,255,.02)}
 .tools a:hover{border-color:var(--gold);color:var(--goldHi)}
 
+/* ------------------------------------------------------------------------- click to define.
+   A dotted underline on the word itself, not a chip and not an icon — a reader should be able
+   to see at a glance which words have a definition without the page turning into a control
+   panel. It is a <button> for the keyboard and the screen reader, and it is styled like text
+   because that is what it is. */
+.d{all:unset;cursor:help;border-bottom:1.5px dotted var(--baseLt);color:inherit;
+  font:inherit;-webkit-tap-highlight-color:transparent}
+.d:hover{border-bottom-color:var(--gold)}
+.d:focus-visible{outline:2px solid var(--gold);outline-offset:2px;border-radius:2px}
+#defbox{position:fixed;left:12px;right:12px;bottom:12px;z-index:50;
+  background:#0d1322;border:1.5px solid var(--baseLt);border-radius:12px;padding:13px 14px;
+  box-shadow:0 -6px 30px rgba(0,0,0,.6);max-width:520px;margin:0 auto}
+#defbox[hidden]{display:none}
+#defbox .t{font-weight:700;font-size:14px;margin-bottom:4px;color:var(--baseLt)}
+#defbox .b{font-size:13.5px;line-height:1.55;color:var(--fg)}
+#defbox .x{position:absolute;top:8px;right:10px;all:unset;cursor:pointer;color:var(--dim);
+  font-size:18px;line-height:1;padding:4px 6px}
+#defbox .x:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
+
+/* The chain chip. Base blue as a fill, which is the only place it clears contrast. */
+.chain{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;
+  padding:4px 10px;border-radius:999px;background:var(--base);color:var(--onBase)}
+.chain .dot{width:7px;height:7px;border-radius:50%;background:var(--onBase);opacity:.85}
+
+/* Tools are links with a mark beside them, not a row of buttons. An icon inside a bordered
+   box reads as "press me"; these are places to go, and one of them is not more pressable than
+   the paragraph above it. */
+.tools{display:flex;flex-wrap:wrap;gap:6px 18px;margin:6px 0 0;padding:0;list-style:none}
+.tools a{display:inline-flex;align-items:center;gap:7px;font-size:13.5px;color:var(--fg);
+  text-decoration:none;padding:6px 0;min-height:36px;border:0;background:none}
+.tools a:hover{color:var(--goldHi)}
+.tools a::before{content:"";width:6px;height:6px;border-radius:50%;
+  background:var(--baseLt);flex:none}
+.tools a:hover::before{background:var(--gold)}
+
+/* Steps: the four things, as short as they go. */
+.steps{display:grid;gap:10px;margin:10px 0 0}
+@media (min-width:720px){ .steps{grid-template-columns:repeat(2,1fr)} }
+.step{display:flex;gap:11px;align-items:flex-start;padding:12px 13px;border-radius:11px;
+  background:var(--cardBg);border:1px solid var(--line)}
+.step .n{flex:none;width:26px;height:26px;border-radius:8px;background:var(--base);
+  color:var(--onBase);font-weight:700;font-size:13px;display:flex;align-items:center;
+  justify-content:center}
+.step h3{margin:0 0 3px;font-size:14.5px}
+.step p{margin:0;font-size:13px;color:var(--dim);line-height:1.55}
+table{width:100%;border-collapse:collapse;font-size:13px;margin-top:8px}
+th,td{text-align:right;padding:8px 6px;border-bottom:1px solid var(--line)}
+th:first-child,td:first-child{text-align:left}
+th{color:var(--dim);font-weight:500;font-size:12px}
+td.n{font-family:var(--mono)}
+tbody tr:last-child td{border-bottom:0}
+.scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
+ul{margin:0;padding-left:18px} li{margin-bottom:5px}
+.pair{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:2px 0 0}
+.pill{display:inline-flex;align-items:center;gap:7px;padding:7px 12px;border-radius:999px;
+  font-weight:700;font-size:14px;background:var(--goldSoft);border:1.5px solid var(--gold);
+  color:var(--gold)}
+.pill.lp{background:var(--baseSoft);border-color:var(--baseLt);color:var(--baseLt)}
+.arrow{color:var(--dim);font-size:18px}
+
 body::before{content:"";position:fixed;inset:0;z-index:-3;pointer-events:none;
   background:url("/bg.png") center center / cover no-repeat;opacity:0.34}
 html::before{
@@ -196,230 +261,137 @@ a.cta.sub2{border-color:var(--edge)}
   </div>
   <h1 class="ticker">$SNOOZE</h1>
   <p class="tag">You snooze, you win.</p>
-  <p class="lede">Two rules, in code rather than in a promise. Selling into a spike burns most
-  of what you would have taken, and nobody moves more than a fifth of their bag a day. One
-  wallet is outside both of them, and it is the launcher's &mdash;
-  <a class="ext" href="#limits">why, and how to check it</a>.</p>
+  <p class="lede">A launchpad on Base. <b>Anyone can launch.</b> No permission, no listing, and
+  no liquidity of your own &mdash; it starts
+  <button class="d" data-t="Virtual liquidity" data-d="Pretend reserves that set the price. Real money buys against them; no real money is behind them until the token bonds.">virtual</button>
+  and turns real when the token
+  <button class="d" data-t="Bonding" data-d="When enough real ETH has arrived, the token graduates: the ETH and a token allocation go into a real pool and the curve retires.">bonds</button>.</p>
   <div class="heroCta">
-    <a class="cta" href="#getin">Get in before launch</a>
+    <a class="cta" href="#get">Get $SNOOZE</a>
     <a class="cta sub2" href="#how">How it works</a>
   </div>
-  <p class="tiny dim" style="margin:10px 0 0">
-    <a class="ext" href="/snooze.html">the dial</a> &middot;
-    <a class="ext" href="/buy.html">where to buy</a> &middot;
-    <a class="ext" href="/checker.html">contract checker</a>
-  </p>
+  <p style="margin:12px 0 0"><span class="chain"><span class="dot"></span>Base &middot; 8453</span></p>
 </header>
 
-<!-- ------------------------------------------------------------------ live, or honestly not -->
 <section class="card live" id="live">
   <div class="hdr">
     <h2>Live</h2>
-    <span class="badge" id="liveBadge">reading…</span>
+    <span class="badge" id="liveBadge">reading&hellip;</span>
   </div>
   <p class="strap" id="strap"></p>
   <div class="chartwrap">
-    <svg id="chart" viewBox="0 0 600 320" preserveAspectRatio="none" role="img" aria-labelledby="chartTitle"></svg>
+    <svg id="chart" viewBox="0 0 600 320" preserveAspectRatio="none" role="img"
+         aria-labelledby="chartTitle"></svg>
     <div class="empty" id="chartEmpty" style="display:none"></div>
   </div>
   <p class="axis"><span id="axX"></span><span id="axY"></span></p>
   <div class="stats" id="stats"></div>
-  <p class="tiny dim" style="margin:10px 0 0">
-    Every number here is read from Base in your browser. This page holds no database and no
-    cache, so if a read fails it says so rather than showing you the last thing it saw.
-  </p>
 </section>
 
-<!-- ---------------------------------------------------------------------- the infographic -->
 <h1 id="how" style="margin-top:26px">How it works</h1>
-<p class="sub">Three mechanisms and one list of things they do not do. The fourth panel is the
-one worth reading twice.</p>
-
-<div class="panels">
-
-  <div class="panel">
-    <h3><span class="num">1</span>One order, at one price</h3>
-    <figure>
-      <svg viewBox="0 0 320 108" role="img"
-           aria-label="Several wallets converge into a single pooled order, which makes one buy and is then split back out in proportion.">
-        <g fill="none" stroke="#7c8aaf" stroke-width="1.5">
-          <rect x="6" y="10" width="30" height="20" rx="4"/>
-          <rect x="6" y="44" width="30" height="20" rx="4"/>
-          <rect x="6" y="78" width="30" height="20" rx="4"/>
-        </g>
-        <g stroke="#f0c040" stroke-width="1.5" fill="none">
-          <path d="M38 20 C 62 20, 62 54, 84 54"/>
-          <path d="M38 54 L 84 54"/>
-          <path d="M38 88 C 62 88, 62 54, 84 54"/>
-        </g>
-        <rect x="86" y="38" width="62" height="32" rx="7" fill="rgba(240,192,64,.14)"
-              stroke="#f0c040" stroke-width="1.75"/>
-        <text x="117" y="58" text-anchor="middle" font-size="11" fill="#f0c040"
-              font-family="ui-monospace,monospace">one</text>
-        <path d="M150 54 L 186 54" stroke="#f0c040" stroke-width="1.75" fill="none"/>
-        <path d="M180 49 L 187 54 L 180 59" stroke="#f0c040" stroke-width="1.75" fill="none"/>
-        <circle cx="212" cy="54" r="22" fill="none" stroke="#7c8aaf" stroke-width="1.5"/>
-        <text x="212" y="58" text-anchor="middle" font-size="10" fill="#9aa6c2">pool</text>
-        <g stroke="#f0c040" stroke-width="1.5" fill="none">
-          <path d="M236 54 C 258 54, 258 20, 282 20"/>
-          <path d="M236 54 L 282 54"/>
-          <path d="M236 54 C 258 54, 258 88, 282 88"/>
-        </g>
-        <g fill="none" stroke="#7c8aaf" stroke-width="1.5">
-          <rect x="284" y="10" width="30" height="20" rx="4"/>
-          <rect x="284" y="44" width="30" height="20" rx="4"/>
-          <rect x="284" y="78" width="30" height="20" rx="4"/>
-        </g>
-      </svg>
-    </figure>
-    <p>Everyone who gets in before launch is pooled into a single buy. One transaction, one
-    price, split by what each of you put in. Nobody in the pool can front-run anybody else in
-    the pool, because there is only one order to be in front of.</p>
-  </div>
-
-  <div class="panel">
-    <h3><span class="num">2</span>You sell at yesterday's price</h3>
-    <figure>
-      <svg viewBox="0 0 320 108" role="img"
-           aria-label="A price line spikes above its 24-hour average. The shaded area between the spike and the average is the part that burns.">
-        <defs>
-          <linearGradient id="burnfill" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stop-color="#ff8178" stop-opacity=".40"/>
-            <stop offset="100%" stop-color="#ff8178" stop-opacity=".05"/>
-          </linearGradient>
-        </defs>
-        <path d="M14 74 L70 70 L112 66 L150 30 L188 22 L226 44 L268 62 L306 60 L306 62 L14 62 Z"
-              fill="url(#burnfill)"/>
-        <path d="M14 62 L306 62" stroke="#9aa6c2" stroke-width="1.5" stroke-dasharray="5 4"/>
-        <path d="M14 74 L70 70 L112 66 L150 30 L188 22 L226 44 L268 62 L306 60"
-              fill="none" stroke="#f0c040" stroke-width="2.25" stroke-linejoin="round"/>
-        <text x="16" y="56" font-size="9.5" fill="#9aa6c2">24-hour average</text>
-        <text x="196" y="17" font-size="9.5" fill="#ff8178">this part burns</text>
-      </svg>
-    </figure>
-    <p>If the price is above its 24-hour average and you sell today, the difference burns. At
-    or below the average, you sell at today's price and nothing burns. The haircut is destroyed
-    rather than collected — unless the launcher took a share of it, which is capped at a fifth
-    of the haircut and fixed at deployment. <span class="mono">supplyOnlyFalls()</span> on the
-    token answers that in one word, and until a token exists there is nothing to ask.</p>
-  </div>
-
-  <div class="panel">
-    <h3><span class="num">3</span>Nobody can nuke it</h3>
-    <figure>
-      <svg viewBox="0 0 320 108" role="img"
-           aria-label="A wallet balance shown as a bar, of which only the first fifth is movable in a day; the rest is held back until the window resets.">
-        <rect x="14" y="34" width="292" height="40" rx="8" fill="rgba(255,255,255,.04)"
-              stroke="#7c8aaf" stroke-width="1.5"/>
-        <rect x="15" y="35" width="58" height="38" rx="7" fill="rgba(240,192,64,.24)"/>
-        <path d="M73 30 L73 78" stroke="#f0c040" stroke-width="2"/>
-        <text x="20" y="59" font-size="11" fill="#f0c040" font-family="ui-monospace,monospace">20%</text>
-        <text x="86" y="59" font-size="11" fill="#9aa6c2">the other 80% stays put today</text>
-        <text x="14" y="24" font-size="9.5" fill="#9aa6c2">one wallet, one day</text>
-        <text x="14" y="94" font-size="9.5" fill="#9aa6c2">the window rolls forward 24 hours after your first move</text>
-      </svg>
-    </figure>
-    <p>No wallet moves more than 20% of its balance per day, whales included. It applies to
-    every transfer out, so splitting across fresh wallets is throttled at the same rate —
-    the first hop is itself a transfer. One address is exempt, and the panel beside this one
-    says which and why.</p>
-  </div>
-
-  <div class="panel no" id="limits">
-    <h3><span class="num">!</span>What the rules do not do</h3>
-    <ul>
-      <li><b>One wallet is outside both rules, permanently.</b> Seeding a pool and selling into
-      it are the same transfer, so the launcher has to be exempt from the cap to seed at all
-      &mdash; and the flag that skips the cap skips the burn as well.
-      <span class="mono">freeze()</span> makes it permanent. It is the wallet holding the whole
-      supply the moment the token exists. Read <span class="mono">capExempt()</span> on it
-      yourself, and look at where the supply went afterwards.</li>
-      <li><b>Before <span class="mono">freeze()</span>, none of it is settled.</b> While
-      <span class="mono">frozen()</span> is false the admin can exempt any address, its own
-      included. Launching through the launchpad freezes in the same transaction, so there is no
-      window — but that is a property of how it was launched, not of the token. Read
-      <span class="mono">frozen()</span> before you believe any of this panel.</li>
-      <li><b>The dial is also your instant loss.</b> A burn of 41% means selling burns 41% —
-      including if you bought ten minutes ago at the top.</li>
-      <li><b>A slow bleed is free.</b> Rule 1 only bites above the 24-hour average. Sell into a
-      falling market and nothing burns at all.</li>
-      <li><b>A cap is not a lock.</b> 20% a day compounds: a wallet is 67% out in five days and
-      basically empty in a fortnight.</li>
-      <li><b>An unregistered venue is outside both rules.</b> Liquidity that migrates to a
-      wrapper the token has never heard of takes the rules off.</li>
-      <li><b>No oracle, no Rule 1.</b> If the price feed is not ready the burn is zero and the
-      token is an ordinary ERC-20 with a transfer cap.</li>
-      <li><b>Nothing here has been audited</b>, and nothing has been on a testnet.</li>
-    </ul>
-  </div>
-
+<div class="steps">
+  <div class="step"><div class="n">1</div><div>
+    <h3>Anyone launches</h3>
+    <p>Permissionless. You bring a name and nothing else.</p>
+  </div></div>
+  <div class="step"><div class="n">2</div><div>
+    <h3>The price is a curve, not a pool</h3>
+    <p>Buying moves it up, selling moves it down, and the curve can only ever pay out the ETH
+    that came in.</p>
+  </div></div>
+  <div class="step"><div class="n">3</div><div>
+    <h3>At 10&times; it bonds</h3>
+    <p>The real ETH and a token allocation go into a real pool at the price the curve closed
+    at. Takes <b>2.16&times;</b> the
+    <button class="d" data-t="Virtual ETH" data-d="The imaginary ETH the curve starts with. It sets both how deep the book feels and how much real money bonding takes — one dial, not two.">virtual ETH</button>
+    in real buys.</p>
+  </div></div>
+  <div class="step"><div class="n">4</div><div>
+    <h3>Selling into a spike burns</h3>
+    <p>Above the
+    <button class="d" data-t="24-hour average" data-d="The average price over the last day. Sell above it and the difference is destroyed; sell at or below it and nothing is.">24-hour average</button>,
+    the difference is destroyed. Below it, nothing burns.</p>
+  </div></div>
 </div>
 
-<!-- ------------------------------------------------------------------------- getting in -->
-<h1 id="getin" style="margin-top:26px">Getting in before launch</h1>
-<p class="sub">The pooled buy takes deposits, buys once at launch, and hands out tokens
-pro-rata. Until it exists there is nothing to send anything to.</p>
+<h1 id="get" style="margin-top:26px">$SNOOZE and LAPTOP</h1>
+<p class="sub">$SNOOZE is the launchpad. LAPTOP is the first launch on it.</p>
 
 <div class="card">
-  <div class="hdr"><h2>The contract</h2><span class="badge" id="poolBadge">not deployed</span></div>
-  <p class="mono" id="poolAddr">—</p>
-  <p class="tiny dim" style="margin:6px 0 0">
-    When this is filled in, check it against <a class="ext" href="/checker.html">the checker</a>
-    before you send anything. An address in a reply, a DM or a screenshot is not an address.
-  </p>
-  <div class="badbox" style="margin-top:10px">
-    <b>Do not just send ETH to it.</b> The contract refuses plain transfers from anyone except
-    the router — your send will revert and you will pay gas for nothing. Getting in means
-    calling <span class="mono">deposit()</span> with ETH attached, from your own wallet.
+  <div class="pair">
+    <span class="pill">$SNOOZE</span><span class="arrow">&rarr;</span>
+    <span class="pill lp">LAPTOP</span>
   </div>
-  <div class="warnbox">
-    <b>This page cannot do it for you, and that is deliberate.</b> It connects and reads, and
-    it does not ask you to sign anything. It holds no signing, sending or approval code, so a
-    clone of it cannot ask you to approve something and claim that is normal here. Make the
-    call from your wallet or from the contract's own page on a block explorer.
+  <p style="margin:12px 0 0;font-size:14.5px"><b>Holding $SNOOZE is how you get into LAPTOP
+  early.</b> The curve opens to $SNOOZE holders first, and an allocation is set aside for
+  whoever holds it at a
+  <button class="d" data-t="Snapshot" data-d="A single block, fixed in advance, at which balances are read. What you hold at that block is what you get; what you do after does not change it.">snapshot block</button>
+  &mdash; claimed by you, from your own wallet.</p>
+  <p class="mono" id="poolAddr" style="margin:10px 0 0">&mdash;</p>
+  <div class="warnbox" style="margin-top:8px">
+    <b>Nothing is deployed.</b> <span id="poolBadge" class="badge warn">not deployed</span>
+    There is no $SNOOZE contract and no LAPTOP curve yet, so there is no snapshot and no
+    address. Anything you are shown today is not it. When there is one, check it against
+    <a class="ext" href="/checker.html">the checker</a> before you send anything.
   </div>
 </div>
 
 <div class="card">
-  <div class="hdr"><h2>What you are agreeing to</h2></div>
-  <p class="tiny" style="margin:0 0 8px">Read these off the contract, not off this page —
-  every one of them is a public immutable you can check yourself.</p>
-  <div class="stats">
-    <div class="stat"><div class="k">minimum deposit</div><div class="v" id="pMin">—</div></div>
-    <div class="stat"><div class="k">leave early, fee</div><div class="v" id="pFee">—</div></div>
-    <div class="stat"><div class="k">buy opens</div><div class="v" id="pOpen">—</div></div>
-    <div class="stat"><div class="k">refund from</div><div class="v" id="pRef">—</div></div>
-  </div>
-  <p class="tiny dim" style="margin:10px 0 0">
-    You can leave before the buy for a fee, and that fee stays in the pool for the people who
-    did not leave — it is never paid to the deployer. If the buy never happens, refunds open
-    at the date above: no permission and no fee, but <b>you have to call
-    <span class="mono">refund()</span> yourself</b>. It reads your own balance and nobody
-    else's, so no helpful stranger can do it for you, and there is no sweep — ETH nobody comes
-    back for sits there. The same is true of <span class="mono">claim()</span> after a
-    successful buy.
-  </p>
+  <div class="hdr"><h2>Depth costs speed. Pick one.</h2></div>
+  <p class="tiny" style="margin:0 0 8px">The
+  <button class="d" data-t="Slippage" data-d="The gap between the price you see and the price you get. Bigger trades against a thinner book pay more of it.">slippage</button>
+  you remove is real money somebody has to spend before the token bonds. Same dial.</p>
+  <div class="scroll"><table>
+    <thead><tr><th>virtual ETH</th><th>0.1 ETH buy</th><th>1 ETH buy</th><th>to bond at 10&times;</th></tr></thead>
+    <tbody>
+      <tr><td class="n">3</td><td class="n">3.3%</td><td class="n">33%</td><td class="n">6.5 ETH</td></tr>
+      <tr><td class="n">10</td><td class="n">1.0%</td><td class="n">10%</td><td class="n">21.6 ETH</td></tr>
+      <tr><td class="n">25</td><td class="n">0.4%</td><td class="n">4.0%</td><td class="n">54.1 ETH</td></tr>
+    </tbody>
+  </table></div>
+  <p class="tiny dim" style="margin:8px 0 0">There is no row that is both. A token nobody can
+  move the price of is also a token that never bonds.</p>
 </div>
 
-<h1 style="margin-top:26px">The rest of the toolkit</h1>
-<p class="sub">All read-only, all self-contained, none of them ask you to sign anything.</p>
-<nav class="tools">
-  <a href="/snooze.html">The dial</a>
-  <a href="/checker.html">Contract checker</a>
-  <a href="/buy.html">Where to buy</a>
-  <a href="/size.html">Size curve</a>
-  <a href="/route.html">Get ready</a>
-  <a href="/order.html">Standing order</a>
-  <a href="/slot.html">Getting a slot</a>
-  <a href="/launch.html">Launch parameters</a>
-</nav>
+<div class="card no" style="border-color:var(--warn)">
+  <div class="hdr"><h2 style="color:var(--warn)">What this does not do</h2></div>
+  <ul style="margin:0;padding-left:18px;font-size:13px;color:var(--dim);line-height:1.6">
+    <li><b>Virtual liquidity is not liquidity.</b> Before bonding, the only ETH behind the
+    price is what buyers put in. The curve cannot pay out more than that, and it does not
+    pretend to.</li>
+    <li><b>The burn is also your instant loss.</b> A 41% dial means selling burns 41%,
+    including ten minutes after you bought.</li>
+    <li><b>A falling market burns nothing.</b> The rule only bites above the average.</li>
+    <li><b>One wallet is outside both rules</b> &mdash; the launcher's, which has to be exempt
+    to seed at all. <a class="ext" href="/snooze.html">the detail</a></li>
+    <li><b>Most tokens never bond.</b> That is the normal outcome, not the failure case.</li>
+    <li><b>No audit, no testnet run.</b> Nothing here has been either.</li>
+  </ul>
+</div>
+
+<h1 style="margin-top:26px">Tools</h1>
+<p class="sub">Read-only. None of them ask you to sign anything.</p>
+<ul class="tools">
+  <li><a href="/snooze.html">The dial</a></li>
+  <li><a href="/checker.html">Is this the real address?</a></li>
+  <li><a href="/buy.html">Where to buy</a></li>
+  <li><a href="/size.html">What a size actually gets</a></li>
+  <li><a href="/order.html">Standing order</a></li>
+  <li><a href="/slot.html">Getting a slot</a></li>
+  <li><a href="/launch.html">Launch parameters</a></li>
+</ul>
 
 <div class="footer">
   <div class="hr"></div>
-  <p> &middot; totalworlddomination.xyz &middot; Build <span class="mono" id="buildId">2026-09-08a</span> &middot; no analytics,
-  no trackers, no cookies. Nothing you type leaves your browser except the chain reads it has
-  to make. The README publishes the sha256 of every page under this build tag, so you can hash
-  what you are looking at and compare.</p>
+  <p>totalworlddomination.xyz &middot; Build <span class="mono" id="buildId">2026-09-08a</span>
+  &middot; no analytics, no trackers, no cookies. This page connects and reads, and it does not
+  ask you to sign anything. The README publishes the sha256 of every page under this build tag.</p>
+</div>
+
+<div id="defbox" hidden role="dialog" aria-live="polite" aria-labelledby="defTitle">
+  <button class="x" id="defClose" aria-label="close">&times;</button>
+  <div class="t" id="defTitle"></div>
+  <div class="b" id="defBody"></div>
 </div>
 
 <script>
@@ -428,7 +400,18 @@ pro-rata. Until it exists there is nothing to send anything to.</p>
    in the read set the suite enforces across every page. */
 const $ = id => document.getElementById(id);
 const CHAIN_ID = 8453;
-let RPC = localStorage.getItem("laptop.rpc") || "https://mainnet.base.org";
+/* A same-origin path first, the public endpoint second. The one method this page depends on
+   is eth_getLogs, and that is the one a public Base endpoint refuses outright or range-caps —
+   the README has said so about the Python scripts since before this page existed and it was
+   never carried across. /api/rpc lets a keyed endpoint sit server-side: a vendor URL pasted
+   into a static file is a bearer credential handed to everyone who views source, and no amount
+   of obfuscation changes that, because the browser has to be able to read it to use it.
+   Referrer restriction cannot save it either — every fetch here sets no-referrer, so the
+   provider sees nothing to check. Origin allowlisting is what works. */
+const RELAY = "/api/rpc";
+const PUBLIC_RPC = "https://mainnet.base.org";
+let RPC = localStorage.getItem("laptop.rpc") || RELAY;
+let triedRelay = false;
 
 /* The addresses, once they exist. Empty is the honest state and it is the state today: there
    is no deployed $SNOOZE, so there is nothing here to be wrong about. Filling these in is a
@@ -452,7 +435,13 @@ async function post(body, ms = 20000){
   }finally{ clearTimeout(t); }
 }
 async function one(m, p){
-  const r = await post({jsonrpc:"2.0", id:1, method:m, params:p});
+  let r = await post({jsonrpc:"2.0", id:1, method:m, params:p});
+  // If /api/rpc is not deployed the first call 404s. Fall through to the public endpoint once,
+  // and remember, rather than paying for a failed round trip on every read.
+  if(!r.ok && RPC === RELAY && !triedRelay){
+    triedRelay = true; RPC = PUBLIC_RPC;
+    r = await post({jsonrpc:"2.0", id:1, method:m, params:p});
+  }
   if(!r.ok) return r;
   if(r.body && r.body.error) return {ok:false, reason:"node error"};
   return {ok:true, data: r.body && r.body.result};
@@ -658,20 +647,47 @@ async function loadLive(){
             ["state", "open"]]);
 }
 
+/* The address slot. Null-safe on purpose: this page has been rewritten twice and the last
+   rewrite deleted the element this used to write to, which threw before the chart ever drew.
+   A page that goes blank because a label moved is a worse failure than a missing label. */
 function showPool(){
-  if(POOL){
-    $("poolAddr").textContent = POOL;
-    $("poolBadge").textContent = "deployed";
-    $("poolBadge").className = "badge good";
-  }else{
-    $("poolAddr").textContent = "no address yet";
-    $("poolBadge").textContent = "not deployed";
-    $("poolBadge").className = "badge warn";
+  const a = $("poolAddr"), badge = $("poolBadge");
+  if(a) a.textContent = POOL || "no address yet";
+  if(badge){
+    badge.textContent = POOL ? "deployed" : "not deployed";
+    badge.className = "badge " + (POOL ? "good" : "warn");
   }
 }
 
 window.__CHART = CHART;
 window.__SNOOZE = { burnAt, POOL, TOKEN };
+
+/* ------------------------------------------------------------------------ click to define.
+   Every definition is in the markup beside the word it defines, so there is no dictionary to
+   fall out of date with the page and nothing to fetch. */
+(function(){
+  const box = $("defbox"), t = $("defTitle"), b = $("defBody");
+  let open = null;
+  const hide = () => { box.hidden = true; open = null; };
+  document.addEventListener("click", e => {
+    const d = e.target.closest(".d");
+    if(d){
+      if(open === d) return hide();
+      t.textContent = d.dataset.t || d.textContent;
+      b.textContent = d.dataset.d || "";
+      box.hidden = false; open = d;
+      return;
+    }
+    if(!e.target.closest("#defbox")) hide();
+  });
+  $("defClose").addEventListener("click", hide);
+  document.addEventListener("keydown", e => { if(e.key === "Escape") hide(); });
+  // Announce that these words do something, without turning them into controls.
+  for(const el of document.querySelectorAll(".d")){
+    el.setAttribute("type", "button");
+    el.setAttribute("aria-label", (el.dataset.t || el.textContent) + " — what this means");
+  }
+})();
 
 showPool();
 loadLive();
