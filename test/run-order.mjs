@@ -56,13 +56,14 @@ ok("no signing of any kind",
    !/signTypedData|_signTypedData|personal_sign|signTransaction|privateKey|mnemonic/i.test(src));
 ok("no transaction construction",
    !/eth_sendRawTransaction|eth_sendTransaction|ContractFactory/i.test(src));
-ok("says it does not ask you to sign", (await txt("body")).includes("does not ask you to sign"));
-ok("says outright it cannot place the order",
-   (await txt("body")).includes("cannot place an order"));
-ok("names the deposit pitch it will never make",
-   (await txt("body")).includes("reserve your allocation"));
+// Collapse whitespace before matching prose: the assertion is about what the page says, not
+// about where the source happens to wrap.
+const flat = (await txt("body")).replace(/\s+/g, " ");
+ok("says it does not ask you to sign", flat.includes("does not ask you to sign"));
+ok("says outright it cannot place the order", flat.includes("cannot place an order"));
+ok("names the deposit pitch it will never make", flat.includes("reserve your allocation"));
 ok("still tells the reader a deposit request means it is not this page",
-   (await txt("body")).includes("close it"));
+   flat.includes("close it"));
 
 console.log("── the promise it refuses to make");
 const body = (await txt("body")).replace(/\s+/g, " ");
