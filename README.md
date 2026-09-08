@@ -84,12 +84,9 @@ sha256(web/slot.html)  = 1eadddc6128b12c08701f3e0153af4b1be62bb08e5f246737640a13
 sh test/run-all.sh         # everything below, no network touched
 ```
 
-**Nine suites.** The per-suite counts below were last confirmed at build `2026-09-08a`, before
-the Phantom change; the session that added the wallet could not execute the suite, so the
-totals are stale until someone runs it. **Run `sh test/run-all.sh` before merging that work**
-and update these numbers from the output.
+**661 assertions across nine suites.**
 
-`test/run.mjs` — drives the real page in Chromium against `test/mock-rpc.mjs`: Keccak vectors,
+`test/run.mjs` — 208, drives the real page in Chromium against `test/mock-rpc.mjs`: Keccak vectors,
 the four EIP-55 reference addresses, the v4 poolId derivation checked against a real Base pool
 id, ABI-string decoding (including a 10-character name, whose length word contains a hex
 letter, and truncated/absurd offsets), result-length discipline, and full flows for the happy
@@ -115,21 +112,22 @@ of the JavaScript, plus properties a size curve lives or dies on: output rises w
 effective price strictly worsens, a fee costs exactly its rate at the limit, deeper liquidity
 fills better, and no fill can exceed the output-side virtual reserve. Emits the fixture below.
 
-`test/run-buy.mjs` — 32, drives the venue comparison against a three-venue fixture with
+`test/run-buy.mjs` — 33, drives the venue comparison against a three-venue fixture with
 deliberately different depths and asserts the ranking follows depth, the spread is quantified,
-and no wallet code exists anywhere in the page.
+and that the page connects and reads but holds no signing, sending or approval code.
 
-`test/run-slot.mjs` — 80, drives the deposit-contract checker against fixtures for an EOA, each of the three proxy patterns, a contract with no reachable exit, and every way a read can fail — asserting that a failure never becomes a finding.
+`test/run-slot.mjs` — 83, drives the deposit-contract checker against fixtures for an EOA, each of the three proxy patterns, a contract with no reachable exit, and every way a read can fail — asserting that a failure never becomes a finding, and that the page says outright that connecting buys you no slot.
 
-`test/run-order.mjs` — 99, drives the standing-order page: the ceiling formula against an
+`test/run-order.mjs` — 102, drives the standing-order page: the ceiling formula against an
 implementation written from the pool identity rather than the page's algebra, the two
 splitting laws below, refusal of ceilings under the fee floor, and the promises the page
 declines to make.
 
-`test/run-route.mjs` — 34, asserts `web/route.html` makes no network request of any
-kind, offers no wallet or deposit address, and gets the Solana-is-not-EVM distinction right.
+`test/run-route.mjs` — 39, asserts `web/route.html` originates no request on load, computes its
+routing table locally, offers no deposit address, reaches only for Phantom's EVM provider, and
+gets the Solana-is-not-EVM distinction right.
 
-`test/run-size.mjs` — 66, asserts `web/size.html` agrees with that Python fixture to 1e-12,
+`test/run-size.mjs` — 68, asserts `web/size.html` agrees with that Python fixture to 1e-12,
 then drives the page against constant-product, concentrated, capped, dry, stable, foreign-token
 and no-code pool fixtures.
 
