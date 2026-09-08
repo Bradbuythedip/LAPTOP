@@ -169,6 +169,7 @@ def sell(E: float, T: float, tokens: float, fee: float) -> Tuple[float, float, f
 
 @dataclass(frozen=True)
 class Result:
+    invalid: bool               # a non-finite input reached the model; nothing here is a number
     buyers: int
     volume: float               # ETH that reached the pool
     treasury_eth: float         # realizable: ETH withdrawn to a wallet
@@ -194,6 +195,16 @@ def simulate(pop: Population, sched: Schedule, seed_eth: float, pool_fee: float,
 
     Pool token supply is normalised to 1.0; every ETH quantity is unaffected by that choice.
     """
+    # A non-finite input must never become a confident zero. NaN fails every comparison, so
+    # without this it flows through as "nobody bought, take is 0" and then votes for the 0%
+    # mode in the world sweep — a broken world casting a ballot in the headline result.
+    if not all(math.isfinite(x) for x in (
+            seed_eth, pool_fee, sched.start, sched.step, sched.cap, sched.sell,
+            sched.step_unit, sched.off_after, pop.volume_eth, pop.snipe_share,
+            pop.snipe_buy_knee, pop.snipe_sell_knee, pop.org_buy_knee, pop.org_sell_knee,
+            pop.sharpness, pop.snipe_alpha, pop.org_alpha)):
+        return Result(True, 0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, float("nan"), 0)
+
     # How many of each type still buy.
     #
     # A buyer does not price the tax in isolation — they price what the trade costs them:
@@ -225,7 +236,7 @@ def simulate(pop: Population, sched: Schedule, seed_eth: float, pool_fee: float,
     # which is the one thing this codebase does not do anywhere else either.
     rt0 = 1.0 - (1.0 - sched.start) * (1.0 - pool_fee) ** 2 * (1.0 - sched.sell)
     if n_s + n_o == 0:
-        return Result(0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, rt0, deterred)
+        return Result(False, 0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, rt0, deterred)
 
     # Volume scales with participation, split by the elicited share. Shape from Pareto.
     v_s = pop.volume_eth * pop.snipe_share * p_s
@@ -270,7 +281,7 @@ def simulate(pop: Population, sched: Schedule, seed_eth: float, pool_fee: float,
 
     end_price = (E / T) if T > 0 else float("inf")
     rt = 1.0 - (1.0 - sched.start) * (1.0 - pool_fee) ** 2 * (1.0 - sched.sell)
-    return Result(len(orders), volume, treasury, depth, burned,
+    return Result(False, len(orders), volume, treasury, depth, burned,
                   end_price / start_price, tax_sum / max(1, len(orders)), rt, deterred)
 
 
@@ -287,7 +298,12 @@ def sweep_start(pop: Population, sched: Schedule, seed_eth: float, pool_fee: flo
 
 
 def objective(r: Result, destination: str) -> float:
-    """The quantity each destination is optimised on, in ITS OWN units. Never compare across."""
+    """The quantity each destination is optimised on, in ITS OWN units. Never compare across.
+
+    An invalid run scores NaN, not zero, so it cannot silently win or silently lose a sweep.
+    """
+    if r.invalid:
+        return float("nan")
     if destination == "treasury":
         return r.treasury_eth
     if destination == "lp":
@@ -304,10 +320,15 @@ def stable_region(pop: Population, sched: Schedule, seed_eth: float, pool_fee: f
     best this model can tell apart".
     """
     rows = sweep_start(pop, sched, seed_eth, pool_fee, destination)
-    best = max(objective(r, destination) for _, r in rows)
+    scored = [(t, objective(r, destination)) for t, r in rows]
+    if any(math.isnan(v) for _, v in scored):
+        # Surfaced, not dropped. A band computed from a partly-broken sweep would look exactly
+        # like a band computed from a working one.
+        return (float("nan"), float("nan"), float("nan"))
+    best = max(v for _, v in scored)
     if best <= 0:
         return (0.0, 0.0, 0.0)
-    good = [t for t, r in rows if objective(r, destination) >= best * (1.0 - tol)]
+    good = [t for t, v in scored if v >= best * (1.0 - tol)]
     return (min(good), max(good), best)
 
 

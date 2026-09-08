@@ -1,12 +1,20 @@
-// Test suite for web/launch.html. The page tells whoever sets the launch parameters what a fee
-// design earns and what it costs the people buying, so the two ways it could lie are: overstate
-// the take, or understate what a buyer pays. Both are checked against arithmetic written here
-// rather than against the page's own algebra.
+// Test suite for web/launch.html.
+//
+// The page mirrors launch_model.py. That file is the reference, test_launch_model.py pins its
+// properties, and this suite checks the JS agrees with it on a fixture the Python emits. Where
+// the two disagree the Python is right — the same arrangement size.html has with
+// test_size_math.py.
+//
+// The page's job changed: it used to recommend a rate. It now reports what a buyer pays
+// (arithmetic, no guesses) and refuses to recommend a rate, because across worlds it cannot
+// tell apart the optimum spans the whole range. Most of what follows guards that refusal,
+// because a page that quietly starts recommending again is the regression that matters.
 //   node test/run-launch.mjs
 import { chromium } from "playwright";
 import http from "node:http";
 import fs from "node:fs";
 import path from "node:path";
+import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -42,200 +50,212 @@ page.on("request", r => requests.push(r.url()));
 await page.goto(SITE + "/launch.html", { waitUntil: "networkidle" });
 const txt = async s => (await page.textContent(s).catch(() => "")) || "";
 const src = fs.readFileSync(path.join(ROOT, "web", "launch.html"), "utf8");
-const body = (await txt("body")).replace(/\s+/g, " ");
+const flat = async () => (await txt("body")).replace(/\s+/g, " ");
 
 console.log("── it configures nothing and reaches nowhere");
-const external = requests.filter(u => !u.startsWith(SITE));
-ok("no request leaves the origin", external.length === 0, external.join(", "));
+ok("no request leaves the origin", requests.filter(u => !u.startsWith(SITE)).length === 0);
 ok("no fetch, XHR or websocket anywhere", !/\bfetch\s*\(|XMLHttpRequest|WebSocket/.test(src));
-ok("no signing or sending", !/eth_sendTransaction|eth_sendRawTransaction|personal_sign|signTypedData|signTransaction/.test(src));
-ok("says it does not ask you to sign", body.includes("does not ask you to sign"));
-ok("says outright it deploys nothing", body.includes("does not deploy or configure anything"));
-ok("is addressed to the launcher, not to buyers",
-   body.includes("for whoever sets the launch parameters, not for buyers"));
+ok("no signing or sending",
+   !/eth_sendTransaction|eth_sendRawTransaction|personal_sign|signTypedData|signTransaction/.test(src));
+ok("says it does not ask you to sign", (await flat()).includes("does not ask you to sign"));
+ok("says outright it deploys nothing", (await flat()).includes("does not deploy or configure anything"));
 
-// The pool identity, against arithmetic written from the invariant rather than from the page.
-console.log("── the pool math is the same constant product the rest of the site uses");
+// ---- agreement with the Python reference, on a fixture Python emits ----
+console.log("── the page agrees with launch_model.py");
 {
-  const r = await page.evaluate(() => window.__LAUNCH.buyThrough(10, 1, 1, 0.01, 0));
-  // x*y=k with a 1% fee: in_after_fee = 0.99, out = 1*0.99/(10+0.99)
-  close("untaxed buy matches x*y=k with the fee taken first",
-        r.out, 0.99 / 10.99, 1e-15);
-  close("and the pool gains the full amount sent", r.E, 11, 1e-15);
-}
-{
-  const r = await page.evaluate(() => window.__LAUNCH.buyThrough(10, 1, 1, 0, 0.2));
-  close("a 20% tax is taken off the top", r.taxPaid, 0.2, 1e-15);
-  close("and the pool only ever sees the rest", r.E, 10.8, 1e-15);
-  close("so the output prices the net, not the gross", r.out, 0.8 / 10.8, 1e-15);
-  close("but the buyer's price is on what they sent", r.price, 1 / (0.8 / 10.8), 1e-12);
-}
-{
-  // A tax must never look free: price with tax strictly worse than price without.
-  const [a, b] = await page.evaluate(() => [
-    window.__LAUNCH.buyThrough(10, 1, 0.5, 0.01, 0).price,
-    window.__LAUNCH.buyThrough(10, 1, 0.5, 0.01, 0.05).price,
-  ]);
-  ok("a taxed buy always prices worse than an untaxed one", b > a, `${b} vs ${a}`);
+  const py = spawnSync("python3", ["-c", `
+import json, sys
+sys.path.insert(0, ${JSON.stringify(ROOT)})
+from dataclasses import replace
+from launch_model import Population, Schedule, simulate, participation, pareto_shape, tax_at
+cases = []
+pop = Population(volume_eth=100, n_snipe=40, n_organic=360)
+for seed in (10.0, 25.0):
+    for start in (0.0, 0.02, 0.10):
+        for unit in ("buy", "volume", "block"):
+            s = Schedule(unit=unit, start=start, step=0.01, step_unit=5.0, cap=0.10, sell=0.05)
+            r = simulate(pop, s, seed, 0.01, "treasury")
+            cases.append(dict(seed=seed, start=start, unit=unit,
+                              buyers=r.buyers, treasury=r.treasury_eth,
+                              volume=r.volume, rt=r.round_trip, deterred=r.deterred))
+print(json.dumps(dict(
+  cases=cases,
+  part=[participation(x, 6.0) for x in (0.0, 0.5, 1.0, 1.5, 3.0)],
+  shape=pareto_shape(5, 1.8),
+  taxes=[tax_at(Schedule(unit="buy", start=0.01, step=0.01, cap=0.10), i, 0.0, 0) for i in range(5)],
+)))
+`], { encoding: "utf8" });
+  ok("the python reference ran", py.status === 0, py.stderr);
+  const ref = JSON.parse(py.stdout);
+
+  const jsPart = await page.evaluate(() =>
+    [0, 0.5, 1, 1.5, 3].map(x => window.__LAUNCH.participation(x, 6)));
+  ref.part.forEach((v, i) =>
+    close(`participation matches the reference at pressure ${[0,0.5,1,1.5,3][i]}`,
+          jsPart[i], v, 1e-12));
+
+  const jsShape = await page.evaluate(() => window.__LAUNCH.paretoShape(5, 1.8));
+  ref.shape.forEach((v, i) => close(`pareto shape[${i}] matches`, jsShape[i], v, 1e-12));
+
+  const jsTax = await page.evaluate(() =>
+    [0,1,2,3,4].map(i => window.__LAUNCH.taxAt(
+      {unit:"buy",start:0.01,step:0.01,cap:0.10,stepUnit:5,offAfter:0,perBlock:8}, i, 0, 0)));
+  ref.taxes.forEach((v, i) => close(`tax_at(buy #${i}) matches`, jsTax[i], v, 1e-15));
+
+  for (const c of ref.cases) {
+    const got = await page.evaluate(cc => {
+      const pop = {volume:100, nSnipe:40, nOrg:360, snipeShare:0.7, snipeAlpha:1.8,
+                   orgAlpha:2.2, snipeBuyKnee:0.06, snipeSellKnee:0.40, orgBuyKnee:0.09,
+                   orgSellKnee:0.07, sharpness:6};
+      const s = {unit:cc.unit, start:cc.start, step:0.01, stepUnit:5, cap:0.10,
+                 sell:0.05, offAfter:0, perBlock:8};
+      const r = window.__LAUNCH.simulate(pop, s, cc.seed, 0.01, "treasury");
+      return {buyers:r.buyers, treasury:r.treasury, volume:r.volume,
+              rt:r.roundTrip, deterred:r.deterred};
+    }, c);
+    const tag = `seed ${c.seed} start ${c.start} ${c.unit}`;
+    ok(`${tag}: buyer count matches the reference`, got.buyers === c.buyers,
+       `${got.buyers} vs ${c.buyers}`);
+    ok(`${tag}: deterred matches`, got.deterred === c.deterred);
+    close(`${tag}: treasury take matches to 1e-9`, got.treasury, c.treasury, 1e-9);
+    close(`${tag}: volume matches to 1e-9`, got.volume, c.volume, 1e-9);
+    close(`${tag}: round trip matches`, got.rt, c.rt, 1e-12);
+  }
 }
 
-console.log("── the tax schedule");
+console.log("── the refusal to recommend, which is the point of the page");
 {
-  const t = await page.evaluate(() => {
-    const T = window.__LAUNCH.taxAt;
-    return [T(0, .01, .01, .10), T(100, .01, .01, .10), T(250, .01, .01, .10),
-            T(5000, .01, .01, .10), T(0, .02, 0, .10)];
+  const b = await flat();
+  ok("the page says it will not tell you which rate to pick",
+     b.includes("why this page will not tell you which rate to pick"));
+  ok("it explains that the old 2% was an artifact of a straight-line model",
+     b.includes("the answer a straight-line model gives when the real surface is bimodal"));
+  ok("it names what would fix it — observed order books",
+     b.includes("First-hour order books from comparable Base launches"));
+  ok("the guesses are fenced off and labelled as unfitted",
+     b.includes("nothing here is fitted") && b.includes("None of these have been fit"));
+  ok("and it says why they matter more than the elicited inputs",
+     b.includes("the answer depends on them more than on anything you set above"));
+  const badge = await txt("#verdictBadge");
+  ok("at the defaults the verdict is that there is no recommendation",
+     badge.includes("no recommendation"), badge);
+  ok("and the verdict explains the bimodality rather than picking a midpoint",
+     (await txt("#verdict")).includes("almost never in between"));
+}
+
+console.log("── the world sweep actually spans, and is not cosmetic");
+{
+  const opts = await page.evaluate(() => {
+    const pop = {volume:100, nSnipe:40, nOrg:360, snipeShare:0.7, snipeAlpha:1.8, orgAlpha:2.2,
+                 snipeBuyKnee:0.06, snipeSellKnee:0.40, orgBuyKnee:0.09, orgSellKnee:0.07,
+                 sharpness:6};
+    const s = {unit:"volume", start:0, step:0.01, stepUnit:5, cap:0.10, sell:0.05,
+               offAfter:0, perBlock:8};
+    return window.__LAUNCH.worldSweep(pop, s, 25, 0.01, "treasury");
   });
-  close("starts where you set it", t[0], .01, 1e-15);
-  close("adds a step per 100 buys", t[1], .02, 1e-15);
-  close("and does so continuously, not in jumps", t[2], .035, 1e-15);
-  close("never exceeds the cap however long it runs", t[3], .10, 1e-15);
-  close("a zero step is a flat tax", t[4], .02, 1e-15);
+  ok("81 worlds are swept, not a token few", opts.length === 81, String(opts.length));
+  const uniq = [...new Set(opts.map(o => Math.round(o * 100)))].sort((a, b) => a - b);
+  ok("the answer genuinely spans, it is not a flat line", uniq.length > 1, uniq.join(","));
+  ok("some worlds want no buy tax", opts.some(o => o === 0));
+  ok("and some want a substantial one", opts.some(o => o >= 0.07));
+  const mid = opts.filter(o => o > 0.005 && o < 0.065);
+  ok("almost nothing lands where the old model recommended (1-6%)",
+     mid.length <= opts.length * 0.05, `${mid.length} of ${opts.length}`);
 }
 
-console.log("── deterrence, which is the assumption and is labelled as one");
-ok("the page says the sensitivity number is a guess",
-   body.includes("That last number is a guess, not a measurement"));
-ok("and says which way it matters",
-   body.includes("the one input the answer is genuinely sensitive to"));
+console.log("── the unit note, because the unit decides who pays");
 {
-  const d = await page.evaluate(() => {
-    const D = window.__LAUNCH.demandAt;
-    return [D(400, 0, 6), D(400, 10, 6), D(400, 100, 6), D(400, 50, 100)];
+  ok("per-buy is called out as splittable by default text",
+     /Ten 1-ETH buys advance it ten times/.test(src));
+  await page.selectOption("#unit", "buy");
+  await page.waitForTimeout(60);
+  ok("choosing per-buy warns that the same money pays 11% split and 2% whole",
+     (await flat()).includes("11% split and 2% whole"));
+  ok("and the badge marks it splittable", (await txt("#unitBadge")).includes("splittable"));
+  await page.selectOption("#unit", "block");
+  await page.waitForTimeout(60);
+  ok("per-block is described as the only unit without an ordering lottery",
+     (await flat()).includes("everyone in the same block pays the same rate"));
+  await page.selectOption("#unit", "volume");
+  await page.waitForTimeout(60);
+  ok("per-volume is described as unsplittable but still order-dependent",
+     (await flat()).includes("splitting does not evade it"));
+}
+
+console.log("── destinations stay in their own units");
+{
+  const d = await txt("#dest");
+  ok("treasury is reported in ETH withdrawn", /ETH withdrawn/.test(d));
+  ok("recycling is reported as depth, not as take", /ETH of extra depth/.test(d));
+  ok("burning is reported as a share of supply", /share of pool supply/.test(d));
+  ok("the page says why they are not added up",
+     (await flat()).includes("marking holdings at a price this model itself moved"));
+  ok("and names the size of the error that caused", (await flat()).includes("11,000"));
+  // The circular-valuation trap must not come back through the JS either.
+  ok("no mark-to-market wealth figure exists in the source",
+     !/lp_value|burnValue|lpValue|markToMarket/.test(src));
+}
+
+console.log("── what a buyer pays involves no guess");
+{
+  const before = await txt("#buyer");
+  await page.fill("#orgBuyKnee", "1");
+  await page.fill("#sharpness", "20");
+  await page.waitForTimeout(60);
+  const after = await txt("#buyer");
+  ok("changing a pure guess does not move what a buyer pays", before === after);
+  await page.fill("#orgBuyKnee", "9"); await page.fill("#sharpness", "6");
+  await page.waitForTimeout(60);
+
+  await page.fill("#start", "5");
+  await page.waitForTimeout(60);
+  ok("but changing the schedule does",
+     (await flat()).includes("loses 11.55%"), await txt("#roundtripNote"));
+  await page.fill("#start", "0");
+  await page.waitForTimeout(60);
+  ok("and it is back at 6.89% with no starting tax",
+     (await flat()).includes("loses 6.89%"), await txt("#roundtripNote"));
+}
+
+console.log("── degenerate inputs do not produce confident nonsense");
+{
+  for (const [id, v] of [["seedE", "abc"], ["volume", "0"], ["nSnipe", "0"],
+                         ["nOrg", "0"], ["cap", "0"], ["sellTax", "0"]]) {
+    const old = await page.inputValue("#" + id);
+    await page.fill("#" + id, v);
+    await page.waitForTimeout(60);
+    ok(`${id}=${v} does not throw or blank the page`,
+       (await txt("#buyer")).length > 0 && pageErrors.length === 0,
+       pageErrors.join("; "));
+    await page.fill("#" + id, old);
+  }
+  await page.waitForTimeout(200);
+}
+
+console.log("── a broken world is surfaced, never counted as zero");
+{
+  // An adversarial reviewer's finding, and it applies to this page too: NaN fails every
+  // comparison, so it is skipped by `v > best` and dropped by the filter. A non-finite input
+  // then reads as "nobody bought, take is 0" and votes for the 0% bucket in the histogram.
+  const r = await page.evaluate(() => {
+    const pop = {volume:100, nSnipe:40, nOrg:360, snipeShare:0.7, snipeAlpha:1.8, orgAlpha:2.2,
+                 snipeBuyKnee:0.06, snipeSellKnee:0.4, orgBuyKnee:0.09, orgSellKnee:0.07,
+                 sharpness:NaN};
+    const s = {unit:"volume", start:0, step:0.01, stepUnit:5, cap:0.1, sell:0.05,
+               offAfter:0, perBlock:8};
+    const sim = window.__LAUNCH.simulate(pop, s, 25, 0.01, "treasury");
+    const band = window.__LAUNCH.stableRegion(pop, s, 25, 0.01, "treasury");
+    const good = window.__LAUNCH.simulate(
+      Object.assign({}, pop, {sharpness:6}), s, 25, 0.01, "treasury");
+    return {invalid:sim.invalid, rt:sim.roundTrip, obj:window.__LAUNCH.objective(sim,"treasury"),
+            broken:band.broken===true, lo:band.lo, goodInvalid:good.invalid===true};
   });
-  close("a zero tax deters nobody", d[0], 400, 1e-9);
-  close("10% tax at 6%/pt keeps 40% of them", d[1], 400 * 0.4, 1e-9);
-  ok("demand can reach zero but never goes negative", d[2] === 0 && d[3] === 0);
-}
-
-console.log("── the take has a maximum, and the page finds it rather than asserting one");
-{
-  const s = await page.evaluate(() => window.__LAUNCH.sweep(
-    { seedE: 10, poolFee: .01, buySize: .25, nBuys: 400,
-      tax0: .01, taxStep: .01, taxCap: .10, sellTax: .05, walk: 6 }, 0, 25, 1));
-  ok("a zero tax is not the best answer", s.best.tax0 > 0, `best ${s.best.tax0}`);
-  ok("neither is the highest tax on offer", s.best.tax0 < 25, `best ${s.best.tax0}`);
-  const zero = s.rows.find(r => r.tax0 === 0), top = s.rows.find(r => r.tax0 === 25);
-  ok("the optimum beats charging nothing", s.best.take > zero.take);
-  ok("the optimum beats charging the most", s.best.take > top.take);
-  ok("buyer count falls monotonically as the tax rises",
-     s.rows.every((r, i) => i === 0 || r.n <= s.rows[i - 1].n));
-  ok("take rises then falls — it is a hump, not a ramp",
-     s.rows.some(r => r.tax0 > s.best.tax0 && r.take < s.best.take));
-}
-{
-  // Demand moves the optimum, and it moves it *down*: the more volume you expect, the less a
-  // buy tax is worth, because the pool fee and sell tax already collect on that volume while
-  // the buy tax only deters it. The page claimed the opposite in an earlier draft — that the
-  // best rate was scale-invariant — and this is the assertion that caught it.
-  const best = await page.evaluate(() => {
-    const base = { seedE: 10, poolFee: .01, buySize: .25, tax0: .01, taxStep: .01,
-                   taxCap: .10, sellTax: .05, walk: 6 };
-    return [40, 100, 400, 1000, 4000].map(nBuys =>
-      window.__LAUNCH.sweep({ ...base, nBuys }, 0, 25, 1).best.tax0);
-  });
-  ok("the best buy tax never rises as expected demand rises",
-     best.every((v, i) => i === 0 || v <= best[i - 1]), best.join(" → "));
-  ok("a thin launch does want a buy tax", best[0] > 0, `${best[0]}`);
-  ok("a busy one wants none", best[best.length - 1] === 0, `${best[best.length - 1]}`);
-  ok("and the take still grows with demand even as the best rate falls",
-     await page.evaluate(() => {
-       const base = { seedE: 10, poolFee: .01, buySize: .25, tax0: .01, taxStep: .01,
-                      taxCap: .10, sellTax: .05, walk: 6 };
-       const t = [40, 400, 4000].map(nBuys =>
-         window.__LAUNCH.sweep({ ...base, nBuys }, 0, 25, 1).best.take);
-       return t[0] < t[1] && t[1] < t[2];
-     }));
-}
-{
-  // The page must say this out loud, not just compute it — it is the finding that most
-  // changes what someone would actually configure.
-  ok("the page says the best buy tax falls as demand rises",
-     body.includes("the best buy tax falls as you expect more demand"));
-}
-{
-  // More price-sensitive buyers must mean a lower optimal tax. If this inverted, the page
-  // would be advising people to punish exactly the buyers most likely to leave.
-  const best = await page.evaluate(() => [2, 6, 16].map(walk =>
-    window.__LAUNCH.sweep(
-      { seedE: 10, poolFee: .01, buySize: .25, nBuys: 400, tax0: .01, taxStep: .01,
-        taxCap: .10, sellTax: .05, walk }, 0, 25, 1).best.tax0));
-  ok("touchier buyers push the best tax down",
-     best[0] >= best[1] && best[1] >= best[2], best.join(" → "));
-}
-
-console.log("── nothing that comes out of it is free money");
-{
-  const r = await page.evaluate(() => window.__LAUNCH.simulate(
-    { seedE: 10, poolFee: .01, buySize: .25, nBuys: 400,
-      tax0: .01, taxStep: .01, taxCap: .10, sellTax: .05, walk: 6 }));
-  ok("the take is positive for a sane design", r.take > 0);
-  ok("the take never exceeds what buyers actually spent",
-     r.take <= r.n * 0.25 + 1e-9, `take ${r.take} vs spend ${r.n * 0.25}`);
-  ok("buy tax, sell tax and pool fees add up to the total",
-     Math.abs((r.buyTax + r.sellTaxTake + r.lpFees) - r.take) < 1e-12);
-  ok("a tax nobody survives earns nothing, rather than a negative",
-     (await page.evaluate(() => window.__LAUNCH.simulate(
-       { seedE: 10, poolFee: .01, buySize: .25, nBuys: 400, tax0: .5, taxStep: 0,
-         taxCap: .5, sellTax: .05, walk: 50 }).take)) === 0);
-}
-
-console.log("── what the buyer is told");
-ok("the round trip is quoted", /Round trip at the starting tax/.test(body));
-ok("later buyers are shown paying more than the first", /vs first buyer/.test(body));
-ok("the buyer can check the numbers against the size curve",
-   body.includes("the same arithmetic"));
-ok("the page says plainly a tax worsens execution",
-   body.includes("Every point of tax is a point of worse execution"));
-ok("and that paying you most is not the same as being worth buying",
-   body.includes("is not the same as a design people want to buy into"));
-
-console.log("── disclosure");
-{
-  const d = await txt("#disclosure");
-  ok("the disclosure names the buy tax", /Buy tax/.test(d));
-  ok("names the sell tax", /Sell tax/.test(d));
-  ok("says where the money goes", /paid to the launch wallet/i.test(d));
-  ok("says the tax is not burned or redistributed",
-     /not burned and not returned to holders/i.test(d));
-  ok("tells the reader to verify on chain rather than trust the page",
-     /Verify all of this on chain/i.test(d));
-  ok("separates the pool fee from the team's cut",
-     /paid to liquidity, not to the team/i.test(d));
-  ok("the page explains why disclosing at all",
-     body.includes("the checker fails its own test"));
-}
-
-console.log("── the page reacts to what you type");
-{
-  await page.fill("#tax0", "0");
-  await page.waitForTimeout(120);
-  const zeroBadge = await txt("#verdictBadge");
-  await page.fill("#tax0", "24");
-  await page.waitForTimeout(120);
-  const highBadge = await txt("#verdictBadge");
-  ok("a zero tax is flagged as leaving money on the table",
-     zeroBadge.includes("leaving money"), zeroBadge);
-  ok("so is a punitive one", highBadge.includes("leaving money"), highBadge);
-  await page.fill("#tax0", "1");
-  await page.waitForTimeout(120);
-}
-{
-  await page.fill("#elast", "0");
-  await page.fill("#tax0", "25");
-  await page.waitForTimeout(120);
-  ok("with no deterrence at all the highest tax is optimal, and the page says so",
-     (await txt("#verdictBadge")).includes("at the optimum"));
-  await page.fill("#elast", "6"); await page.fill("#tax0", "1");
-  await page.waitForTimeout(120);
-}
-{
-  await page.fill("#seedE", "abc");
-  await page.waitForTimeout(120);
-  ok("junk in a field does not blank the page or throw",
-     (await txt("#summary")).length > 0 && pageErrors.length === 0);
-  await page.fill("#seedE", "10");
-  await page.waitForTimeout(120);
+  ok("a non-finite input is flagged invalid", r.invalid === true);
+  ok("its round trip is NaN, not a comfortable zero", Number.isNaN(r.rt));
+  ok("an invalid run scores NaN rather than zero", Number.isNaN(r.obj));
+  ok("a sweep containing one is marked broken", r.broken === true);
+  ok("and returns NaN rather than a band that looks trustworthy", Number.isNaN(r.lo));
+  ok("an ordinary run is not flagged", r.goodInvalid === false);
 }
 
 console.log("── layout and one token");
@@ -244,7 +264,7 @@ ok("no horizontal scroll at 375px", sw <= 375, "scrollWidth=" + sw);
 ok("self-contained, no external scripts or styles",
    !/<script[^>]+src=/i.test(src) && !/<link[^>]+stylesheet/i.test(src));
 ok("no other ticker appears", !/\$TWD|POT ?PAL|POTPAL/i.test(src));
-ok("LAPTOP is named", body.includes("LAPTOP"));
+ok("LAPTOP is named", (await flat()).includes("LAPTOP"));
 ok("no page errors during the run", pageErrors.length === 0, pageErrors.join("; "));
 
 await browser.close();

@@ -80,7 +80,7 @@ sha256(web/route.html) = e2cce3fafbac12ddeabb9870bacd0b2b64d779292eba03b944e6242
 sha256(web/buy.html)   = 558b6318841d0d51a27bf4fc1a5cfd924ed226cfdc237516ed6a44db0ff211c5
 sha256(web/order.html) = dbcef0b37a2e710ba4103b5f85a6df400125e869e52c029f14b17a167683e175
 sha256(web/slot.html)  = 57330d5e9e10a08ff6965f249926a1066c08a73b4110966eb46cd33c4b61af97
-sha256(web/launch.html) = 2e48b7f42e6c4581e172b2fd8ff7c46a19a7c0130bd012b665a1167553b23e27
+sha256(web/launch.html) = fbd6f5d57f8702cac4e9ec9b68c8a1d628a561f8733bacc74d57e653a6b8af2b
 ```
 
 ### Tests
@@ -89,7 +89,7 @@ sha256(web/launch.html) = 2e48b7f42e6c4581e172b2fd8ff7c46a19a7c0130bd012b665a116
 sh test/run-all.sh         # everything below, no network touched
 ```
 
-**738 assertions across ten suites.**
+**981 assertions across twelve suites.**
 
 `test/run.mjs` — 225, drives the real page in Chromium against `test/mock-rpc.mjs`: Keccak vectors,
 the four EIP-55 reference addresses, the v4 poolId derivation checked against a real Base pool
@@ -136,40 +136,119 @@ gets the Solana-is-not-EVM distinction right.
 then drives the page against constant-product, concentrated, capped, dry, stable, foreign-token
 and no-code pool fixtures.
 
-`test/run-launch.mjs` — 60, checks the fee model against arithmetic written from the pool
-identity rather than the page's algebra: a tax comes off the top so the pool prices the net, a
-taxed buy always prices worse than an untaxed one, the schedule respects its cap, demand floors
-at zero rather than going negative, the take never exceeds what buyers spent, and its three
-parts sum. Plus the two shape properties the advice depends on — touchier buyers push the best
-tax down, and more expected demand pushes it down too, to zero for a busy launch.
+`test/run-launch.mjs` — 154, checks `web/launch.html` against a fixture `launch_model.py`
+emits: 18 cases across three ramp units, two seed depths and three starting rates, agreeing to
+1e-9 on buyer count, take, volume and round trip, with the 81-world histogram matching exactly.
+The rest guards the page's refusal to recommend — a page that quietly starts recommending again
+is the regression that matters — plus the unit warnings and a check that changing a pure guess
+does not move what a buyer pays.
 
-## `web/launch.html` — what a fee design actually earns
+`test/run-contract.mjs` — 70, compiles `contracts/LaunchTaxRamp.sol` with solc and executes its
+opcodes in an in-process EVM. Off-by-one on the first buy, tax-on-tax against the pool fee,
+sell-tax interaction, the seed-LP exemption and whether an exempt trade advances the ramp, the
+cap and its construction-time validation, the turn-off, rounding that conserves every wei, the
+freezable exemption list, and the three ramp units measured against each other for splitting
+evasion and same-block fairness.
 
-For whoever sets the launch parameters, not for buyers. It takes a seed depth, a pool fee, a
-buy tax that escalates per 100 buys, a sell tax and one guess about how price-sensitive buyers
-are, and reports the take and what it costs the people buying.
+`test/test_launch_model.py` — 79, the reference model's properties: the knee is not a slope,
+the size mix is normalised so no order can exceed the elicited total, destinations stay in
+their own units, seed changes the answer at all (it did not before impact entered demand), the
+round trip is identical across every deterrence guess, and the optimum is bimodal with almost
+nothing where the old linear model put its recommendation.
 
-The reason it exists is that "as high as possible" is not the answer to "how much tax". Past
-some rate the buyers deterred are worth more than the points collected, so the take is a hump
-and the page sweeps it rather than asserting a number.
+## `web/launch.html` — and why it stops short of a recommendation
 
-**The finding that survived testing, and that contradicted the page's own first draft:** the
-best buy tax *falls* as expected demand rises, and reaches zero for a busy launch. Once total
-spending is large next to the seed, the pool fee and the sell tax already collect on that
-volume, while a buy tax only deters it. A buy tax is insurance against a quiet launch, not a
-way to profit from a busy one. The first draft claimed the optimum was scale-invariant;
-`run-launch.mjs` caught it, and the assertion that caught it is still there.
+For whoever sets the launch parameters, not for buyers.
 
-The deterrence figure is a guess and is labelled as one on the page — nothing on chain measures
-how price-sensitive buyers are. Two sensitivity tables sweep it, and demand, instead of
-reporting one confident number.
+The first version swept a starting tax against one elasticity number and reported an optimum:
+2% at the defaults. That number is gone, and what replaced it is worth stating plainly because
+it is a negative result.
 
-It also emits the disclosure block to publish. The checker flags other tokens for undisclosed
-taxes; if LAPTOP ships with one and the site stays quiet, the checker fails its own test.
+Two buyer types, each with a knee rather than a slope: snipers are near-unit-elastic to the buy
+tax and nearly indifferent to the sell tax, since they are out in minutes; people are the
+reverse, because a buy tax is a fee and a sell tax is a trap. Run that across 81 worlds — every
+guessed parameter halved, kept, doubled — and the best starting tax is **bimodal**:
 
-The page is not linked from the buyer pages' navigation — it is an operator tool and reachable
-by URL only. It is still a static file on a public site, so it is not secret, just not
-advertised.
+```
+  0%  ############################################  44 worlds
+  7%  ######                                         6
+  8%  ##############                                14
+  9%  #########                                      9
+ 10%  ########                                       8
+```
+
+Nothing between 1% and 6%. The old 2% sits in the gap: it is the answer a straight-line model
+returns when the real surface is bimodal. `org_buy_knee` alone, halved or doubled, moves the
+recommendation across the whole search range — and nothing in this environment can fit it,
+because there is no network access and therefore no observed book.
+
+So the page reports the histogram and refuses the rate. What it still reports without any
+guess is what a buyer pays: the round trip is schedule arithmetic and is identical in all 81
+worlds. A test changes a knee and asserts that section does not move.
+
+**The ramp unit matters more than the rate**, and that is executed rather than argued in
+`test/run-contract.mjs`:
+
+| Unit | Splitting | Same-block fairness |
+| --- | --- | --- |
+| per buy | evaded — 11% split vs 2% whole for the same 10 ETH | four buys in one block, four rates |
+| per volume | not evadable, prices splitter and whale alike | four buys in one block, four rates |
+| per block | evaded by waiting instead | everyone in a block pays the same rate |
+
+No unit is free. A per-buy ramp lands on the retail tail and barely prices the snipe, which is
+backwards from the usual intent.
+
+**Recycling does not change the rate.** The expectation was that routing the tax back into
+the book would weaken the zero-tax result, since deeper liquidity improves later fills and so
+changes later tax. Measured across all 81 worlds, treasury and recycling pick the *identical*
+starting rate in 81 of 81. Recycling changes who benefits, not which rate is best — which is
+also why the destinations are reported separately rather than compared.
+
+**A broken world must not vote.** NaN fails every comparison, so a non-finite input was
+skipped by the `>` that finds the best rate and dropped by the filter that builds the band —
+reading as "nobody bought, take is zero" and then casting a ballot for the 0% mode, the exact
+mode that carries the headline. Non-finite inputs are now flagged, score NaN rather than zero,
+and are reported as excluded instead of counted. Found by an adversarial reviewer, not by the
+suite, which is worth noting: the suite tested that degenerate inputs did not *crash*, not
+that they did not silently *vote*.
+
+**Two things that felt like findings and are not.** "Deeper seed beats a tax" wins in 47 of 81
+worlds and loses 26 — not robust. And an early draft's LP and burn "wealth" figures were
+circular: they marked holdings at a price the model itself moved, reduced algebraically to
+exactly `2E`, and reported 11,214 ETH at an end price 11,000× the start. Destinations are now
+reported in their own units — ETH withdrawn, depth added, supply removed — and never summed.
+
+Seed did nothing at all until price impact entered the demand decision. A buyer prices tax plus
+pool fee plus the impact of their own size against the depth on offer, and impact is the only
+channel through which seed and tax are substitutes.
+
+`launch_model.py` is the reference implementation and the page mirrors it; where they disagree
+the Python is right, the same arrangement `size.html` has with `test_size_math.py`.
+
+The page is not linked from the buyer navigation — operator tool, reachable by URL. Still a
+static file on a public site, so not secret, just not advertised.
+
+## `contracts/LaunchTaxRamp.sol` — the tax, executed
+
+LAPTOP as shipped is a plain OFT with no tax, so any tax lives in a v4 hook, and the hook is
+the thing that has to be right. This contract is only the fee arithmetic — the schedule, its
+cap, its turn-off, its exemptions. It holds no funds and cannot move a token.
+
+solc ships as WASM and `@ethereumjs/evm` is a real interpreter, so it compiles and its opcodes
+execute with no network. **This is not a testnet.** There is no PoolManager here, so the hook
+integration — unlock/settle accounting, the delta the hook returns, reentrancy across the lock
+— is untested, and that is where the risk lives. Audit the hook, not the OFT.
+
+What execution pins: the first taxed buy pays exactly the starting rate because counters are
+read before they advance; the pool prices the net so the fee never lands on the tax; the sell
+tax is flat and applies to pool output rather than the typed notional; the seed LP is exempt
+from the constructor with no window before it, and an exempt trade does not advance the ramp,
+so the operator's own seeding cannot push the first real buyer past the published rate.
+
+The exemption list is freezable, and should be frozen. An exemption list the operator can edit
+after launch is one they can lift for their own wallets, and a buyer cannot tell that from the
+outside.
+
 
 ## `web/slot.html` — getting a slot
 

@@ -162,6 +162,38 @@ ok("every unfittable parameter is named so the page can label it",
 ok("and each named one actually exists on the population",
    all(hasattr(pop, n) for n in UNFITTABLE))
 
+print("── a broken world is surfaced, never counted as zero")
+# Found by an adversarial reviewer: NaN fails every comparison, so `if v > best` skips it and
+# the filter drops it. A non-finite input then reads as "nobody bought, take is 0" and votes
+# for the 0% mode — a broken world casting a ballot in the headline result.
+bad = simulate(replace(pop, sharpness=float("nan")), sch, 25.0, 0.01, "treasury")
+ok("a non-finite input is flagged invalid", bad.invalid)
+ok("and does not claim buyers or take", bad.buyers == 0 and bad.treasury_eth == 0.0)
+ok("its round trip is NaN, not a comfortable zero", math.isnan(bad.round_trip))
+ok("an invalid run scores NaN rather than zero", math.isnan(objective(bad, "treasury")))
+nan_band = stable_region(replace(pop, sharpness=float("nan")), sch, 25.0, 0.01, "treasury")
+ok("a sweep containing one surfaces NaN rather than returning a band",
+   all(math.isnan(x) for x in nan_band))
+for field, val in (("volume_eth", float("inf")), ("org_buy_knee", float("nan")),
+                   ("snipe_share", float("nan"))):
+    ok(f"{field}={val} is caught too",
+       simulate(replace(pop, **{field: val}), sch, 25.0, 0.01, "treasury").invalid)
+ok("a seed that is not a number is caught",
+   simulate(pop, sch, float("nan"), 0.01, "treasury").invalid)
+ok("an ordinary run is not flagged", not simulate(pop, sch, 25.0, 0.01, "treasury").invalid)
+
+print("── the destination does not move the rate")
+# The critique predicted recycling would weaken the result. Measured, it does not move it at
+# all: recycling changes who benefits, not which rate is best.
+same = 0
+for w in [replace(pop, snipe_buy_knee=a, org_buy_knee=b, org_sell_knee=c, sharpness=d)
+          for a in (0.03, 0.06, 0.12) for b in (0.045, 0.09, 0.18)
+          for c in (0.035, 0.07, 0.14) for d in (3.0, 6.0, 12.0)]:
+    if abs(stable_region(w, sch, 25.0, 0.01, "treasury")[0]
+           - stable_region(w, sch, 25.0, 0.01, "lp")[0]) < 1e-9:
+        same += 1
+ok("treasury and recycling pick the same rate in every world", same == 81, f"{same}/81")
+
 print("── the bimodal result: 2% was never on the menu")
 worlds = []
 for sbk in (0.03, 0.06, 0.12):
