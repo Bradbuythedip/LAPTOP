@@ -200,9 +200,19 @@ a.cta.sub2:hover{border-color:var(--gold);color:var(--goldHi)}
   border:1px solid rgba(240,192,64,.45)}
 .top .nm{font-weight:700;font-size:14px;letter-spacing:-.01em;white-space:nowrap}
 .top .sp{flex:1}
-.top a.chk{font-size:12.5px;color:var(--dim);text-decoration:underline;
-  text-underline-offset:2px;white-space:nowrap}
-.top a.chk:hover{color:var(--goldHi)}
+.top .soc{display:inline-flex;padding:5px;border-radius:7px;color:var(--dim);line-height:0}
+.top .soc svg{width:16px;height:16px;fill:currentColor}
+.top .soc:hover{color:var(--goldHi);background:var(--goldSoft)}
+.top .conn{font:inherit;font-size:12.5px;font-weight:700;padding:7px 12px;border-radius:8px;
+  border:1px solid var(--gold);background:var(--goldSoft);color:var(--goldHi);cursor:pointer;
+  white-space:nowrap}
+.top .conn:hover{background:linear-gradient(180deg,var(--goldHi),var(--gold));color:var(--onGold)}
+.top .conn.on{border-color:var(--ok);background:var(--okbg);color:var(--ok);
+  font-family:var(--mono);font-weight:600}
+.top .conn.bad{border-color:var(--bad);background:var(--badbg);color:var(--bad)}
+/* The bar sheds its optional parts before it wraps. Name first, then the chain chip; the mark,
+   the two socials and the one control that does something survive to 320px. */
+@media (max-width:520px){ .top .chain{display:none} }
 @media (max-width:400px){ .top .nm{display:none} }
 
 /* The one line that says where the launch actually is, under the buttons rather than three
@@ -315,8 +325,16 @@ a.cta.sub2{border-color:var(--edge)}
    press-me signal there is and these do not press. */
 .card{background:#0b111c;border:0;border-radius:6px;padding:16px;margin:12px 0;
   box-shadow:inset 0 1px 0 rgba(255,255,255,.04)}
-.stat,.leg,.step{background:#0b111c;border:0;border-radius:6px;
+.stat,.step{background:#0b111c;border:0;border-radius:6px;
   box-shadow:inset 0 1px 0 rgba(255,255,255,.04)}
+/* The swap legs are FIELDS, not panels, so they lift off the card instead of matching it. At
+   the card's own #0b111c the widget read as one dark slab with text floating in it and no sense
+   of two things being exchanged. Lifted, with the out-leg a tint rather than a filled block —
+   a solid blue panel was the heaviest object on a page whose accent is gold, and it was
+   carrying a value nobody can act on yet. */
+.leg{background:#141d2f;border:0;border-radius:9px;padding:13px 14px;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.06)}
+.leg.out{background:#152135;box-shadow:inset 0 1px 0 rgba(91,148,255,.14)}
 .card .card{background:#0e1524}
 .hr{height:1px;background:var(--line);margin:16px 0;border:0}
 
@@ -357,7 +375,16 @@ tbody tr:last-child td{border-bottom:0}
   <span class="nm">Snooze Bear</span>
   <span class="chain"><span class="dot"></span>Base &middot; 8453</span>
   <span class="sp"></span>
-  <a class="chk" href="/checker.html">Checker</a>
+  <!-- Icon-only, and not because icons are prettier: the page has a 700-word budget that
+       test/run-index.mjs enforces, and innerText of an <a> containing one <svg> is empty. The
+       label lives in aria-label, where a screen reader gets it and the word count does not. -->
+  <a class="soc" href="https://x.com/snoozebearxyz" rel="noopener noreferrer" target="_blank"
+     aria-label="Snooze Bear on X"><svg viewBox="0 0 24 24" aria-hidden="true"><path
+     d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg></a>
+  <a class="soc" href="https://discord.gg/GFDMcfMNN" rel="noopener noreferrer" target="_blank"
+     aria-label="Snooze Bear on Discord"><svg viewBox="0 0 24 24" aria-hidden="true"><path
+     d="M20.317 4.37a19.79 19.79 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.21.375-.444.865-.608 1.25a18.27 18.27 0 0 0-5.487 0 12.64 12.64 0 0 0-.617-1.25.077.077 0 0 0-.079-.037A19.736 19.736 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.058a.082.082 0 0 0 .031.056 19.9 19.9 0 0 0 5.993 3.03.078.078 0 0 0 .084-.028c.462-.63.874-1.295 1.226-1.994a.076.076 0 0 0-.041-.106 13.1 13.1 0 0 1-1.872-.892.077.077 0 0 1-.008-.128 10.2 10.2 0 0 0 .372-.292.074.074 0 0 1 .078-.01c3.928 1.793 8.18 1.793 12.061 0a.074.074 0 0 1 .079.01c.12.099.246.198.373.292a.077.077 0 0 1-.007.128 12.3 12.3 0 0 1-1.873.891.077.077 0 0 0-.04.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.029 19.84 19.84 0 0 0 6.002-3.03.077.077 0 0 0 .032-.055c.5-5.177-.838-9.674-3.549-13.66a.06.06 0 0 0-.031-.029ZM8.02 15.331c-1.182 0-2.157-1.085-2.157-2.419 0-1.333.956-2.419 2.157-2.419 1.211 0 2.176 1.095 2.157 2.42 0 1.333-.956 2.418-2.157 2.418Zm7.975 0c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.955-2.419 2.157-2.419 1.21 0 2.176 1.095 2.157 2.42 0 1.333-.946 2.418-2.157 2.418Z"/></svg></a>
+  <button class="conn" id="wConnect" type="button">Connect</button>
 </nav>
 
 <header class="hero">
@@ -449,6 +476,8 @@ tbody tr:last-child td{border-bottom:0}
     would have taken; nobody sells more than a fifth of their bag a day.</p>
     <div class="ca"><span class="k">contract</span>
       <code class="v" id="poolAddr">not deployed</code></div>
+    <div class="ca" id="yours" hidden><span class="k">you hold</span>
+      <code class="v">&mdash;</code></div>
   </div>
   <div class="tok">
     <div class="th"><span class="sym blue">LAPTOP</span><span class="badge warn">not open</span></div>
@@ -937,15 +966,90 @@ function ownerView(addr){
   set("oFees", OWNER);
 }
 (function(){
-  // No prompt on load. The panel appears if a wallet is ALREADY connected and it is the right
-  // one; asking every visitor to connect so one of them can see a status card is backwards.
   const p = (window.phantom && window.phantom.ethereum) ||
             (window.ethereum && window.ethereum.isPhantom ? window.ethereum : null);
-  if(!p || !p.request) return;
-  p.request({ method: "eth_accounts" })
-   .then(a => ownerView(a && a[0]))
-   .catch(() => {});
-  if(p.on) p.on("accountsChanged", a => ownerView(a && a[0]));
+  const usable = !!(p && p.request);
+
+  // No prompt on load. The panel appears if a wallet is ALREADY connected and it is the right
+  // one; asking every visitor to connect so one of them can see a status card is backwards.
+  //
+  // Guarded here rather than by returning early from the whole block, which is what it used to
+  // do — and that took the Connect button's listener with it. A visitor with no EVM wallet got
+  // a button that did nothing at all when pressed, which is the exact "is this broken?" feeling
+  // the button was added to remove, delivered to the one person least able to diagnose it.
+  if(usable){
+    p.request({ method: "eth_accounts" })
+     .then(a => ownerView(a && a[0]))
+     .catch(() => {});
+    if(p.on) p.on("accountsChanged", a => ownerView(a && a[0]));
+  }
+
+  /* ---- Connect, which is the same provider asking a question rather than listening ----
+     It exists here and not only on buy.html because "is my wallet even on the right chain, and
+     does this page know me" is the first thing somebody wants answered, and making them find a
+     second page to answer it is how they leave. It reads and it never signs: no signing or
+     sending method appears anywhere in this file, and a test asserts exactly that by parsing
+     every eth_ method the page names.
+
+     Phantom's two sides are different wallets with different keys, and the Solana one cannot
+     see Base at all. Reaching for the wrong one is the failure a real person actually hits, so
+     it is named rather than reported as "no wallet found". */
+  const btn = $("wConnect");
+  const short = a => a.slice(0, 6) + "\u2026" + a.slice(-4);
+  const solanaOnly = () => !!(window.phantom && window.phantom.solana && !window.phantom.ethereum)
+                           && !usable;
+  function wState(cls, text, title){
+    if(!btn) return;
+    btn.className = "conn" + (cls ? " " + cls : "");
+    btn.textContent = text;
+    if(title) btn.title = title; else btn.removeAttribute("title");
+  }
+  async function connect(){
+    if(!usable){
+      return wState("bad", "No wallet", solanaOnly()
+        ? "Phantom is here, but only its Solana side is on. This is Base, which is EVM \u2014 " +
+          "turn on Ethereum in Phantom \u2192 Settings \u2192 Active Networks, then reload."
+        : "No EVM wallet was found. Install Phantom, or open this page in its browser.");
+    }
+    wState("", "\u2026");
+    let accts;
+    try{ accts = await p.request({ method: "eth_requestAccounts" }); }
+    catch(e){
+      return wState("bad", "Declined",
+        e && e.code === 4001 ? "You declined. Nothing was shared and nothing was sent."
+                             : "The wallet refused the connection.");
+    }
+    if(!Array.isArray(accts) || !accts.length || typeof accts[0] !== "string")
+      return wState("bad", "No account", "The wallet connected but returned no account.");
+    let chain = null;
+    try{
+      const c = await p.request({ method: "eth_chainId" });
+      if(typeof c === "string" && /^0x[0-9a-fA-F]+$/.test(c)) chain = Number(BigInt(c));
+    }catch(e){}
+    const onBase = chain === CHAIN_ID;
+    wState(onBase ? "on" : "bad", short(accts[0]),
+      onBase ? "Connected on Base. This page only reads."
+             : "This wallet is on chain " + (chain === null ? "unknown" : chain) +
+               ", not Base. Switch networks before buying anything.");
+    ownerView(accts[0]);
+    holdings(accts[0]);
+  }
+  if(btn) btn.addEventListener("click", connect);
+  if(usable && p.on) p.on("chainChanged", () => { if(btn && btn.classList.contains("on")) connect(); });
+
+  /* What connecting is FOR, once there is something to hold. Until the token exists this reads
+     nothing and shows nothing — an empty row saying "0" would be a number the chain never
+     said. */
+  async function holdings(addr){
+    const row = $("yours");
+    if(!row || !TOKEN) return;
+    const r = await one("eth_call", [{ to: TOKEN,
+      data: "0x70a08231" + addr.slice(2).toLowerCase().padStart(64, "0") }, "latest"]);
+    if(!r.ok || typeof r.data !== "string" || r.data.length < 66) return;
+    const bal = BigInt(r.data.slice(0, 66));
+    row.hidden = false;
+    row.querySelector(".v").textContent = (bal / (10n ** 18n)).toLocaleString();
+  }
 })();
 
 window.__OWNER = { view: ownerView, owner: OWNER };
