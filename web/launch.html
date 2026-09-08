@@ -1,0 +1,516 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="referrer" content="no-referrer">
+<meta name="color-scheme" content="light">
+<title>LAPTOP launch economics</title>
+<style>
+:root{
+  /* Light, cool, Ethereum-ish: lavender-white ground, slate text, the ETH blue-violet as the
+     one accent. Every colour here was picked against the composited ground (art + scrim +
+     card), not against a swatch — the suite recomputes the WCAG ratios and fails on a
+     regression, which is the only reason these are the exact values they are. */
+  --bg:#f4f5fb; --fg:#1f2033; --dim:#565a72; --line:#dde0f0; --card:#ffffff; --cardBg:rgba(255,255,255,.92);
+  --eth:#4a63d8; --ethSoft:rgba(74,99,216,.09);
+  --ok:#0c6b3a; --okbg:rgba(12,107,58,.10); --bad:#b3251c; --badbg:rgba(179,37,28,.09);
+  --warn:#7f5600; --warnbg:rgba(127,86,0,.10); --unk:#4b5069; --unkbg:rgba(74,99,216,.07);
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{background:var(--bg);color:var(--fg);
+  font:15px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  -webkit-text-size-adjust:100%;overflow-x:hidden;
+  padding:0 14px env(safe-area-inset-bottom) 14px;max-width:640px;margin:0 auto}
+h1{font-size:17px;margin:16px 0 2px;letter-spacing:-.01em}
+.sub{color:var(--dim);font-size:12.5px;margin:0 0 14px}
+.card{background:var(--cardBg);border:1px solid var(--line);border-radius:10px;padding:12px;margin:10px 0}
+.mono{font-family:var(--mono);font-size:12.5px;word-break:break-all}
+.dim{color:var(--dim)} .tiny{font-size:11.5px} .small{font-size:12px}
+label{display:block;font-size:12.5px;color:var(--dim);margin-bottom:5px}
+input,select{width:100%;font-size:16px;padding:11px;border:1.5px solid var(--line);
+  border-radius:9px;background:var(--card);color:var(--fg);font-family:inherit}
+input{font-family:var(--mono)}
+input:focus,select:focus{outline:none;border-color:var(--fg)}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.badge{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;padding:3px 8px;
+  border-radius:999px;border:1px solid var(--line);background:var(--unkbg);color:var(--dim);white-space:nowrap}
+.badge.good{background:var(--okbg);border-color:var(--ok);color:var(--ok)}
+.badge.bad{background:var(--badbg);border-color:var(--bad);color:var(--bad)}
+.badge.warn{background:var(--warnbg);border-color:var(--warn);color:var(--warn)}
+.hdr{display:flex;justify-content:space-between;align-items:center;gap:8px;
+  margin-bottom:8px;flex-wrap:wrap}
+.hdr h2{font-size:13.5px;margin:0;font-weight:600}
+.warnbox{background:var(--warnbg);border:1px solid var(--warn);color:var(--warn);
+  border-radius:8px;padding:10px;font-size:12.5px;margin:8px 0}
+.badbox{background:var(--badbg);border:1px solid var(--bad);color:var(--bad);
+  border-radius:8px;padding:11px;font-size:12.5px;margin:8px 0}
+.okbox{background:var(--okbg);border:1px solid var(--ok);color:var(--ok);
+  border-radius:8px;padding:10px;font-size:12.5px;margin:8px 0}
+table{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:6px}
+th,td{text-align:right;padding:6px 4px;border-bottom:1px solid var(--line)}
+th{color:var(--dim);font-weight:500}
+th:first-child,td:first-child{text-align:left}
+td.n{font-family:var(--mono)}
+tr.best td{background:var(--okbg);color:var(--ok);font-weight:600}
+.scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
+a{color:inherit} a.ext{text-decoration:underline;text-underline-offset:2px}
+.footer{color:var(--dim);font-size:11.5px;margin:22px 0 30px;line-height:1.55}
+.hr{height:1px;background:var(--line);margin:14px 0}
+.pub{background:var(--unkbg);border:1px solid var(--line);border-radius:8px;padding:11px;
+  font-family:var(--mono);font-size:12px;white-space:pre-wrap;word-break:break-word;margin-top:8px}
+
+/* ---- readability ----
+   Matches the other pages: nothing below 12.5px, 16px inputs so iOS does not zoom on focus,
+   and the scale grows again once there is room. */
+body{font-size:16px;line-height:1.6;max-width:680px;padding-left:16px;padding-right:16px}
+h1{font-size:21px;margin:20px 0 3px}
+.sub{font-size:13.5px;margin:0 0 16px;line-height:1.55}
+.card{padding:14px;margin:12px 0;border-radius:12px}
+.mono{font-size:13px;line-height:1.5}
+.small{font-size:13px} .tiny{font-size:12.5px;line-height:1.55}
+label{font-size:13px;margin-bottom:6px}
+table{font-size:12.5px} th,td{padding:7px 5px}
+.hdr h2{font-size:14.5px}
+.badge{font-size:12px;padding:4px 9px}
+.footer{font-size:12.5px;line-height:1.65}
+input,select{font-size:16px}
+ol,ul{padding-left:22px} li{margin:6px 0}
+@media (min-width:600px){
+  body{font-size:16.5px;padding-left:22px;padding-right:22px}
+  h1{font-size:23px}
+  .card{padding:17px}
+  .sub{font-size:14px}
+  .small{font-size:13.5px} .tiny{font-size:13px}
+  table{font-size:13.5px}
+}
+
+/* ---- background art ---- */
+body::before{
+  content:"";position:fixed;inset:0;z-index:-3;pointer-events:none;
+  background:url("/bg.png") center center / cover no-repeat;opacity:.12}
+html::before{
+  content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;
+  background:radial-gradient(ellipse 120% 90% at 50% 38%,
+    rgba(244,245,251,.30) 0%, rgba(245,246,252,.62) 48%, rgba(248,249,253,.90) 82%, rgba(250,251,254,.96) 100%);
+}
+</style>
+</head>
+<body>
+
+<h1>LAPTOP launch economics</h1>
+<p class="sub">What a buy tax actually earns you, and where raising it starts costing you money.
+<a href="/">checker</a> &middot; <a href="/size.html">size curve</a> &middot;
+<a href="/buy.html">where to buy</a> &middot; <a href="/order.html">standing order</a> &middot;
+<a href="/slot.html">getting a slot</a> &middot; <a href="/route.html">get ready</a></p>
+
+<div class="card">
+  <div class="warnbox" style="margin:0">
+    <b>This page is for whoever sets the launch parameters, not for buyers.</b> It does
+    arithmetic on numbers you type. It does not ask you to sign anything, cannot send a
+    transaction, and does not deploy or configure anything &mdash; it tells you what a fee
+    design would do so you can pick one before it is set in a contract.
+  </div>
+</div>
+
+<div class="card">
+  <div class="hdr"><h2>The pool at launch</h2></div>
+  <div class="grid">
+    <div>
+      <label for="seedE">Seed liquidity (ETH)</label>
+      <input id="seedE" value="10" inputmode="decimal">
+    </div>
+    <div>
+      <label for="poolFee">Pool fee (%)</label>
+      <input id="poolFee" value="1" inputmode="decimal">
+    </div>
+  </div>
+  <div class="grid" style="margin-top:8px">
+    <div>
+      <label for="buySize">Typical buy (ETH)</label>
+      <input id="buySize" value="0.25" inputmode="decimal">
+    </div>
+    <div>
+      <label for="nBuys">Buys at zero tax</label>
+      <input id="nBuys" value="400" inputmode="decimal">
+    </div>
+  </div>
+  <p class="tiny dim" style="margin:9px 0 0">
+    &ldquo;Buys at zero tax&rdquo; is your estimate of launch-day demand if you charged nothing,
+    and it changes the answer more than it looks like it should. Once total spending is large
+    next to the seed, the pool fee and the sell tax already capture that volume, and a buy tax
+    mostly deters the buyers who would have generated it &mdash; so the best buy tax falls as
+    you expect more demand, and can reach zero. The tables below sweep a range of estimates
+    rather than trusting one.
+  </p>
+</div>
+
+<div class="card">
+  <div class="hdr"><h2>Your fee design</h2></div>
+  <div class="grid">
+    <div>
+      <label for="tax0">Starting buy tax (%)</label>
+      <input id="tax0" value="1" inputmode="decimal">
+    </div>
+    <div>
+      <label for="taxStep">Added per 100 buys (%)</label>
+      <input id="taxStep" value="1" inputmode="decimal">
+    </div>
+  </div>
+  <div class="grid" style="margin-top:8px">
+    <div>
+      <label for="taxCap">Cap the buy tax at (%)</label>
+      <input id="taxCap" value="10" inputmode="decimal">
+    </div>
+    <div>
+      <label for="sellTax">Sell tax (%)</label>
+      <input id="sellTax" value="5" inputmode="decimal">
+    </div>
+  </div>
+  <div style="margin-top:8px">
+    <label for="elast">How many buyers walk away per 1% of tax (%)</label>
+    <input id="elast" value="6" inputmode="decimal">
+  </div>
+  <div class="warnbox">
+    <b>That last number is a guess, not a measurement.</b> Nothing on chain tells you how
+    price-sensitive your buyers are, and this page will not pretend otherwise. It is the one
+    input the answer is genuinely sensitive to, so the table below shows the optimum across a
+    range of guesses rather than a single confident number.
+  </div>
+</div>
+
+<div class="card">
+  <div class="hdr"><h2>What you earn</h2><span class="badge" id="verdictBadge">&mdash;</span></div>
+  <div id="summary"></div>
+  <div class="scroll"><table id="curve"><tbody></tbody></table></div>
+  <p class="tiny dim" style="margin:9px 0 0">
+    Take is buy tax plus sell tax plus your share of pool fees, assuming each buyer eventually
+    sells once. The highlighted row is the design that pays you most.
+  </p>
+</div>
+
+<div class="card">
+  <div class="hdr"><h2>How sure is that?</h2></div>
+  <p class="tiny dim" style="margin:0 0 4px">The best starting tax, if buyers turn out to be
+  more or less sensitive than you guessed.</p>
+  <div class="scroll"><table id="sens"><tbody></tbody></table></div>
+  <p class="tiny dim" style="margin:12px 0 4px">And if launch-day demand turns out bigger or
+  smaller. This is the one that moves the answer most.</p>
+  <div class="scroll"><table id="dsens"><tbody></tbody></table></div>
+  <div id="demandNote"></div>
+</div>
+
+<div class="card">
+  <div class="hdr"><h2>What a buyer pays</h2></div>
+  <div class="scroll"><table id="buyer"><tbody></tbody></table></div>
+  <p class="tiny dim" style="margin:9px 0 0">
+    Effective price includes the tax, the pool fee and price impact &mdash; the same arithmetic
+    <a href="/size.html">the size curve</a> runs, so a buyer can check these numbers against it.
+    Round trip is what a buyer loses buying and selling immediately, with no price movement.
+  </p>
+  <div id="roundtripNote"></div>
+</div>
+
+<div class="card">
+  <div class="hdr"><h2>Publish this</h2></div>
+  <p class="tiny dim" style="margin:0 0 4px">
+    The checker flags other tokens for undisclosed taxes. If LAPTOP has one and this site does
+    not say so, the checker fails its own test. Put this on the launch page and in the token's
+    docs, and a buyer who reads it cannot say they were surprised.
+  </p>
+  <div class="pub" id="disclosure"></div>
+</div>
+
+<div class="footer">
+  <div class="hr"></div>
+  <p><b>What this does not tell you.</b> It has no opinion on whether a tax is a good idea, and
+  it cannot tell you what demand will actually be &mdash; both the buyer count and the
+  sensitivity are your estimates, not measurements. It models one buy size repeated; real flow
+  is a mix of sizes, and large buys pay disproportionately more to price impact. It assumes
+  every buyer sells exactly once, which overstates sell-tax income if some hold and understates
+  it if some trade repeatedly.</p>
+  <p><b>What a tax cannot do.</b> It cannot make a launch succeed. Every point of tax is a point
+  of worse execution for the person buying, and it shows up in <a href="/size.html">the size
+  curve</a> and in <a href="/buy.html">the venue comparison</a> like any other cost. A design
+  that pays you most is not the same as a design people want to buy into, and this page only
+  answers the first.</p>
+  <p> &middot; totalworlddomination.xyz &middot; Build <span class="mono" id="buildId">2026-09-08a</span> &middot; no analytics,
+  no trackers, no cookies. Everything here is computed in your browser; this page makes no
+  network request of any kind.</p>
+</div>
+
+<script>
+"use strict";
+const $=id=>document.getElementById(id);
+
+/* ===================== the pool =====================
+   Constant product, the same identity web/size.html and test_size_math.py use. Taxes are
+   taken off the top of the trade, before the pool sees it, which is how a hook or a transfer
+   tax actually behaves: the pool prices what is left, not what the buyer sent. */
+function buyThrough(E,T,spend,poolFee,tax){
+  const taxPaid=spend*tax;
+  const net=spend-taxPaid;
+  const afterFee=net*(1-poolFee);
+  const out=T*afterFee/(E+afterFee);
+  return {taxPaid, out, E:E+net, T:T-out,
+          price: out>0 ? spend/out : Infinity};
+}
+
+/* Selling the same tokens straight back, so a round trip can be quoted honestly. */
+function sellThrough(E,T,tokens,poolFee,tax){
+  const afterFee=tokens*(1-poolFee);
+  const gross=E*afterFee/(T+afterFee);
+  const taxPaid=gross*tax;
+  return {taxPaid, out:gross-taxPaid, E:E-gross, T:T+tokens};
+}
+
+/* The tax schedule: starts at tax0, adds step per 100 buys, never exceeds cap. */
+function taxAt(i,tax0,step,cap){
+  return Math.min(cap, tax0 + step*(i/100));
+}
+
+/* How many buyers survive a given average tax. Linear deterrence — walk% of them leave for
+   each 1% of tax — floored at zero. This is the assumption, and it is the whole reason the
+   sensitivity table below exists. */
+function demandAt(n0,avgTaxPct,walkPerPct){
+  return Math.max(0, n0*(1 - avgTaxPct*walkPerPct/100));
+}
+
+/* Run a whole launch and report what the operator takes.
+   Two passes: the first finds the average tax so demand can be sized, the second runs that
+   many buys through the pool for real. Without the first pass the tax schedule and the buyer
+   count depend on each other and the answer moves depending on which you compute first. */
+function simulate(p){
+  const {seedE,poolFee,buySize,nBuys,tax0,taxStep,taxCap,sellTax,walk}=p;
+  const probe=Math.max(1,Math.round(nBuys));
+  let s=0;
+  for(let i=0;i<probe;i++) s+=taxAt(i,tax0,taxStep,taxCap);
+  const avgTax=s/probe;
+  const n=Math.round(demandAt(nBuys,avgTax*100,walk));
+  if(n<=0) return {n:0,buyTax:0,sellTaxTake:0,lpFees:0,take:0,avgTax,volume:0,
+                   endPrice:null,firstPrice:null};
+
+  /* LAPTOP supply in the pool is a free scale factor: every quantity reported here is in ETH,
+     and the token amounts cancel. Seeding with 1 unit keeps the numbers well-conditioned. */
+  let E=seedE, T=1, buyTax=0, lpFees=0, volume=0;
+  let firstPrice=null, held=0;
+  for(let i=0;i<n;i++){
+    const t=taxAt(i,tax0,taxStep,taxCap);
+    const r=buyThrough(E,T,buySize,poolFee,t);
+    buyTax+=r.taxPaid;
+    lpFees+=(buySize-r.taxPaid)*poolFee;
+    volume+=buySize-r.taxPaid;
+    held+=r.out;
+    if(firstPrice===null) firstPrice=r.price;
+    E=r.E; T=r.T;
+  }
+  const endPrice=(T>0&&E>0)? E/T : null;
+
+  /* Everyone sells once, in one block, worst case for the sell side. */
+  let sellTaxTake=0;
+  if(held>0&&sellTax>0){
+    const sr=sellThrough(E,T,held,poolFee,sellTax);
+    sellTaxTake=sr.taxPaid;
+    lpFees+=held*poolFee*(E/(T+held));
+  }
+  return {n,buyTax,sellTaxTake,lpFees,take:buyTax+sellTaxTake+lpFees,
+          avgTax,volume,endPrice,firstPrice};
+}
+
+/* Sweep the starting tax and return the whole curve, so the maximum is shown rather than
+   asserted. A tax has a maximum for the same reason any price does: past it, the buyers you
+   lose are worth more than the points you gain. */
+function sweep(p,lo,hi,stepPct){
+  const rows=[];
+  for(let t=lo;t<=hi+1e-9;t+=stepPct){
+    const r=simulate({...p,tax0:t/100});
+    rows.push({tax0:t,...r});
+  }
+  let best=rows[0];
+  for(const r of rows) if(r.take>best.take) best=r;
+  return {rows,best};
+}
+
+const num=(id,d)=>{const v=parseFloat($(id).value); return Number.isFinite(v)?v:d;};
+function params(){
+  return {
+    seedE:Math.max(1e-9,num("seedE",10)),
+    poolFee:Math.min(.5,Math.max(0,num("poolFee",1)/100)),
+    buySize:Math.max(1e-12,num("buySize",.25)),
+    nBuys:Math.max(1,num("nBuys",400)),
+    tax0:Math.max(0,num("tax0",1)/100),
+    taxStep:Math.max(0,num("taxStep",1)/100),
+    taxCap:Math.max(0,num("taxCap",10)/100),
+    sellTax:Math.max(0,num("sellTax",5)/100),
+    walk:Math.max(0,num("elast",6)),
+  };
+}
+
+const eth=v=>v>=100?v.toFixed(1):v>=1?v.toFixed(3):v.toFixed(5);
+const pct=v=>v.toFixed(2)+"%";
+function row(t,cells,cls){
+  const tr=document.createElement("tr");
+  if(cls) tr.className=cls;
+  cells.forEach((c,i)=>{
+    const el=document.createElement(i===0&&t==="th"?"th":(t==="th"?"th":"td"));
+    if(typeof c==="object"&&c!==null){ el.textContent=c.v; if(c.n) el.className="n"; }
+    else el.textContent=c;
+    tr.appendChild(el);
+  });
+  return tr;
+}
+
+function render(){
+  const p=params();
+  const now=simulate(p);
+  const {rows,best}=sweep(p,0,25,1);
+
+  /* ---- summary ---- */
+  const sum=$("summary"); sum.innerHTML="";
+  const badge=$("verdictBadge");
+  if(now.n<=0){
+    badge.textContent="nobody buys"; badge.className="badge bad";
+    const d=document.createElement("div"); d.className="badbox";
+    d.textContent="At this tax and this sensitivity the model has every buyer walking away, "+
+      "so the take is zero. That is what a tax above the deterrence ceiling looks like.";
+    sum.appendChild(d);
+  } else {
+    const better=best.take>now.take*1.0001;
+    badge.textContent=better?"leaving money on the table":"at the optimum";
+    badge.className="badge "+(better?"warn":"good");
+    const t=document.createElement("table");
+    const add=(k,v)=>{
+      const tr=document.createElement("tr");
+      const a=document.createElement("td"); a.textContent=k;
+      const b=document.createElement("td"); b.className="n"; b.textContent=v;
+      tr.appendChild(a); tr.appendChild(b); t.appendChild(tr);
+    };
+    add("Buyers who still buy", String(now.n)+" of "+Math.round(p.nBuys));
+    add("Average buy tax", pct(now.avgTax*100));
+    add("Buy tax to you", eth(now.buyTax)+" ETH");
+    add("Sell tax to you", eth(now.sellTaxTake)+" ETH");
+    add("Pool fees to you", eth(now.lpFees)+" ETH");
+    add("Total take", eth(now.take)+" ETH");
+    sum.appendChild(t);
+    if(better){
+      const d=document.createElement("div"); d.className="warnbox";
+      d.textContent="A starting tax of "+best.tax0.toFixed(0)+"% would pay you "+
+        eth(best.take)+" ETH instead of "+eth(now.take)+" ETH — "+
+        eth(best.take-now.take)+" ETH more, from "+(best.n-now.n)+" more buyers. "+
+        "Above that point each extra point of tax costs more in lost buyers than it collects.";
+      sum.appendChild(d);
+    } else {
+      const d=document.createElement("div"); d.className="okbox";
+      d.textContent="No starting tax in the 0–25% range pays you more than this one, "+
+        "given the sensitivity you entered.";
+      sum.appendChild(d);
+    }
+  }
+
+  /* ---- the curve ---- */
+  const c=$("curve").querySelector("tbody"); c.innerHTML="";
+  c.appendChild(row("th",["Start tax","Buyers","Volume","Your take"]));
+  for(const r of rows){
+    if(r.tax0%2!==0 && r.tax0!==best.tax0) continue;
+    c.appendChild(row("td",[
+      r.tax0.toFixed(0)+"%",
+      {v:String(r.n),n:1},
+      {v:eth(r.volume),n:1},
+      {v:eth(r.take),n:1},
+    ], r.tax0===best.tax0?"best":""));
+  }
+
+  /* ---- sensitivity ---- */
+  const s=$("sens").querySelector("tbody"); s.innerHTML="";
+  s.appendChild(row("th",["Buyers lost per 1%","Best start tax","Your take"]));
+  for(const w of [2,4,6,8,12,16]){
+    const sw=sweep({...p,walk:w},0,25,1);
+    s.appendChild(row("td",[
+      w+"%",
+      {v:sw.best.tax0.toFixed(0)+"%",n:1},
+      {v:eth(sw.best.take)+" ETH",n:1},
+    ], w===p.walk?"best":""));
+  }
+
+  /* ---- demand sensitivity ----
+     Kept separate from the sensitivity table above because it is a different kind of doubt:
+     that one is about buyers you cannot measure, this one is about volume you cannot predict,
+     and this one moves the answer further. */
+  const ds=$("dsens").querySelector("tbody"); ds.innerHTML="";
+  ds.appendChild(row("th",["Buys at zero tax","Spend","Best start tax","Your take"]));
+  const scales=[0.1,0.25,1,2.5,10];
+  let allZero=true, anyNonZero=false;
+  for(const k of scales){
+    const n=Math.max(1,Math.round(p.nBuys*k));
+    const sw=sweep({...p,nBuys:n},0,25,1);
+    if(sw.best.tax0>0){ allZero=false; anyNonZero=true; } else { anyNonZero=anyNonZero; }
+    ds.appendChild(row("td",[
+      String(n),
+      {v:eth(n*p.buySize)+" ETH",n:1},
+      {v:sw.best.tax0.toFixed(0)+"%",n:1},
+      {v:eth(sw.best.take)+" ETH",n:1},
+    ], k===1?"best":""));
+  }
+  const dn=$("demandNote"); dn.innerHTML="";
+  const big=sweep({...p,nBuys:p.nBuys*10},0,25,1);
+  if(big.best.tax0===0){
+    const d=document.createElement("div"); d.className="okbox";
+    d.textContent="If the launch goes well, the best buy tax is zero. At that volume the pool "+
+      "fee and the sell tax already collect more than a buy tax could, and every point of buy "+
+      "tax just removes buyers who would have paid them. A buy tax is insurance against a "+
+      "quiet launch, not a way to profit from a busy one.";
+    dn.appendChild(d);
+  }
+
+  /* ---- buyer's view ---- */
+  const b=$("buyer").querySelector("tbody"); b.innerHTML="";
+  b.appendChild(row("th",["Buyer","Tax paid","Effective price","vs first buyer"]));
+  let E=p.seedE, T=1, first=null;
+  const marks=[1,10,50,100,250,500];
+  const maxN=Math.max(...marks);
+  for(let i=0;i<maxN;i++){
+    const t=taxAt(i,p.tax0,p.taxStep,p.taxCap);
+    const r=buyThrough(E,T,p.buySize,p.poolFee,t);
+    E=r.E; T=r.T;
+    if(first===null) first=r.price;
+    if(marks.includes(i+1)){
+      b.appendChild(row("td",[
+        "#"+(i+1),
+        {v:pct(t*100),n:1},
+        {v:eth(r.price*1e-9)+"…",n:1},
+        {v:((r.price/first-1)*100).toFixed(1)+"%",n:1},
+      ]));
+    }
+  }
+  /* Round trip: buy and sell back immediately, no price movement in between. */
+  const rt=(1-(1-p.tax0)*(1-p.poolFee)*(1-p.poolFee)*(1-p.sellTax))*100;
+  const note=$("roundtripNote"); note.innerHTML="";
+  const rd=document.createElement("div");
+  rd.className=rt>=15?"badbox":(rt>=8?"warnbox":"okbox");
+  rd.textContent="Round trip at the starting tax: a buyer who buys and sells straight back "+
+    "loses "+rt.toFixed(2)+"% before the price moves at all. Anyone comparing venues on "+
+    "the buy page will see this.";
+  note.appendChild(rd);
+
+  /* ---- disclosure ---- */
+  $("disclosure").textContent=
+    "LAPTOP fees, as configured\n"+
+    "  Buy tax      "+pct(p.tax0*100)+" at launch, +"+pct(p.taxStep*100)+
+      " per 100 buys, capped at "+pct(p.taxCap*100)+"\n"+
+    "  Sell tax     "+pct(p.sellTax*100)+"\n"+
+    "  Pool fee     "+pct(p.poolFee*100)+" (paid to liquidity, not to the team)\n"+
+    "  Round trip   "+rt.toFixed(2)+"% at launch, before price impact\n"+
+    "  Taxes are paid to the launch wallet. They are not burned and not returned to holders.\n"+
+    "  Verify all of this on chain before buying — do not take this page's word for it.";
+}
+
+for(const id of ["seedE","poolFee","buySize","nBuys","tax0","taxStep","taxCap","sellTax","elast"])
+  $(id).addEventListener("input",render);
+render();
+
+window.__LAUNCH={buyThrough,sellThrough,taxAt,demandAt,simulate,sweep};
+</script>
+</body>
+</html>

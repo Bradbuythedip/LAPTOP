@@ -29,3 +29,6 @@ echo
 echo "=== browser: web/slot.html ==="
 node test/run-slot.mjs
 echo
+echo "=== browser: web/launch.html ==="
+node test/run-launch.mjs
+echo

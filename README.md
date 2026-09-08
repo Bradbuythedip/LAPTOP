@@ -76,6 +76,7 @@ sha256(web/route.html) = e2cce3fafbac12ddeabb9870bacd0b2b64d779292eba03b944e6242
 sha256(web/buy.html)   = 558b6318841d0d51a27bf4fc1a5cfd924ed226cfdc237516ed6a44db0ff211c5
 sha256(web/order.html) = dbcef0b37a2e710ba4103b5f85a6df400125e869e52c029f14b17a167683e175
 sha256(web/slot.html)  = 57330d5e9e10a08ff6965f249926a1066c08a73b4110966eb46cd33c4b61af97
+sha256(web/launch.html) = 2e48b7f42e6c4581e172b2fd8ff7c46a19a7c0130bd012b665a1167553b23e27
 ```
 
 ### Tests
@@ -130,6 +131,41 @@ gets the Solana-is-not-EVM distinction right.
 `test/run-size.mjs` — 68, asserts `web/size.html` agrees with that Python fixture to 1e-12,
 then drives the page against constant-product, concentrated, capped, dry, stable, foreign-token
 and no-code pool fixtures.
+
+`test/run-launch.mjs` — 60, checks the fee model against arithmetic written from the pool
+identity rather than the page's algebra: a tax comes off the top so the pool prices the net, a
+taxed buy always prices worse than an untaxed one, the schedule respects its cap, demand floors
+at zero rather than going negative, the take never exceeds what buyers spent, and its three
+parts sum. Plus the two shape properties the advice depends on — touchier buyers push the best
+tax down, and more expected demand pushes it down too, to zero for a busy launch.
+
+## `web/launch.html` — what a fee design actually earns
+
+For whoever sets the launch parameters, not for buyers. It takes a seed depth, a pool fee, a
+buy tax that escalates per 100 buys, a sell tax and one guess about how price-sensitive buyers
+are, and reports the take and what it costs the people buying.
+
+The reason it exists is that "as high as possible" is not the answer to "how much tax". Past
+some rate the buyers deterred are worth more than the points collected, so the take is a hump
+and the page sweeps it rather than asserting a number.
+
+**The finding that survived testing, and that contradicted the page's own first draft:** the
+best buy tax *falls* as expected demand rises, and reaches zero for a busy launch. Once total
+spending is large next to the seed, the pool fee and the sell tax already collect on that
+volume, while a buy tax only deters it. A buy tax is insurance against a quiet launch, not a
+way to profit from a busy one. The first draft claimed the optimum was scale-invariant;
+`run-launch.mjs` caught it, and the assertion that caught it is still there.
+
+The deterrence figure is a guess and is labelled as one on the page — nothing on chain measures
+how price-sensitive buyers are. Two sensitivity tables sweep it, and demand, instead of
+reporting one confident number.
+
+It also emits the disclosure block to publish. The checker flags other tokens for undisclosed
+taxes; if LAPTOP ships with one and the site stays quiet, the checker fails its own test.
+
+The page is not linked from the buyer pages' navigation — it is an operator tool and reachable
+by URL only. It is still a static file on a public site, so it is not secret, just not
+advertised.
 
 ## `web/slot.html` — getting a slot
 
