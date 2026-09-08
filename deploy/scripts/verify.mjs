@@ -8,7 +8,7 @@
 // build anything downstream. A transaction can be mined and still have done something other
 // than what you meant.
 import { context, die, bar, green, red, dim, printChecks, readStep, pick } from "./lib/run.mjs";
-import { markVerified, saveState, stepState, STATE_PATH } from "./lib/state.mjs";
+import { markVerified, saveState, stepState, isVerified, STATE_PATH } from "./lib/state.mjs";
 
 const spec = process.argv.slice(2).find(a => !a.startsWith("-"));
 if (!spec) die("which step? e.g. `node deploy/scripts/verify.mjs 2`");
@@ -44,8 +44,24 @@ const bad = printChecks(list);
 console.log();
 
 if (bad) {
-  console.log(red(`  ${bad} of ${list.length} checks failed. Step ${step.n} is NOT verified, ` +
-                  `so nothing after it can be built.`));
+  // Not "so nothing after it can be built" — this exits before writing anything, so a step that
+  // was verified earlier STAYS verified and everything downstream still builds. Saying otherwise
+  // is the sentence that makes somebody start re-sending transactions.
+  const already = isVerified(state, step.id);
+  console.log(red(`  ${bad} of ${list.length} checks failed.`) + " " +
+    (already ? "Step " + step.n + " was verified earlier and that record stands — nothing " +
+               "here changed it. Read the failures before acting on them."
+             : `Step ${step.n} is not verified, so nothing after it can be built.`));
+  // A step whose own transactions are not all sent is unfinished, not broken: the checks that
+  // fail are the ones those transactions are for. The success tail already learned this; the
+  // failure tail had not.
+  const sentTx = stepState(state, step.id).sent || {};
+  const rest = step.txs.filter(t => !sentTx[t.key] && !(t.blocked && t.blocked()));
+  if (rest.length && !already)
+    console.log(dim(`\n  Step ${step.n} looks unfinished rather than wrong: ` +
+      `${rest.map(t => `${step.n}.${t.key}`).join(", ")} ` +
+      `${rest.length > 1 ? "have" : "has"} not been sent yet.\n` +
+      `  Next: node deploy/scripts/build.mjs ${step.n}`));
   const note = step.note && step.note();
   if (note) console.log("\n  " + note);
   process.exit(1);

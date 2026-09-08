@@ -25,6 +25,16 @@ if (warnings.length) {
 // Checked BEFORE the first write, not between the two. The first version validated the config
 // after artifacts.json had already been written, so a bad config left the two files holding
 // different compiles under a message saying it had refused to write.
+// SNOOZE_CONFIG moves the parameters; it does not move where these files are written. So a
+// Base Sepolia rehearsal would have silently overwritten the committed artifacts.json and
+// artifacts.js with testnet parameters, and the next mainnet run would have read them.
+if (process.env.SNOOZE_CONFIG) {
+  console.error("SNOOZE_CONFIG is set, and this writes to deploy/artifacts.{json,js} — the " +
+                "committed files the mainnet launch reads.\nCopy deploy/ somewhere else and " +
+                "run it there, or unset SNOOZE_CONFIG. Refusing rather than overwriting them.");
+  process.exit(1);
+}
+
 const cfg = loadConfig();
 if (cfg.problems.length) {
   console.error("deploy/config.json has problems, refusing to write artifacts:");

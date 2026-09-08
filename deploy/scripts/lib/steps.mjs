@@ -306,9 +306,25 @@ export function buildSteps({ cfg, artifacts, state }) {
           // trusted from having sent the transaction from the right place.
           c.addr(results, "admin()", cfg.owner,
                  `admin() is your wallet, so setPool is callable in step 5`);
-          c.num(results, "balanceOf(address)", cfg.token.supply,
-                "the whole supply is at your address, which is what funds the curve");
-          c.bool(results, "frozen()", false, "frozen() is false, so the curve can still be registered");
+          // State-aware, because this step gets re-read. At step 3 the owner holds everything;
+          // after step 5 they hold supply - curveSupply, and after step 6 the token is frozen.
+          // Asserting the step-3 values unconditionally meant a CORRECTLY FINISHED launch
+          // failed its own step 3 — and on the page that same click downgraded the recorded
+          // verification and locked step 4 behind it.
+          const owned = decode(results, "balanceOf(address)", readUint);
+          const funded = isVerified(state, "curve");
+          const want = funded ? cfg.token.supply - cfg.curve.curveSupply : cfg.token.supply;
+          c.add(owned !== null && owned >= want,
+                funded ? "your residual is still at your address"
+                       : "the whole supply is at your address, which is what funds the curve",
+                owned === null ? "could not be read" : owned >= want ? "" :
+                  `you hold ${owned}, expected at least ${want}`);
+          const froz = decode(results, "frozen()", readBool);
+          const locked = isVerified(state, "lock");
+          c.add(froz === locked,
+                locked ? "frozen() is true, as step 6 left it"
+                       : "frozen() is false, so the curve can still be registered",
+                froz === null ? "could not be read" : `it is ${froz}`);
           return c.out;
         },
         record: (_r, { address }) => ({ address }),
