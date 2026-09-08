@@ -4,694 +4,693 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="referrer" content="no-referrer">
-<meta name="color-scheme" content="light">
-<title>Where to buy LAPTOP</title>
+<meta name="color-scheme" content="dark">
+<title>$SNOOZE — you snooze, you win</title>
+<meta name="description" content="Two rules, in code. Selling into a spike burns most of what you would have taken, and nobody moves more than a fifth of their bag a day.">
+<meta property="og:title" content="$SNOOZE — you snooze, you win">
+<meta property="og:description" content="Two rules, in code. Selling into a spike burns most of what you would have taken.">
+<meta property="og:image" content="/hero.png">
+<meta name="twitter:card" content="summary_large_image">
 <style>
 :root{
-  /* Light, cool, Ethereum-ish: lavender-white ground, slate text, the ETH blue-violet as the
-     one accent. Every colour here was picked against the composited ground (art + scrim +
-     card), not against a swatch — the suite recomputes the WCAG ratios and fails on a
-     regression, which is the only reason these are the exact values they are. */
-  --bg:#f4f5fb; --fg:#1f2033; --dim:#565a72; --line:#dde0f0; --card:#ffffff; --cardBg:rgba(255,255,255,.92);
-  --eth:#4a63d8; --ethSoft:rgba(74,99,216,.09);
-  --ok:#0c6b3a; --okbg:rgba(12,107,58,.10); --bad:#b3251c; --badbg:rgba(179,37,28,.09);
-  --warn:#7f5600; --warnbg:rgba(127,86,0,.10); --unk:#4b5069; --unkbg:rgba(74,99,216,.07);
+  /* Dark. The ground is near-black navy so the gold artwork reads as metal rather than as a
+     watermark, and gold is the single accent because it is the one colour the bear already is.
+     Every value was chosen against the COMPOSITED ground — the artwork at the brightest pixel
+     bg.png actually contains (#212829), plus the vignette at its weakest, plus the card — and
+     not against a swatch. tools/contrast.mjs prints the arithmetic; test/run.mjs recomputes it
+     in the browser and fails the build on a regression. That is the only reason these are the
+     exact values they are. */
+  --bg:#070b16; --fg:#e9edf8; --dim:#9aa6c2;
+  --line:#26304a;                    /* dividers and card edges: decorative, no WCAG floor */
+  --edge:#7c8aaf;                    /* borders of things you can TOUCH: 3.86:1, clears 1.4.11 */
+  --card:#0e1424;                    /* opaque, for inputs and selects */
+  --cardBg:rgba(255,255,255,.045);
+  --gold:#f0c040; --goldHi:#ffd970; --goldSoft:rgba(240,192,64,.14);
+  /* Base blue. #0052ff is the real brand colour and it is 2.91:1 on this ground — under the
+     4.5 for text and under the 3 for a border. So it is a FILL, where white on it is 5.75:1,
+     and --baseLt is the tint allowed to speak at 5.68:1. Using the brand blue as text would be
+     the one place on this site where the brand beat the reader. */
+  --base:#0052ff; --baseLt:#5b94ff; --baseSoft:rgba(0,82,255,.16); --onBase:#ffffff;
+  --onGold:#140f02;                  /* text ON a gold fill. White on gold is 1.70:1 — unusable */
+  --ok:#4fd18a; --okbg:rgba(79,209,138,.13);
+  --bad:#ff8178; --badbg:rgba(255,129,120,.13);
+  --warn:#f2c14e; --warnbg:rgba(242,193,78,.13);
+  --unk:#9aa6c2; --unkbg:rgba(154,166,194,.09);
   --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
 }
 *{box-sizing:border-box}
 html,body{margin:0;padding:0}
 body{background:var(--bg);color:var(--fg);
-  font:15px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  font:16px/1.6 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
   -webkit-text-size-adjust:100%;overflow-x:hidden;
-  padding:0 14px env(safe-area-inset-bottom) 14px;max-width:640px;margin:0 auto}
-h1{font-size:17px;margin:16px 0 2px;letter-spacing:-.01em}
-.sub{color:var(--dim);font-size:12.5px;margin:0 0 14px}
-.card{background:var(--cardBg);border:1px solid var(--line);border-radius:10px;padding:12px;margin:10px 0}
-.mono{font-family:var(--mono);font-size:12.5px;word-break:break-all}
-.dim{color:var(--dim)} .tiny{font-size:11.5px}
-label{display:block;font-size:12.5px;color:var(--dim);margin-bottom:5px}
-input,select{width:100%;font-size:16px;padding:11px;border:1.5px solid var(--line);
-  border-radius:9px;background:var(--card);color:var(--fg);font-family:inherit}
-input{font-family:var(--mono)}
-input:focus,select:focus{outline:none;border-color:var(--fg)}
-.grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
-.btnrow{display:flex;gap:8px;margin-top:8px;flex-wrap:wrap}
-button.act{font:inherit;font-size:13.5px;padding:9px 13px;min-height:40px;border:1px solid var(--line);
-  border-radius:8px;background:var(--card);color:var(--fg);cursor:pointer}
-button.act:hover{border-color:var(--fg)}
-button.act:disabled{opacity:.45;cursor:default}
-.badge{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;padding:3px 8px;
-  border-radius:999px;border:1px solid var(--line);background:var(--unkbg);color:var(--dim);white-space:nowrap}
+  padding:0 16px env(safe-area-inset-bottom) 16px;max-width:760px;margin:0 auto}
+/* The landing page is the one page with something worth spreading out: on a desktop the chart
+   and the four panels get the room, while every other page stays a reading column. */
+@media (min-width:1024px){ body{max-width:1000px} }
+h1{font-size:21px;margin:20px 0 3px;letter-spacing:-.01em}
+h2{font-size:16px;margin:0 0 8px}
+.sub{color:var(--dim);font-size:13.5px;margin:0 0 16px;line-height:1.55}
+.card{background:var(--cardBg);border:1px solid var(--line);border-radius:12px;padding:14px;
+  margin:12px 0;box-shadow:inset 0 1px 0 rgba(255,255,255,.05), 0 1px 2px rgba(0,0,0,.5)}
+.mono{font-family:var(--mono);font-size:13px;word-break:break-all;line-height:1.5}
+.dim{color:var(--dim)} .tiny{font-size:12.5px;line-height:1.55}
+.hdr{display:flex;justify-content:space-between;align-items:center;gap:8px;
+  margin-bottom:8px;flex-wrap:wrap}
+.hdr h2{font-size:14.5px;margin:0;font-weight:600}
+.badge{display:inline-flex;align-items:center;gap:5px;font-size:12px;padding:4px 9px;
+  border-radius:999px;border:1.5px solid var(--line);background:var(--unkbg);color:var(--dim);
+  white-space:nowrap}
 .badge.good{background:var(--okbg);border-color:var(--ok);color:var(--ok)}
 .badge.bad{background:var(--badbg);border-color:var(--bad);color:var(--bad)}
 .badge.warn{background:var(--warnbg);border-color:var(--warn);color:var(--warn)}
-.hdr{display:flex;justify-content:space-between;align-items:center;gap:8px;
-  margin-bottom:8px;flex-wrap:wrap}
-.hdr h2{font-size:13.5px;margin:0;font-weight:600}
+.badge.gold{background:var(--goldSoft);border-color:var(--gold);color:var(--gold)}
 .warnbox{background:var(--warnbg);border:1px solid var(--warn);color:var(--warn);
-  border-radius:8px;padding:10px;font-size:12.5px;margin:8px 0}
+  border-radius:8px;padding:11px;font-size:12.5px;margin:8px 0}
 .badbox{background:var(--badbg);border:1px solid var(--bad);color:var(--bad);
   border-radius:8px;padding:11px;font-size:12.5px;margin:8px 0}
-.wtab{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:10px}
-.wtab td{padding:5px 0;border-bottom:1px solid var(--line);vertical-align:top}
-.wtab td:first-child{color:var(--dim);width:34%}
-.wtab td:last-child{font-family:var(--mono);word-break:break-all}
-.wnote{font-size:12px;color:var(--warn);margin-top:8px}
-#wErr{margin-top:9px;color:var(--bad)}
-
-/* ---- readability ----
-   The old scale bottomed out at 11.5px, which is under what most people can read on a phone
-   at arm's length, and every page here exists to be read in a hurry. Everything steps up,
-   line-height opens, tap targets reach 44px, and the scale grows again once there is room.
-   Inputs are 16px because anything smaller makes iOS zoom the page on focus. No colour
-   changes: the ratios the suite measures are untouched. */
-body{font-size:16px;line-height:1.6;max-width:680px;padding-left:16px;padding-right:16px}
-h1{font-size:21px;margin:20px 0 3px}
-.sub{font-size:13.5px;margin:0 0 16px;line-height:1.55}
-.card{padding:14px;margin:12px 0;border-radius:12px}
-.mono{font-size:13px;line-height:1.5}
-.small{font-size:13px} .tiny{font-size:12.5px;line-height:1.55}
-label{font-size:13px;margin-bottom:6px}
-table{font-size:12.5px} th,td{padding:7px 5px}
-.hdr h2{font-size:14.5px}
-.badge{font-size:12px;padding:4px 9px}
-.footer{font-size:12.5px;line-height:1.65}
-button.act{font-size:14px;min-height:44px;padding:10px 15px}
-input,select{font-size:16px}
-.wtab{font-size:13px} .wtab td{padding:7px 0}
-.venue{padding:13px} .venue .name{font-size:14.5px} .venue .out{font-size:16px}
-.venue .meta{font-size:12.5px}
-@media (min-width:600px){
-  body{font-size:16.5px;padding-left:22px;padding-right:22px}
-  h1{font-size:23px}
-  .card{padding:17px}
-  .sub{font-size:14px}
-  .small{font-size:13.5px} .tiny{font-size:13px}
-  table,.wtab{font-size:13.5px}
-}
-
-/* ---- Phantom ----
-   Phantom's own colour and mark, so the button looks like the thing it opens. The ghost is
-   drawn here by hand rather than fetched, because the page loads no external asset — it is an
-   approximation of Phantom's mark, not their official file. */
-button.act.phantom{background:#ab9ff2;border-color:#ab9ff2;color:#1c1c2e;font-weight:600;
-  display:inline-flex;align-items:center;justify-content:center;gap:9px}
-button.act.phantom:hover{background:#bcb0ff;border-color:#bcb0ff}
-button.act.phantom .ghost{width:20px;height:20px;flex:none;display:block}
-.okbox{background:var(--okbg);border:1px solid var(--ok);color:var(--ok);
-  border-radius:8px;padding:10px;font-size:12.5px;margin:8px 0}
-.venue{border:1.5px solid var(--line);border-radius:10px;padding:11px;margin:8px 0}
-.venue.best{border-color:var(--ok);background:var(--okbg)}
-.venue .top{display:flex;justify-content:space-between;gap:8px;align-items:baseline;flex-wrap:wrap}
-.venue .name{font-weight:600;font-size:13.5px}
-.venue .out{font-family:var(--mono);font-size:15px;font-weight:600}
-.venue .meta{font-size:12px;color:var(--dim);margin-top:4px}
-.venue.best .meta{color:var(--ok)}
-a{color:inherit} a.ext{text-decoration:underline;text-underline-offset:2px}
-.footer{color:var(--dim);font-size:11.5px;margin:22px 0 30px;line-height:1.55}
+a{color:inherit} a.ext{text-decoration:underline;text-underline-offset:3px}
+.footer{color:var(--dim);font-size:12.5px;margin:22px 0 30px;line-height:1.65}
 .hr{height:1px;background:var(--line);margin:14px 0}
-/* Depth. This sits on its own layer at full strength — putting it on the art layer would
-   inherit that layer's opacity and do almost nothing. Lit from the centre, near-black by
-   the edges, so text always has a dark ground under it. */
+a:focus-visible,button:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
+::selection{background:rgba(240,192,64,.28);color:var(--fg)}
+*{scrollbar-color:var(--edge) transparent}
+*::-webkit-scrollbar{height:10px;width:10px}
+*::-webkit-scrollbar-thumb{background:var(--edge);border-radius:10px}
+*::-webkit-scrollbar-track{background:transparent}
+
+/* ---------------------------------------------------------------------------- the hero.
+   The artwork is a glossy 3D render, so the job is to make it read as a physical object on a
+   dark ground rather than as a sticker pasted on one. Three things do that and none of them
+   is the image: a warm bloom it sits inside, a stack of shadows from contact-tight to
+   cast-loose, and a ground ellipse. A single drop-shadow reads flat; the stack is what gives
+   it somewhere to be. */
+.hero{text-align:center;padding:18px 0 6px}
+.bearwrap{position:relative;display:flex;justify-content:center;padding:6px 0 14px}
+.bearwrap::before{content:"";position:absolute;left:50%;top:48%;translate:-50% -50%;
+  /* 120% of the column overflows the viewport once the body's own padding is counted, and
+     `overflow-x:hidden` on the body hides the scrollbar without stopping the document from
+     being too wide. Clamped against the viewport instead. */
+  width:min(120%,92vw);max-width:460px;aspect-ratio:1;border-radius:50%;pointer-events:none;z-index:0;
+  background:radial-gradient(circle,
+    rgba(240,192,64,.26) 0%, rgba(240,192,64,.12) 36%,
+    rgba(240,192,64,.035) 58%, rgba(240,192,64,0) 72%)}
+.bearwrap::after{content:"";position:absolute;left:50%;bottom:6px;translate:-50% 0;
+  width:46%;max-width:180px;height:16px;border-radius:50%;pointer-events:none;z-index:0;
+  background:radial-gradient(ellipse,rgba(0,0,0,.6) 0%,rgba(0,0,0,0) 70%)}
+.bear{position:relative;z-index:1;width:min(72vw,272px);height:auto;display:block;
+  filter:drop-shadow(0 -1px 0 rgba(255,238,196,.32))
+         drop-shadow(0 9px 16px rgba(0,0,0,.55))
+         drop-shadow(0 24px 44px rgba(0,0,0,.42));
+  animation:bob 7s ease-in-out infinite}
+@keyframes bob{0%,100%{transform:translateY(0)}50%{transform:translateY(-7px)}}
+@media (prefers-reduced-motion:reduce){.bear{animation:none}}
+.ticker{font-size:34px;font-weight:800;letter-spacing:-.02em;margin:2px 0 2px;
+  color:var(--gold)}
+.tag{font-size:19px;font-weight:600;margin:0 0 10px;color:var(--fg)}
+.lede{color:var(--dim);font-size:14.5px;line-height:1.6;margin:0 auto 16px;max-width:52ch}
+.heroCta{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-bottom:6px}
+a.cta{display:inline-flex;align-items:center;justify-content:center;gap:8px;
+  min-height:50px;padding:13px 20px;border-radius:11px;
+  background:var(--gold);color:var(--onGold);font-weight:700;font-size:15px;
+  text-decoration:none;border:1.5px solid var(--gold)}
+a.cta:hover{background:var(--goldHi);border-color:var(--goldHi)}
+a.cta.sub2{background:transparent;color:var(--fg);border-color:var(--edge);font-weight:600}
+a.cta.sub2:hover{border-color:var(--gold);color:var(--goldHi)}
+
+/* ------------------------------------------------------------------------ the live panel.
+   Deliberately large. It is the only part of this page that is not an argument. */
+.live{padding:14px}
+.chartwrap{position:relative;width:100%;height:220px;margin:6px 0 4px;
+  transition:height .2s}
+@media (min-width:760px){ .chartwrap{height:320px} }
+@media (min-width:1024px){ .chartwrap{height:380px} }
+/* A chart with nothing in it should not reserve a chart's worth of screen. It says what it
+   knows and gets out of the way; the space comes back the moment there is a series. */
+.chartwrap.bare{height:150px}
+@media (min-width:760px){ .chartwrap.bare{height:170px} }
+.chartwrap svg{width:100%;height:100%;display:block;overflow:visible}
+.empty{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;
+  justify-content:center;text-align:center;gap:6px;padding:16px}
+.empty .big{font-size:15px;font-weight:600}
+/* The strapline is not decoration. A chart of a formula and a chart of a market look
+   identical from three feet away, so the difference has to be written down inside the frame. */
+.strap{margin:2px 0 6px;font-size:12.5px;color:var(--gold);
+  background:var(--goldSoft);border:1px solid var(--gold);border-radius:8px;padding:7px 10px}
+.strap.market{color:var(--ok);background:var(--okbg);border-color:var(--ok)}
+.strap:empty{display:none}
+.axis{display:flex;justify-content:space-between;gap:10px;margin:4px 2px 0;
+  font-size:11.5px;color:var(--dim)}
+.axis span:empty{display:none}
+.stats{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-top:10px}
+@media (min-width:600px){ .stats{grid-template-columns:repeat(4,1fr)} }
+.stat{background:rgba(255,255,255,.03);border:1px solid var(--line);border-radius:9px;
+  padding:9px 10px}
+.stat .k{font-size:11.5px;color:var(--dim);margin-bottom:3px}
+.stat .v{font-family:var(--mono);font-size:15px;font-weight:600}
+
+/* ------------------------------------------------------------------------ the infographic.
+   Inline SVG, no library, no external asset — the same rule as everything else here. */
+.panels{display:grid;gap:12px}
+@media (min-width:760px){ .panels{grid-template-columns:1fr 1fr} }
+.panel{background:var(--cardBg);border:1px solid var(--line);border-radius:12px;padding:14px;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.05), 0 1px 2px rgba(0,0,0,.5)}
+.panel .num{display:inline-flex;align-items:center;justify-content:center;
+  width:24px;height:24px;border-radius:7px;background:var(--goldSoft);
+  border:1.5px solid var(--gold);color:var(--gold);font-weight:700;font-size:13px;
+  margin-right:8px;flex:none}
+.panel h3{display:flex;align-items:center;margin:0 0 8px;font-size:15px}
+.panel p{margin:0;font-size:13.5px;color:var(--dim);line-height:1.6}
+.panel figure{margin:0 0 10px}
+.panel svg{width:100%;height:auto;display:block}
+.panel.no{border-color:var(--warn)}
+.panel.no .num{background:var(--warnbg);border-color:var(--warn);color:var(--warn)}
+.panel.no ul{margin:0;padding-left:18px;font-size:13px;color:var(--dim);line-height:1.65}
+.panel.no li{margin-bottom:5px}
+
+.tools{display:flex;gap:8px;flex-wrap:wrap;margin:4px 0 0}
+.tools a{display:inline-flex;align-items:center;min-height:40px;padding:8px 12px;
+  border:1.5px solid var(--line);border-radius:9px;font-size:13px;text-decoration:none;
+  color:var(--fg);background:rgba(255,255,255,.02)}
+.tools a:hover{border-color:var(--gold);color:var(--goldHi)}
+
+/* ------------------------------------------------------------------------- click to define.
+   A dotted underline on the word itself, not a chip and not an icon — a reader should be able
+   to see at a glance which words have a definition without the page turning into a control
+   panel. It is a <button> for the keyboard and the screen reader, and it is styled like text
+   because that is what it is. */
+.d{all:unset;cursor:help;border-bottom:1.5px dotted var(--baseLt);color:inherit;
+  font:inherit;-webkit-tap-highlight-color:transparent}
+.d:hover{border-bottom-color:var(--gold)}
+.d:focus-visible{outline:2px solid var(--gold);outline-offset:2px;border-radius:2px}
+#defbox{position:fixed;left:12px;right:12px;bottom:12px;z-index:50;
+  background:#0d1322;border:1.5px solid var(--baseLt);border-radius:12px;padding:13px 14px;
+  box-shadow:0 -6px 30px rgba(0,0,0,.6);max-width:520px;margin:0 auto}
+#defbox[hidden]{display:none}
+#defbox .t{font-weight:700;font-size:14px;margin-bottom:4px;color:var(--baseLt)}
+#defbox .b{font-size:13.5px;line-height:1.55;color:var(--fg)}
+#defbox .x{position:absolute;top:8px;right:10px;all:unset;cursor:pointer;color:var(--dim);
+  font-size:18px;line-height:1;padding:4px 6px}
+#defbox .x:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
+
+/* The chain chip. Base blue as a fill, which is the only place it clears contrast. */
+.chain{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;
+  padding:4px 10px;border-radius:999px;background:var(--base);color:var(--onBase)}
+.chain .dot{width:7px;height:7px;border-radius:50%;background:var(--onBase);opacity:.85}
+
+/* Tools are links with a mark beside them, not a row of buttons. An icon inside a bordered
+   box reads as "press me"; these are places to go, and one of them is not more pressable than
+   the paragraph above it. */
+.tools{display:flex;flex-wrap:wrap;gap:6px 18px;margin:6px 0 0;padding:0;list-style:none}
+.tools a{display:inline-flex;align-items:center;gap:7px;font-size:13.5px;color:var(--fg);
+  text-decoration:none;padding:6px 0;min-height:36px;border:0;background:none}
+.tools a:hover{color:var(--goldHi)}
+.tools a::before{content:"";width:6px;height:6px;border-radius:50%;
+  background:var(--baseLt);flex:none}
+.tools a:hover::before{background:var(--gold)}
+
+/* Steps: the four things, as short as they go. */
+.steps{display:grid;gap:10px;margin:10px 0 0}
+@media (min-width:720px){ .steps{grid-template-columns:repeat(2,1fr)} }
+.step{display:flex;gap:11px;align-items:flex-start;padding:12px 13px;border-radius:11px;
+  background:var(--cardBg);border:1px solid var(--line)}
+.step .n{flex:none;width:26px;height:26px;border-radius:8px;background:var(--base);
+  color:var(--onBase);font-weight:700;font-size:13px;display:flex;align-items:center;
+  justify-content:center}
+.step h3{margin:0 0 3px;font-size:14.5px}
+.step p{margin:0;font-size:13px;color:var(--dim);line-height:1.55}
+table{width:100%;border-collapse:collapse;font-size:13px;margin-top:8px}
+th,td{text-align:right;padding:8px 6px;border-bottom:1px solid var(--line)}
+th:first-child,td:first-child{text-align:left}
+th{color:var(--dim);font-weight:500;font-size:12px}
+td.n{font-family:var(--mono)}
+tbody tr:last-child td{border-bottom:0}
+.scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
+ul{margin:0;padding-left:18px} li{margin-bottom:5px}
+.pair{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:2px 0 0}
+.pill{display:inline-flex;align-items:center;gap:7px;padding:7px 12px;border-radius:999px;
+  font-weight:700;font-size:14px;background:var(--goldSoft);border:1.5px solid var(--gold);
+  color:var(--gold)}
+.pill.lp{background:var(--baseSoft);border-color:var(--baseLt);color:var(--baseLt)}
+.arrow{color:var(--dim);font-size:18px}
+
+body::before{content:"";position:fixed;inset:0;z-index:-3;pointer-events:none;
+  background:url("/bg.png") center center / cover no-repeat;opacity:0.34}
 html::before{
   content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;
   background:radial-gradient(ellipse 120% 90% at 50% 38%,
-    rgba(244,245,251,.30) 0%, rgba(245,246,252,.62) 48%, rgba(248,249,253,.90) 82%, rgba(250,251,254,.96) 100%);
+    rgba(7,11,22,.30) 0%, rgba(7,11,22,.62) 48%, rgba(6,9,19,.90) 82%, rgba(5,8,17,.97) 100%);
 }
-/* One primary action per page, used only where acting is safe. */
-a.cta{display:flex;align-items:center;justify-content:center;gap:8px;
-  min-height:52px;padding:14px 18px;margin-top:12px;border-radius:11px;
-  background:var(--eth);color:#fff;font-weight:650;font-size:15px;
-  text-decoration:none;border:1px solid var(--eth)}
-a.cta:hover{filter:brightness(1.08)}
-a.cta.sub2{background:transparent;color:var(--fg);border-color:var(--line);font-weight:500;
-  min-height:44px;font-size:13.5px}
-.spin{display:inline-block;width:11px;height:11px;border:2px solid var(--line);
-  border-top-color:var(--dim);border-radius:50%;animation:sp .7s linear infinite}
-@keyframes sp{to{transform:rotate(360deg)}}
-body::before{content:"";position:fixed;inset:0;z-index:-3;pointer-events:none;
-  background:url("/bg.png") center center / cover no-repeat;opacity:.12}
-
+/* Boundaries of things you can touch, at 3:1. --line is 1.28:1 on a card and is for dividers
+   only; anything with a hit area gets --edge (4.87:1). */
+a.cta.sub2{border-color:var(--edge)}
+.tools a{border-color:var(--edge)}
+/* Three spinners rotated forever regardless of the setting, on three different pages, because
+   the reduced-motion guard was written for the hero and nothing else. */
+@media (prefers-reduced-motion:reduce){
+  .spin{animation:none;opacity:.6}
+  .bear{animation:none}
+}
 </style>
 </head>
 <body>
 
-<h1>Where to buy LAPTOP</h1>
-<p class="sub">Every Base venue, priced for the size you actually intend, ranked by what you
-end up holding. <a href="/checker.html">checker</a> &middot; <a href="/size.html">size curve</a> &middot;
-<a href="/route.html">get ready</a> &middot;
-<a href="/order.html">standing order</a> &middot;
-<a href="/slot.html">getting a slot</a></p>
+<header class="hero">
+  <div class="bearwrap">
+    <img class="bear" src="/snooze-512.webp" width="512" height="512" alt=""
+         fetchpriority="high" decoding="async">
+  </div>
+  <h1 class="ticker">$SNOOZE</h1>
+  <p class="tag">You snooze, you win.</p>
+  <p class="lede">A launchpad on Base. <b>Anyone can launch.</b> No permission, no listing, and
+  no liquidity of your own &mdash; it starts
+  <button class="d" data-t="Virtual liquidity" data-d="Pretend reserves that set the price. Real money buys against them; no real money is behind them until the token bonds.">virtual</button>
+  and turns real when the token
+  <button class="d" data-t="Bonding" data-d="When enough real ETH has arrived, the token graduates: the ETH and a token allocation go into a real pool and the curve retires.">bonds</button>.</p>
+  <div class="heroCta">
+    <a class="cta" href="#get">Get $SNOOZE</a>
+    <a class="cta sub2" href="#how">How it works</a>
+  </div>
+  <p style="margin:12px 0 0"><span class="chain"><span class="dot"></span>Base &middot; 8453</span></p>
+</header>
 
-<div class="card" id="walletCard">
+<section class="card live" id="live">
   <div class="hdr">
-    <h2>Your wallet</h2>
-    <span class="badge" id="wBadge">not connected</span>
+    <h2>Live</h2>
+    <span class="badge" id="liveBadge">reading&hellip;</span>
   </div>
-  <p class="tiny dim">This page ranks venues for a size you choose. Connecting lets it read your
-  address and your Base balances, so you can size against what you actually hold. It does not
-  ask you to sign anything and cannot send a transaction — the swap still happens in the venue
-  you pick, from your own wallet.</p>
-  <div class="btnrow">
-    <button class="act phantom" id="wConnect"><svg class="ghost" viewBox="0 0 128 128"
-      aria-hidden="true" focusable="false"><path fill="#fff" d="M64 10C34.2 10 10 34.2 10 64v42c0
-      6.6 8 9.9 12.6 5.2l9.5-9.5a6.5 6.5 0 0 1 9.2 0l9.1 9.1a6.5 6.5 0 0 0 9.2 0l9.1-9.1a6.5 6.5 0
-      0 1 9.2 0l9.5 9.5c4.6 4.7 12.6 1.4 12.6-5.2V64c0-29.8-24.2-54-54-54z"/><ellipse cx="47"
-      cy="58" rx="8.5" ry="13" fill="#4a3d8f"/><ellipse cx="81" cy="58" rx="8.5" ry="13"
-      fill="#4a3d8f"/></svg>Connect Phantom</button>
-    <button class="act" id="wDisconnect" style="display:none">Forget</button>
+  <p class="strap" id="strap"></p>
+  <div class="chartwrap">
+    <svg id="chart" viewBox="0 0 600 320" preserveAspectRatio="none" role="img"
+         aria-labelledby="chartTitle"></svg>
+    <div class="empty" id="chartEmpty" style="display:none"></div>
   </div>
-  <div id="wOut" style="display:none"></div>
-  <div id="wErr" class="tiny" style="display:none"></div>
+  <p class="axis"><span id="axX"></span><span id="axY"></span></p>
+  <div class="stats" id="stats"></div>
+</section>
+
+<h1 id="how" style="margin-top:26px">How it works</h1>
+<div class="steps">
+  <div class="step"><div class="n">1</div><div>
+    <h3>Anyone launches</h3>
+    <p>Permissionless. You bring a name and nothing else.</p>
+  </div></div>
+  <div class="step"><div class="n">2</div><div>
+    <h3>The price is a curve, not a pool</h3>
+    <p>Buying moves it up, selling moves it down, and the curve can only ever pay out the ETH
+    that came in.</p>
+  </div></div>
+  <div class="step"><div class="n">3</div><div>
+    <h3>At 10&times; it bonds</h3>
+    <p>The real ETH and a token allocation go into a real pool at the price the curve closed
+    at. Takes <b>2.16&times;</b> the
+    <button class="d" data-t="Virtual ETH" data-d="The imaginary ETH the curve starts with. It sets both how deep the book feels and how much real money bonding takes — one dial, not two.">virtual ETH</button>
+    in real buys.</p>
+  </div></div>
+  <div class="step"><div class="n">4</div><div>
+    <h3>Selling into a spike burns</h3>
+    <p>Above the
+    <button class="d" data-t="24-hour average" data-d="The average price over the last day. Sell above it and the difference is destroyed; sell at or below it and nothing is.">24-hour average</button>,
+    the difference is destroyed. Below it, nothing burns.</p>
+  </div></div>
+</div>
+
+<h1 id="get" style="margin-top:26px">$SNOOZE and LAPTOP</h1>
+<p class="sub">$SNOOZE is the launchpad. LAPTOP is the first launch on it.</p>
+
+<div class="card">
+  <div class="pair">
+    <span class="pill">$SNOOZE</span><span class="arrow">&rarr;</span>
+    <span class="pill lp">LAPTOP</span>
+  </div>
+  <p style="margin:12px 0 0;font-size:14.5px"><b>Holding $SNOOZE is how you get into LAPTOP
+  early.</b> The curve opens to $SNOOZE holders first, and an allocation is set aside for
+  whoever holds it at a
+  <button class="d" data-t="Snapshot" data-d="A single block, fixed in advance, at which balances are read. What you hold at that block is what you get; what you do after does not change it.">snapshot block</button>
+  &mdash; claimed by you, from your own wallet.</p>
+  <p class="mono" id="poolAddr" style="margin:10px 0 0">&mdash;</p>
+  <div class="warnbox" style="margin-top:8px">
+    <b>Nothing is deployed.</b> <span id="poolBadge" class="badge warn">not deployed</span>
+    There is no $SNOOZE contract and no LAPTOP curve yet, so there is no snapshot and no
+    address. Anything you are shown today is not it. When there is one, check it against
+    <a class="ext" href="/checker.html">the checker</a> before you send anything.
+  </div>
 </div>
 
 <div class="card">
-  <div class="hdr"><h2>What are you spending?</h2>
-    <span class="badge" id="chainBadge">chain not checked</span></div>
-  <div class="grid">
-    <div>
-      <label for="quote">Asset</label>
-      <select id="quote">
-        <option value="weth">WETH</option>
-        <option value="usdc" selected>USDC</option>
-        <option value="usdbc">USDbC</option>
-      </select>
-    </div>
-    <div>
-      <label for="amt">Amount</label>
-      <input id="amt" inputmode="decimal" value="1000">
-    </div>
-  </div>
-  <div class="btnrow"><button class="act" id="go">Compare every venue</button></div>
-  <p class="tiny dim" style="margin:8px 0 0">
-    Reads the Uniswap V2 pair, all seven Base V3 fee tiers, both Aerodrome pools and the v4
-    PoolManager, then prices your exact size against each one.
-  </p>
+  <div class="hdr"><h2>Depth costs speed. Pick one.</h2></div>
+  <p class="tiny" style="margin:0 0 8px">The
+  <button class="d" data-t="Slippage" data-d="The gap between the price you see and the price you get. Bigger trades against a thinner book pay more of it.">slippage</button>
+  you remove is real money somebody has to spend before the token bonds. Same dial.</p>
+  <div class="scroll"><table>
+    <thead><tr><th>virtual ETH</th><th>0.1 ETH buy</th><th>1 ETH buy</th><th>to bond at 10&times;</th></tr></thead>
+    <tbody>
+      <tr><td class="n">3</td><td class="n">3.3%</td><td class="n">33%</td><td class="n">6.5 ETH</td></tr>
+      <tr><td class="n">10</td><td class="n">1.0%</td><td class="n">10%</td><td class="n">21.6 ETH</td></tr>
+      <tr><td class="n">25</td><td class="n">0.4%</td><td class="n">4.0%</td><td class="n">54.1 ETH</td></tr>
+    </tbody>
+  </table></div>
+  <p class="tiny dim" style="margin:8px 0 0">There is no row that is both. A token nobody can
+  move the price of is also a token that never bonds.</p>
 </div>
 
-<div id="out"></div>
+<div class="card no" style="border-color:var(--warn)">
+  <div class="hdr"><h2 style="color:var(--warn)">What this does not do</h2></div>
+  <ul style="margin:0;padding-left:18px;font-size:13px;color:var(--dim);line-height:1.6">
+    <li><b>Virtual liquidity is not liquidity.</b> Before bonding, the only ETH behind the
+    price is what buyers put in. The curve cannot pay out more than that, and it does not
+    pretend to.</li>
+    <li><b>The burn is also your instant loss.</b> A 41% dial means selling burns 41%,
+    including ten minutes after you bought.</li>
+    <li><b>A falling market burns nothing.</b> The rule only bites above the average.</li>
+    <li><b>One wallet is outside both rules</b> &mdash; the launcher's, which has to be exempt
+    to seed at all. <a class="ext" href="/snooze.html">the detail</a></li>
+    <li><b>Most tokens never bond.</b> That is the normal outcome, not the failure case.</li>
+    <li><b>No audit, no testnet run.</b> Nothing here has been either.</li>
+  </ul>
+</div>
+
+<h1 style="margin-top:26px">Tools</h1>
+<p class="sub">Read-only. None of them ask you to sign anything.</p>
+<ul class="tools">
+  <li><a href="/snooze.html">The dial</a></li>
+  <li><a href="/checker.html">Is this the real address?</a></li>
+  <li><a href="/buy.html">Where to buy</a></li>
+  <li><a href="/size.html">What a size actually gets</a></li>
+  <li><a href="/order.html">Standing order</a></li>
+  <li><a href="/slot.html">Getting a slot</a></li>
+  <li><a href="/launch.html">Launch parameters</a></li>
+</ul>
 
 <div class="footer">
   <div class="hr"></div>
-  <p><b>Why there is no swap button.</b> This site's own failure analysis says the one thing it
-  cannot defend against is being cloned at another address. Today a clone can only lie to you.
-  The moment this domain teaches people to connect a wallet, a clone drains them instead — so
-  the most valuable thing this page can do for you is stay something that cannot spend your
-  money. Execute in a venue you chose, from a wallet only you control.</p>
-  <p><b>Check the token in the venue before you swap.</b> The links below carry the contract
-  address, but a link is not a guarantee that the venue loaded what you meant. The address is
-  printed next to every link so you can compare what you see there against what you see here.</p>
-  <p><b>What these numbers are not.</b> Gas, MEV, and the pool moving between this reading and
-  your transaction — on launch day the last one is the norm. Concentrated-liquidity venues are
-  priced as a best case, exactly as on the <a href="/size.html" class="ext">size curve</a>.
-  Nothing here is advice to buy LAPTOP, or a view on whether it is worth buying.</p>
-  <p> &middot; totalworlddomination.xyz &middot; Build <span class="mono" id="buildId">2026-09-08a</span> &middot; no analytics,
-  no trackers, no cookies.</p>
+  <p>totalworlddomination.xyz &middot; Build <span class="mono" id="buildId">2026-09-08a</span>
+  &middot; no analytics, no trackers, no cookies. This page connects and reads, and it does not
+  ask you to sign anything. The README publishes the sha256 of every page under this build tag.</p>
+</div>
+
+<div id="defbox" hidden role="dialog" aria-live="polite" aria-labelledby="defTitle">
+  <button class="x" id="defClose" aria-label="close">&times;</button>
+  <div class="t" id="defTitle"></div>
+  <div class="b" id="defBody"></div>
 </div>
 
 <script>
 "use strict";
-const LAPTOP="0xb095274743941e953c746f9c228da9c18bb6ec29";
-const C={
-  POOL_MANAGER:"0x498581ff718922c3f8e6a244956af099b2652b2b",
-  V2:"0x8909dc15e40173ff4699343b6eb8132c65e18ec6",
-  V3:"0x33128a8fc17869897dce68ed026d694621f6fdfd",
-  AERO:"0x420dd381b31aef6683db6b902084cb0ffece40da",
-};
-const QUOTES={
-  weth:{a:"0x4200000000000000000000000000000000000006",s:"WETH",d:18},
-  usdc:{a:"0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",s:"USDC",d:6},
-  usdbc:{a:"0xd9aaec86b65d86f6a7b5b1b0c42ffa531710b6ca",s:"USDbC",d:6},
-};
-const V3_FEES=[100,200,300,400,500,3000,10000];
-const SEL={getPair:"0xe6a43905",getPoolV3:"0x1698ee82",getPoolAero:"0x79bc57d5",
-  feeTick:"0x22afcccb",slot0:"0x3850c7bd",liquidity:"0x1a686502",getReserves:"0x0902f1ac",
-  token0:"0x0dfe1681",decimals:"0x313ce567",balanceOf:"0x70a08231",fee:"0xddca3f43"};
-const CHAIN_ID=8453, Q96=2**96;
-let RPC=localStorage.getItem("laptop.rpc")||"https://mainnet.base.org";
+/* Reads Base. Never signs, never sends, never approves. The only methods this file names are
+   in the read set the suite enforces across every page. */
+const $ = id => document.getElementById(id);
+const CHAIN_ID = 8453;
+/* A same-origin path first, the public endpoint second. The one method this page depends on
+   is eth_getLogs, and that is the one a public Base endpoint refuses outright or range-caps —
+   the README has said so about the Python scripts since before this page existed and it was
+   never carried across. /api/rpc lets a keyed endpoint sit server-side: a vendor URL pasted
+   into a static file is a bearer credential handed to everyone who views source, and no amount
+   of obfuscation changes that, because the browser has to be able to read it to use it.
+   Referrer restriction cannot save it either — every fetch here sets no-referrer, so the
+   provider sees nothing to check. Origin allowlisting is what works. */
+const RELAY = "/api/rpc";
+const PUBLIC_RPC = "https://mainnet.base.org";
+let RPC = localStorage.getItem("laptop.rpc") || RELAY;
+let triedRelay = false;
 
-/* ---- swap math: identical to web/size.html, same virtual-reserve form ---- */
-function v2Out(amountIn,reserveIn,reserveOut,feeBps){
-  const ai=BigInt(amountIn),ri=BigInt(reserveIn),ro=BigInt(reserveOut),f=BigInt(10000-feeBps);
-  if(ai<=0n||ri<=0n||ro<=0n) return 0n;
-  const a=ai*f; return (a*ro)/(ri*10000n+a);
-}
-function v3Out(amountIn,L,sqrtP,feePpm,zeroForOne){
-  if(!(L>0)||!(sqrtP>0)||!(amountIn>0)) return 0;
-  const a=amountIn*(1-feePpm/1e6), xv=L/sqrtP, yv=L*sqrtP;
-  return zeroForOne ? a*yv/(xv+a) : a*xv/(yv+a);
-}
-const spotPrice=(sqrtP,z,dIn,dOut)=>(z?sqrtP*sqrtP:1/(sqrtP*sqrtP))*10**(dIn-dOut);
+/* The addresses, once they exist. Empty is the honest state and it is the state today: there
+   is no deployed $SNOOZE, so there is nothing here to be wrong about. Filling these in is a
+   change to this file, which changes its hash, which the README republishes — so the address
+   arrives through the same door as everything else rather than out of a config nobody reads. */
+const POOL  = "";     // PooledLaunchBuy
+const TOKEN = "";     // Snooze
 
-/* ---- rpc ---- */
-async function post(body,ms=20000){
-  const ctl=new AbortController(), t=setTimeout(()=>ctl.abort(),ms);
+async function post(body, ms = 20000){
+  const ctl = new AbortController(), t = setTimeout(() => ctl.abort(), ms);
   try{
-    const r=await fetch(RPC,{method:"POST",headers:{"content-type":"application/json"},
-      body:JSON.stringify(body),signal:ctl.signal,cache:"no-store",referrerPolicy:"no-referrer"});
-    if(!r.ok) return {ok:false,reason:r.status===429?"rate limited (429)":"HTTP "+r.status};
-    const txt=await r.text();
-    try{ return {ok:true,body:JSON.parse(txt)}; }
-    catch(e){ return {ok:false,reason:"endpoint did not return JSON"}; }
+    const r = await fetch(RPC, {method:"POST", headers:{"content-type":"application/json"},
+      body:JSON.stringify(body), signal:ctl.signal, cache:"no-store", referrerPolicy:"no-referrer"});
+    if(!r.ok) return {ok:false, reason: r.status === 429 ? "rate limited (429)" : "HTTP " + r.status};
+    const txt = await r.text();
+    try{ return {ok:true, body:JSON.parse(txt)}; }
+    catch(e){ return {ok:false, reason:"endpoint did not return JSON"}; }
   }catch(e){
-    return {ok:false,reason:e.name==="AbortError"?"timed out"
-      :"blocked or unreachable (CORS or network — the browser cannot tell these apart)"};
-  }finally{clearTimeout(t);}
+    return {ok:false, reason: e.name === "AbortError" ? "timed out"
+      : "blocked or unreachable (CORS or network — the browser cannot tell these apart)"};
+  }finally{ clearTimeout(t); }
 }
-async function one(m,p){
-  const r=await post({jsonrpc:"2.0",id:1,method:m,params:p});
+async function one(m, p){
+  let r = await post({jsonrpc:"2.0", id:1, method:m, params:p});
+  // If /api/rpc is not deployed the first call 404s. Fall through to the public endpoint once,
+  // and remember, rather than paying for a failed round trip on every read.
+  if(!r.ok && RPC === RELAY && !triedRelay){
+    triedRelay = true; RPC = PUBLIC_RPC;
+    r = await post({jsonrpc:"2.0", id:1, method:m, params:p});
+  }
   if(!r.ok) return r;
-  if(r.body&&r.body.error) return {ok:false,reason:"node error"};
-  return {ok:true,data:r.body&&r.body.result};
+  if(r.body && r.body.error) return {ok:false, reason:"node error"};
+  return {ok:true, data: r.body && r.body.result};
 }
-async function batch(calls){
-  if(!calls.length) return [];
-  const r=await post(calls.map((c,i)=>({jsonrpc:"2.0",id:i,method:c.m,params:c.p})));
-  if(r.ok&&Array.isArray(r.body)&&r.body.length===calls.length){
-    const out=new Array(calls.length);
-    for(const it of r.body){
-      const i=typeof it.id==="number"?it.id:0;
-      out[i]=it.error?{ok:false,reason:"node error"}:{ok:true,data:it.result};
-    }
-    for(let i=0;i<out.length;i++) if(!out[i]) out[i]={ok:false,reason:"missing"};
-    return out;
+const word = (d,i) => d.replace(/^0x/,"").substr(i*64,64);
+const big  = w => w ? BigInt("0x" + w) : 0n;
+const fmtEth = wei => {
+  const n = Number(wei) / 1e18;
+  if(!isFinite(n)) return "—";
+  return (n >= 100 ? n.toFixed(1) : n >= 1 ? n.toFixed(3) : n.toFixed(5)).replace(/0+$/,"").replace(/\.$/,"");
+};
+const fmtDate = s => {
+  const n = Number(s);
+  if(!n) return "—";
+  return new Date(n * 1000).toISOString().slice(0,16).replace("T"," ") + "Z";
+};
+
+/* -------------------------------------------------------------------------------- the chart.
+   There are two kinds of thing that can go in this frame and only one of them is a market.
+   A chart of a FORMULA is exact, cannot go stale, and is more true than a price chart — but it
+   looks identical to one from three feet away, so which kind it is gets written inside the
+   frame in `strap`, and `window.__CHART.mode` says the same thing to the test suite.
+
+   What never goes in here: a random walk, a greyed-out "sample", a prediction from the launch
+   model drawn as if it were history, another token's chart used as a comparable, or a
+   countdown drawn as a rising line. Shape is what a chart communicates; a fake shape is a fake
+   claim, and a watermark does not undo it. `marketSeries` is [] unless a chain read produced
+   it, and test/run.mjs fails the build if a market series ever appears without one. */
+const CHART = { mode:"none", marketSeries:[], readAt:null };
+
+function plot(pts, opt){
+  const svg = $("chart");
+  while(svg.firstChild) svg.removeChild(svg.firstChild);
+  const W = 600, H = 320, L = 6, R = 6, T = 10, B = 22;
+  if(!pts || pts.length < 2) return false;
+  const ns = "http://www.w3.org/2000/svg";
+  const xs = pts.map(p => p[0]), ys = pts.map(p => p[1]);
+  const x0 = Math.min(...xs), x1 = Math.max(...xs);
+  let y0 = Math.min(...ys), y1 = Math.max(...ys);
+  /* A y-axis anchored at the series minimum turns a 2% wobble into a cliff; one always
+     anchored at zero flattens everything real. Zero-based for a quantity that means something
+     at zero, padded min/max for a price. */
+  if(opt.zeroBased) y0 = 0;
+  if(y1 === y0) y1 = y0 + 1;
+  const pad = (y1 - y0) * 0.08; y1 += pad; if(!opt.zeroBased) y0 -= pad;
+  const sx = v => L + (v - x0) / ((x1 - x0) || 1) * (W - L - R);
+  const sy = v => H - B - (v - y0) / ((y1 - y0) || 1) * (H - T - B);
+
+  for(let i = 0; i <= 4; i++){
+    const yy = T + i * (H - T - B) / 4;
+    const g = document.createElementNS(ns, "line");
+    g.setAttribute("x1", L); g.setAttribute("x2", W - R);
+    g.setAttribute("y1", yy); g.setAttribute("y2", yy);
+    g.setAttribute("stroke", "#26304a"); g.setAttribute("stroke-width", "1");
+    g.setAttribute("vector-effect", "non-scaling-stroke");
+    svg.appendChild(g);
   }
-  const out=[]; for(const c of calls) out.push(await one(c.m,c.p)); return out;
-}
-const call=(to,data)=>({m:"eth_call",p:[{to,data},"latest"]});
-const padA=a=>a.replace(/^0x/,"").toLowerCase().padStart(64,"0");
-const padU=n=>BigInt(n).toString(16).padStart(64,"0");
-const word=(d,i)=>d.replace(/^0x/,"").substr(i*64,64);
-const big=w=>w?BigInt("0x"+w):0n;
-
-// Same discipline as everywhere else: 32 zero bytes is an answer, "0x" is not.
-function addrOf(res){
-  if(!res.ok) return {s:"unknown",why:res.reason};
-  const d=res.data;
-  if(!d||d==="0x") return {s:"unknown",why:"empty return"};
-  const h=d.replace(/^0x/,"");
-  if(h.length<64) return {s:"unknown",why:"short return"};
-  const w=word(d,0);
-  return /^0{64}$/.test(w) ? {s:"none"} : {s:"found",a:"0x"+w.slice(24)};
-}
-
-/* ---- discovery + pricing ---- */
-async function compare(qKey, amount){
-  const q=QUOTES[qKey];
-  const plan=[], meta=[];
-  plan.push(call(C.V2,SEL.getPair+padA(LAPTOP)+padA(q.a)));
-  meta.push({v:"Uniswap V2",kind:"v2",fee:30});
-  for(const f of V3_FEES){
-    plan.push(call(C.V3,SEL.getPoolV3+padA(LAPTOP)+padA(q.a)+padU(f)));
-    meta.push({v:"Uniswap V3 "+(f/10000)+"%",kind:"v3",fee:f});
-  }
-  for(const st of [false,true]){
-    plan.push(call(C.AERO,SEL.getPoolAero+padA(LAPTOP)+padA(q.a)+padU(st?1:0)));
-    meta.push({v:"Aerodrome "+(st?"stable":"volatile"),kind:st?"aero-stable":"v2",fee:30});
-  }
-  plan.push(call(LAPTOP,SEL.balanceOf+padA(C.POOL_MANAGER)));
-  const res=await batch(plan);
-
-  const gate=res[res.length-1];
-  const found=[], failed=[];
-  for(let i=0;i<meta.length;i++){
-    const r=addrOf(res[i]);
-    if(r.s==="found") found.push({...meta[i],pool:r.a});
-    else if(r.s==="unknown") failed.push({...meta[i],why:r.why});
-  }
-  if(!found.length) return {found:[],failed,gate,q,checked:meta.length};
-
-  // Read each pool's state, then price the size against it.
-  const p2=[], idx=[];
-  for(const f of found){
-    idx.push(p2.length);
-    p2.push(call(f.pool,SEL.token0), call(f.pool,SEL.slot0), call(f.pool,SEL.liquidity),
-            call(f.pool,SEL.getReserves), call(f.pool,SEL.fee), call(LAPTOP,SEL.balanceOf+padA(f.pool)));
-  }
-  const s2=await batch(p2);
-  const rows=[];
-  for(let k=0;k<found.length;k++){
-    const b=idx[k], f=found[k];
-    const t0r=s2[b], s0r=s2[b+1], lqr=s2[b+2], rsr=s2[b+3], feer=s2[b+4], balr=s2[b+5];
-    const t0=addrOf(t0r);
-    if(t0.s!=="found"){ failed.push({...f,why:"could not read token0"}); continue; }
-    const isL0=t0.a.toLowerCase()===LAPTOP;
-    const inRaw=amount*10**q.d;
-    let out=null, exact=false, note=null;
-
-    const ok=r=>r.ok&&r.data&&r.data!=="0x"&&r.data.length>=66;
-    if(f.kind==="aero-stable"){
-      failed.push({...f,why:"stable curve (x³y+y³x) not implemented — not priced rather than mispriced"});
-      continue;
-    }
-    if(ok(s0r)&&ok(lqr)){
-      const sqrtP=Number(big(word(s0r.data,0)))/Q96;
-      const L=Number(big(word(lqr.data,0)));
-      if(!(L>0)){ failed.push({...f,why:"no in-range liquidity"}); continue; }
-      const feePpm=ok(feer)?Number(big(word(feer.data,0))):f.fee*100;
-      out=v3Out(inRaw,L,sqrtP,feePpm,!isL0);
-      note="best case — assumes liquidity extends across the trade";
-    } else if(ok(rsr)){
-      const r0=big(word(rsr.data,0)), r1=big(word(rsr.data,1));
-      const rQ=isL0?r1:r0, rL=isL0?r0:r1;
-      if(rQ<=0n||rL<=0n){ failed.push({...f,why:"no reserves"}); continue; }
-      out=Number(v2Out(BigInt(Math.round(inRaw)),rQ,rL,f.fee));
-      exact=true; note="exact — the pool's own arithmetic";
-    } else { failed.push({...f,why:"could not read pool state"}); continue; }
-
-    // A fill can never exceed what the pool actually holds, whatever the formula says.
-    let capped=false;
-    if(ok(balr)){
-      const bal=Number(big(word(balr.data,0)));
-      if(out>bal) capped=true;
-    }
-    rows.push({...f,out:out/1e18,exact,note,capped});
-  }
-  rows.sort((a,b)=>(b.capped?-1:1)*0 + (b.out-a.out));
-  return {found:rows,failed,gate,q,checked:meta.length};
-}
-
-/* ---- render ---- */
-const $=id=>document.getElementById(id);
-const el=(t,c,x)=>{const e=document.createElement(t);if(c)e.className=c;if(x!==undefined)e.textContent=x;return e;};
-const fmt=(n,d=0)=>!isFinite(n)?"—":n.toLocaleString(undefined,{maximumFractionDigits:d});
-
-// Deep links carry the address so nobody retypes it; the address is also printed so it can
-// be checked against what the venue actually loaded.
-function venueLink(row,q,amount){
-  const t=LAPTOP;
-  if(row.v.startsWith("Aerodrome"))
-    return "https://aerodrome.finance/swap?from="+q.a+"&to="+t;
-  // Amount is carried through as a convenience only. If the venue ignores the parameter the
-  // link still lands on the right pair, which is the part that matters.
-  const amt=(amount&&isFinite(amount)&&amount>0)?"&exactAmount="+amount+"&exactField=input":"";
-  return "https://app.uniswap.org/swap?chain=base&inputCurrency="+q.a
-    +"&outputCurrency="+t+amt;
-}
-
-async function run(){
-  const q=QUOTES[$("quote").value];
-  const amt=parseFloat($("amt").value);
-  const out=$("out"); out.innerHTML="";
-  if(!isFinite(amt)||amt<=0){
-    out.appendChild(el("div","card")).appendChild(el("div","warnbox","Enter an amount above zero."));
-    return;
-  }
-  $("go").disabled=true; $("go").textContent="reading…";
-  const card=el("div","card");
-  card.appendChild(el("div",null)).innerHTML='<span class="spin"></span> <span class="dim">reading every venue…</span>';
-  out.appendChild(card);
-
-  const b=$("chainBadge");
-  const ch=await one("eth_chainId",[]);
-  let chainOk=false;
-  if(!ch.ok){ b.className="badge bad"; b.textContent="chain unknown"; b.title=ch.reason; }
-  else{
-    let id; try{ id=Number(BigInt(ch.data)); }catch(e){ id=NaN; }
-    if(id===CHAIN_ID){ b.className="badge good"; b.textContent="Base · 8453 ✓"; chainOk=true; }
-    else{ b.className="badge bad"; b.textContent="chain "+id+" — not Base"; }
-  }
-  if(!chainOk){
-    $("go").disabled=false; $("go").textContent="Compare every venue";
-    out.innerHTML="";
-    const c=el("div","card");
-    c.appendChild(el("div","warnbox",
-      "Nothing priced: the chain could not be confirmed as Base 8453. The same address holds "
-      +"different code on a different chain, so every number here would be about something else."));
-    out.appendChild(c); return;
-  }
-
-  const r=await compare($("quote").value,amt);
-  $("go").disabled=false; $("go").textContent="Compare every venue";
-  out.innerHTML="";
-  renderResult(r,amt);
-}
-
-function renderResult(r,amt){
-  const out=$("out"), q=r.q;
-  const card=el("div","card");
-  card.appendChild(el("div","hdr")).innerHTML=
-    '<h2>Best fill for '+fmt(amt,4)+' '+q.s+'</h2>'
-    +'<span class="badge'+(r.failed.length?' warn':'')+'">checked '+r.checked+'</span>';
-
-  if(!r.found.length){
-    const b=el("div","warnbox");
-    b.textContent="No venue could fill this. "+r.checked+" venue/quote combinations were checked"
-      +(r.failed.length?", "+r.failed.length+" could not be read":"")
-      +". This is not the same as “no liquidity anywhere”.";
-    card.appendChild(b);
-    out.appendChild(card); renderGate(r); renderFailed(r); return;
-  }
-
-  const best=r.found[0], worst=r.found[r.found.length-1];
-  for(const row of r.found){
-    const v=el("div","venue"+(row===best?" best":""));
-    const top=el("div","top");
-    top.appendChild(el("div","name",row.v));
-    top.appendChild(el("div","out",row.capped?"more than the pool holds":fmt(row.out)+" LAPTOP"));
-    v.appendChild(top);
-    const m=el("div","meta");
-    m.textContent=(row===best?"best of "+r.found.length+" · ":"")+(row.note||"");
-    v.appendChild(m);
-    if(row===best&&!row.capped){
-      const btn=el("a","cta","Buy on "+row.v.split(" ").slice(0,2).join(" ")+" →");
-      btn.href=venueLink(row,q,amt); btn.target="_blank"; btn.rel="noopener noreferrer";
-      v.appendChild(btn);
-    }
-    const l=el("div"); l.style.marginTop="7px";
-    const a=el("a","ext tiny",row===best?"open in a new tab ↗":"trade here ↗");
-    a.href=venueLink(row,q,amt);
-    a.target="_blank"; a.rel="noopener noreferrer"; l.appendChild(a);
-    l.appendChild(el("span","tiny dim","  pool "+row.pool.slice(0,10)+"…"));
-    v.appendChild(l);
-    card.appendChild(v);
-  }
-
-  if(r.found.length>1 && !best.capped && !worst.capped && worst.out>0){
-    const diff=best.out-worst.out, pct=diff/worst.out;
-    const s=el("div","okbox");
-    s.textContent="Picking the best venue instead of the worst is worth "+fmt(diff)
-      +" LAPTOP on this size — "+(pct*100).toFixed(1)+"% more for the same money.";
-    card.appendChild(s);
-  }
-  const cav=el("p","tiny dim");
-  cav.style.marginTop="10px";
-  cav.textContent="Venues marked “best case” are concentrated-liquidity pools priced as if "
-    +"current liquidity extends across your whole trade. It usually does not, so those fills "
-    +"are optimistic. Constant-product venues are exact.";
-  card.appendChild(cav);
-  out.appendChild(card);
-  renderGate(r); renderFailed(r);
-}
-
-function renderGate(r){
-  const c=el("div","card");
-  c.appendChild(el("div","hdr")).innerHTML='<h2>Uniswap v4</h2>';
-  const g=r.gate;
-  if(!g||!g.ok||!g.data||g.data==="0x"){
-    c.appendChild(el("div","warnbox",
-      "Could not check whether any LAPTOP sits in the v4 PoolManager. Without it, nothing can "
-      +"be said about v4 either way."));
-  }else{
-    const v=big(word(g.data,0));
-    if(v===0n) c.appendChild(el("div","okbox",
-      "No LAPTOP has been deposited into Uniswap v4 at all, so no v4 pool can be tradable. "
-      +"Proved with one call, no pool enumeration needed."));
-    else c.appendChild(el("div","warnbox",
-      "LAPTOP is inside Uniswap v4 ("+fmt(Number(v)/1e18)+" tokens held by the PoolManager). "
-      +"v4 pools with custom hooks cannot be enumerated, so this page cannot price them — "
-      +"there may be a better or worse fill there that is not in the list above."));
-  }
-  $("out").appendChild(c);
-}
-
-function renderFailed(r){
-  if(!r.failed.length) return;
-  const c=el("div","card");
-  c.appendChild(el("div","hdr")).innerHTML=
-    '<h2>Not priced</h2><span class="badge warn">'+r.failed.length+'</span>';
-  c.appendChild(el("p","tiny dim",
-    "Every ranking above is scoped to what was actually read. These were not:"));
-  for(const f of r.failed){
-    const d=el("div","tiny");
-    d.style.padding="4px 0";
-    d.textContent=f.v+" — "+f.why;
-    c.appendChild(d);
-  }
-  $("out").appendChild(c);
-}
-
-$("go").addEventListener("click",run);
-$("amt").addEventListener("keydown",e=>{if(e.key==="Enter")run();});
-/* ======================= Phantom, on Base =======================
-   LAPTOP is on Base — chain 8453, which is EVM. Phantom ships two wallets in
-   one extension: window.phantom.solana and window.phantom.ethereum. They hold
-   different keys and see different chains, and the Solana one cannot see Base
-   at all. Reaching for the wrong provider is the failure a customer actually
-   hits, so it is named rather than reported as "no wallet found".
-
-   This connects and reads. It never asks for a signature and sends no
-   transaction: no transaction-sending or message-signing method appears
-   anywhere in this file, and a test asserts exactly that by parsing every
-   method name the page mentions. */
-const W_BASE_HEX="0x2105", W_BASE_ID=8453;
-const W_USDC="0x833589fcd6edb6e08f4c7c32d4f71b54bda02913";
-let W_PROV=null, W_ADDR=null, W_CHAIN=null, W_BAL={eth:null,usdc:null};
-
-function wPhantomEvm(){
-  const p=window.phantom;
-  if(p&&p.ethereum) return p.ethereum;
-  const e=window.ethereum;
-  if(e&&e.isPhantom) return e;
-  if(e&&Array.isArray(e.providers)) return e.providers.find(x=>x&&x.isPhantom)||null;
-  return null;
-}
-function wPhantomSolanaOnly(){
-  const p=window.phantom;
-  return !!(p&&p.solana&&!p.ethereum)&&!wPhantomEvm();
-}
-function wMsg(e){ return (e&&(e.message||e.reason))||"no reason given"; }
-function wShort(a){ return a.slice(0,6)+"…"+a.slice(-4); }
-
-/* Integer formatting, so a balance is never rounded into something the wallet
-   itself would disagree with. */
-function wUnits(v,dec,places){
-  const neg=v<0n; if(neg) v=-v;
-  const d=10n**BigInt(dec);
-  const frac=(v%d).toString().padStart(dec,"0").slice(0,places).replace(/0+$/,"");
-  return (neg?"-":"")+(v/d).toString()+(frac?"."+frac:"");
-}
-
-function wSet(badge,cls,txt){
-  const b=$("wBadge");
-  if(b){ b.className="badge"+(cls?" "+cls:""); b.textContent=badge; }
-  const e=$("wErr");
-  if(e){ e.style.display=txt?"block":"none"; e.textContent=txt||""; }
-}
-function wFail(txt){ wSet("not connected","bad",txt); return false; }
-
-/* A read that fails is never a zero. 32 bytes is an answer; anything shorter, a
-   revert, or a throw is "could not read" — the same discipline this page applies
-   to its own RPC, applied to the wallet's node too. */
-async function wRead32(prov,to,data){
-  let r;
-  try{ r=await prov.request({method:"eth_call",params:[{to,data},"latest"]}); }
-  catch(e){ return null; }
-  if(typeof r!=="string"||!/^0x[0-9a-fA-F]{64}$/.test(r)) return null;
-  return BigInt(r);
-}
-
-async function wBalances(prov,addr){
-  const out={eth:null,usdc:null};
-  try{
-    const r=await prov.request({method:"eth_getBalance",params:[addr,"latest"]});
-    if(typeof r==="string"&&/^0x[0-9a-fA-F]{1,64}$/.test(r)) out.eth=BigInt(r);
-  }catch(e){}
-  out.usdc=await wRead32(prov,W_USDC,
-    "0x70a08231"+addr.slice(2).toLowerCase().padStart(64,"0"));
-  return out;
-}
-
-function wRender(){
-  const out=$("wOut");
-  if(!out) return;
-  if(!W_ADDR){ out.style.display="none"; out.innerHTML=""; return; }
-  const onBase=W_CHAIN===W_BASE_ID;
-  const rows=[
-    ["Address",W_ADDR],
-    ["Chain", onBase?"Base (8453)"
-      :(W_CHAIN===null?"could not read":"chain "+W_CHAIN+" — not Base")],
-    ["ETH", W_BAL.eth===null?"could not read":wUnits(W_BAL.eth,18,6)],
-    ["USDC", W_BAL.usdc===null?"could not read":wUnits(W_BAL.usdc,6,2)],
-  ];
-  const t=document.createElement("table"); t.className="wtab";
-  for(const [k,v] of rows){
-    const tr=document.createElement("tr");
-    const a=document.createElement("td"); a.textContent=k;
-    const b=document.createElement("td"); b.textContent=v;
-    if(v==="could not read") b.style.color="var(--dim)";
-    tr.appendChild(a); tr.appendChild(b); t.appendChild(tr);
-  }
-  out.innerHTML=""; out.appendChild(t);
-  if(!onBase){
-    const n=document.createElement("div"); n.className="wnote";
-    n.textContent="This wallet is not on Base. Switch networks in Phantom before buying "+
-      "anything, or you are reading the wrong chain.";
-    out.appendChild(n);
-  }
-  out.style.display="block";
-  const d=$("wDisconnect"); if(d) d.style.display="";
-}
-
-async function wConnect(){
-  wSet("connecting…","");
-  const prov=wPhantomEvm();
-  if(!prov){
-    if(wPhantomSolanaOnly())
-      return wFail("Phantom is here, but only its Solana side is switched on. LAPTOP is on "+
-        "Base, which is EVM — Phantom's Solana keys cannot hold it or see it. Turn on "+
-        "Ethereum in Phantom → Settings → Active Networks, then reload this page.");
-    if(window.ethereum)
-      return wFail("A wallet is installed, but it is not Phantom. This button only talks to "+
-        "Phantom; use that wallet's own interface instead.");
-    return wFail("Phantom was not detected. Install it, or open this page inside Phantom's "+
-      "in-app browser.");
-  }
-  let accts;
-  try{ accts=await prov.request({method:"eth_requestAccounts"}); }
-  catch(e){
-    return wFail(e&&e.code===4001
-      ? "You declined the connection in Phantom. Nothing was shared and nothing was sent."
-      : "Phantom refused the connection: "+wMsg(e));
-  }
-  if(!Array.isArray(accts)||!accts.length||typeof accts[0]!=="string")
-    return wFail("Phantom connected but returned no account.");
-  W_PROV=prov; W_ADDR=accts[0];
-
-  W_CHAIN=null;
-  try{
-    const c=await prov.request({method:"eth_chainId"});
-    if(typeof c==="string"&&/^0x[0-9a-fA-F]+$/.test(c)) W_CHAIN=Number(BigInt(c));
-  }catch(e){}
-  if(W_CHAIN!==null&&W_CHAIN!==W_BASE_ID){
-    try{
-      await prov.request({method:"wallet_switchEthereumChain",params:[{chainId:W_BASE_HEX}]});
-      W_CHAIN=W_BASE_ID;
-    }catch(e){ /* declined, or Base not added — reported in the table, never forced */ }
-  }
-  W_BAL=await wBalances(prov,W_ADDR);
-  wSet(wShort(W_ADDR),W_CHAIN===W_BASE_ID?"good":"warn","");
-  wRender();
+  const d = pts.map((p,i) => (i ? "L" : "M") + sx(p[0]).toFixed(1) + " " + sy(p[1]).toFixed(1)).join(" ");
+  const area = document.createElementNS(ns, "path");
+  area.setAttribute("d", d + " L" + sx(x1).toFixed(1) + " " + (H-B) + " L" + sx(x0).toFixed(1) + " " + (H-B) + " Z");
+  area.setAttribute("fill", opt.market ? "rgba(79,209,138,.13)" : "rgba(240,192,64,.13)");
+  const line = document.createElementNS(ns, "path");
+  line.setAttribute("d", d);
+  line.setAttribute("fill", "none");
+  line.setAttribute("stroke", opt.market ? "#4fd18a" : "#f0c040");
+  line.setAttribute("stroke-width", "2.5");
+  line.setAttribute("stroke-linejoin", "round");
+  // preserveAspectRatio="none" stretches the viewBox to the frame, which is what a chart
+  // wants and what a stroke does not: without this the line thins out on a wide desktop.
+  line.setAttribute("vector-effect", "non-scaling-stroke");
+  svg.appendChild(area); svg.appendChild(line);
+  const title = document.createElementNS(ns, "title");
+  title.setAttribute("id", "chartTitle");
+  title.textContent = opt.label || "";
+  svg.appendChild(title);
+  $("chartEmpty").style.display = "none";
   return true;
 }
 
-function wForget(){
-  /* Phantom exposes no revoke a page can call, so this drops only what this page
-     holds. The connection itself is revoked in Phantom, and the message says so. */
-  W_PROV=null; W_ADDR=null; W_CHAIN=null; W_BAL={eth:null,usdc:null};
-  wSet("not connected","","Forgotten here. To revoke the connection itself, use "+
-    "Phantom → Settings → Connected apps.");
-  wRender();
-  const d=$("wDisconnect"); if(d) d.style.display="none";
+function setBadge(text, cls){
+  const b = $("liveBadge");
+  b.className = "badge" + (cls ? " " + cls : "");
+  b.textContent = text;
+}
+function setStrap(text, market){
+  const el = $("strap");
+  el.className = "strap" + (market ? " market" : "");
+  el.textContent = text;
+}
+function setAxes(x, y){ $("axX").textContent = x || ""; $("axY").textContent = y || ""; }
+function setEmpty(big, small){
+  const svg = $("chart");
+  while(svg.firstChild) svg.removeChild(svg.firstChild);
+  const box = $("chartEmpty");
+  box.style.display = "flex";
+  box.innerHTML = "";
+  const a = document.createElement("div"); a.className = "big"; a.textContent = big;
+  const b = document.createElement("div"); b.className = "tiny dim";
+  b.style.maxWidth = "44ch"; b.textContent = small;
+  box.appendChild(a); box.appendChild(b);
+}
+function stat(k, v){
+  const d = document.createElement("div"); d.className = "stat";
+  const kk = document.createElement("div"); kk.className = "k"; kk.textContent = k;
+  const vv = document.createElement("div"); vv.className = "v"; vv.textContent = v;
+  d.appendChild(kk); d.appendChild(vv); return d;
+}
+function setStats(rows){
+  const s = $("stats"); s.innerHTML = "";
+  for(const [k, v] of rows) s.appendChild(stat(k, v));
 }
 
-function wInit(){
-  const c=$("wConnect"); if(c) c.addEventListener("click",wConnect);
-  const d=$("wDisconnect"); if(d) d.addEventListener("click",wForget);
-  const p=wPhantomEvm();
-  if(p&&p.on){
-    p.on("accountsChanged",a=>{
-      if(!a||!a.length) wForget();
-      else { W_ADDR=a[0]; wSet(wShort(W_ADDR),W_CHAIN===W_BASE_ID?"good":"warn",""); wRender(); }
-    });
-    p.on("chainChanged",()=>{ if(W_ADDR) wConnect(); });
+/* Rule 1 as a curve. Identical arithmetic to burnBps() in contracts/Snooze.sol and to the dial
+   on /snooze.html: (P - T) / P, zero at or below the average, capped at 90%. It is exact, it
+   is checkable against the contract, and it is the thing worth understanding before there is
+   a price to look at. */
+function burnAt(ratio){
+  if(!(ratio > 1)) return 0;
+  return Math.min(0.9, (ratio - 1) / ratio);
+}
+function showRuleCurve(){
+  CHART.mode = "arithmetic"; CHART.marketSeries = [];
+  const pts = [];
+  for(let r = 1.0; r <= 3.0001; r += 0.02) pts.push([r, burnAt(r) * 100]);
+  plot(pts, {zeroBased:true, market:false,
+             label:"How much of a sale burns, as a function of price over its 24-hour average"});
+  setStrap("This is arithmetic, not a market. No price data exists yet — the line is Rule 1 " +
+           "itself, the same expression the contract runs.");
+  setAxes("price \u00f7 24-hour average: 1\u00d7 \u2192 3\u00d7",
+          "burned on sale: 0% \u2192 67%");
+}
+
+/* Deposited(address indexed who, uint256 amount). Verified against the repo's own keccak in
+   test/run-pooled.mjs, which fails if the event signature ever changes under it. */
+const TOPIC_DEPOSITED = "0x2da466a7b24304f47e87fa2e1e5a81b9831ce54fec19055ce277ca2f39ba42c4";
+
+async function loadLive(){
+  if(!POOL){
+    setBadge("not deployed", "warn");
+    showRuleCurve();
+    setStats([["in the pool", "\u2014"], ["deposits", "\u2014"],
+              ["contract", "none yet"], ["state", "not deployed"]]);
+    return;
+  }
+  setBadge("reading Base\u2026", "");
+  showRuleCurve();
+  const chain = await one("eth_chainId", []);
+  if(!chain.ok || parseInt(chain.data, 16) !== CHAIN_ID){
+    CHART.mode = "error"; CHART.marketSeries = [];
+    setBadge("could not reach Base", "bad");
+    setStrap("");
+    setAxes("", "");
+    setEmpty("Could not read the chain.",
+      (chain.reason || "the endpoint answered for a different chain") +
+      ". Nothing is drawn rather than something stale.");
+    return;
+  }
+  const head = await one("eth_blockNumber", []);
+  if(!head.ok){
+    CHART.mode = "error"; CHART.marketSeries = [];
+    setBadge("could not read", "bad"); setStrap(""); setAxes("", "");
+    setEmpty("Could not read the chain.", head.reason); return;
+  }
+  const tip = parseInt(head.data, 16);
+  /* Base is ~2s a block, so a fortnight is about 600k blocks — past what a public node will
+     serve in one eth_getLogs. Ask for a window, shrink on refusal, and REPORT the window that
+     worked, because a shorter answer presented as the whole history is the same lie as a
+     fabricated one. Block timestamps are not in the read set this site allows itself, so
+     the x-axis is block height and there is no clock on it. */
+  let span = 0, logs = null;
+  for(const s of [120000, 40000, 10000, 2000]){
+    const r = await one("eth_getLogs", [{address:POOL, topics:[TOPIC_DEPOSITED],
+      fromBlock:"0x" + Math.max(0, tip - s).toString(16), toBlock:"latest"}]);
+    if(r.ok && Array.isArray(r.data)){ logs = r.data; span = s; break; }
+  }
+  if(!logs){
+    setBadge("no log access", "warn");
+    setStats([["in the pool", "\u2014"], ["deposits", "unreadable"],
+              ["window read", "none"], ["state", "deployed"]]);
+    return;   // the rule curve stays up; it is still true
+  }
+  let run = 0n; const pts = [];
+  for(const l of logs){
+    run += big(word(l.data, 0));
+    pts.push([parseInt(l.blockNumber, 16), Number(run) / 1e18]);
+  }
+  CHART.readAt = tip;
+  if(pts.length >= 2){
+    CHART.mode = "market"; CHART.marketSeries = pts;
+    plot(pts, {zeroBased:true, market:true, label:"ETH committed to the pooled buy, by block"});
+    setStrap("Read from the chain: " + logs.length + " deposits in the last " +
+             span.toLocaleString() + " blocks, at block " + tip.toLocaleString() + ".", true);
+    setAxes("block height (no clock: this page does not read block times)", "ETH in the pool");
+    setBadge("live \u00b7 " + logs.length + " deposits", "good");
+  }else{
+    CHART.mode = "arithmetic"; CHART.marketSeries = [];
+    showRuleCurve();
+    setBadge(logs.length ? "1 deposit" : "no deposits yet", "");
+  }
+  setStats([["in the pool", fmtEth(run) + " ETH"],
+            ["deposits", String(logs.length)],
+            ["window read", span.toLocaleString() + " blocks"],
+            ["state", "open"]]);
+}
+
+/* The address slot. Null-safe on purpose: this page has been rewritten twice and the last
+   rewrite deleted the element this used to write to, which threw before the chart ever drew.
+   A page that goes blank because a label moved is a worse failure than a missing label. */
+function showPool(){
+  const a = $("poolAddr"), badge = $("poolBadge");
+  if(a) a.textContent = POOL || "no address yet";
+  if(badge){
+    badge.textContent = POOL ? "deployed" : "not deployed";
+    badge.className = "badge " + (POOL ? "good" : "warn");
   }
 }
-wInit();
 
-window.__BUY={v2Out,v3Out,spotPrice,compare,addrOf,venueLink,QUOTES,V3_FEES,LAPTOP};
-window.__WALLET={wPhantomEvm,wPhantomSolanaOnly,wUnits,wRead32,wBalances,connect:wConnect,
-  forget:wForget,BASE_ID:W_BASE_ID,USDC:W_USDC,get addr(){return W_ADDR;},get chain(){return W_CHAIN;}};
+window.__CHART = CHART;
+window.__SNOOZE = { burnAt, POOL, TOKEN };
+
+/* ------------------------------------------------------------------------ click to define.
+   Every definition is in the markup beside the word it defines, so there is no dictionary to
+   fall out of date with the page and nothing to fetch. */
+(function(){
+  const box = $("defbox"), t = $("defTitle"), b = $("defBody");
+  let open = null;
+  const hide = () => { box.hidden = true; open = null; };
+  document.addEventListener("click", e => {
+    const d = e.target.closest(".d");
+    if(d){
+      if(open === d) return hide();
+      t.textContent = d.dataset.t || d.textContent;
+      b.textContent = d.dataset.d || "";
+      box.hidden = false; open = d;
+      return;
+    }
+    if(!e.target.closest("#defbox")) hide();
+  });
+  $("defClose").addEventListener("click", hide);
+  document.addEventListener("keydown", e => { if(e.key === "Escape") hide(); });
+  // Announce that these words do something, without turning them into controls.
+  for(const el of document.querySelectorAll(".d")){
+    el.setAttribute("type", "button");
+    el.setAttribute("aria-label", (el.dataset.t || el.textContent) + " — what this means");
+  }
+})();
+
+showPool();
+loadLive();
 </script>
 </body>
 </html>

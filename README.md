@@ -79,14 +79,15 @@ file and opening it locally removes the hosting party from the trust question en
 Published build `2026-09-08a`:
 
 ```
-sha256(web/index.html)   = eaa83de5cd038c0f495da3076f08eb2457b75cc5722f748dacc841a8f84162c0
-sha256(web/checker.html) = 810d7f4ccca41bd4c39ff7fa7e0c2c6cc4bca78027a3a1bcfaa0579816ce6ef1
-sha256(web/size.html)    = d6dcaa05e37b62eb47b7d7c09e8c1714189c0ac1fe7de6801152ba68f787090b
-sha256(web/route.html)   = 1918c234915042687b869c7c54d9f5b918f1f60dc6aa2ba448268f19ca9cd7a1
-sha256(web/order.html)   = 9807edc55cb674887550e239b77ad8f5f52d3327fe03a5e7c5aa576962348565
-sha256(web/slot.html)    = 4bf5b2ee22170f2cfe341714edfd76f02061b0b7cddca08156407b681051375e
-sha256(web/launch.html)  = e3745a95357710991b829529d767974c5388282c1f0899560afdcd366a5eb338
-sha256(web/snooze.html)  = db91da622599c27a8b4947ba0e693027619b5164203065801514ca77597abbc3
+sha256(web/index.html)   = 671fe8da042810cb2082d2a27cbeb9805dc9f84dadc11321be1ddaa579606f58
+sha256(web/buy.html)     = 22599395fae6b4961e1cacbb5c7c7377d9aad803b503b0f561099e4b939a037d
+sha256(web/checker.html) = dba98abcc786bfe9da93c947c42350d8437d3729cfd7de4171751310e05716eb
+sha256(web/size.html)    = d35504a3248a34fff23257524de797dcb93502f14be87406a0ec28cca14c30c5
+sha256(web/route.html)   = 51447c4aea769adb62e9fae568dec397c38b42a3013ee0ec96e01158306fc106
+sha256(web/order.html)   = fe6f8b6541e4d130c2c6479f5e92f89eefa028555423f3482230629829f1d8ff
+sha256(web/slot.html)    = 4ba9b18da2f5f27803e42af72edf32006175216570ff51e1a8b3b4a500e38af2
+sha256(web/launch.html)  = 386009886adc54c2bce639ce68259b38005ebfebadad22153e131438e0da0caa
+sha256(web/snooze.html)  = af52292a0f32cf44e32e2b609fcc677430dc2d08b29f2effc11a357f052086fb
 ```
 
 ### Tests
@@ -95,9 +96,9 @@ sha256(web/snooze.html)  = db91da622599c27a8b4947ba0e693027619b5164203065801514c
 sh test/run-all.sh         # everything below, no network touched
 ```
 
-**1277 assertions across seventeen suites.**
+**1571 assertions across twenty suites.**
 
-`test/run.mjs` — 277, drives the real page in Chromium against `test/mock-rpc.mjs`: Keccak vectors,
+`test/run.mjs` — 340, drives the real page in Chromium against `test/mock-rpc.mjs`: Keccak vectors,
 the four EIP-55 reference addresses, the v4 poolId derivation checked against a real Base pool
 id, ABI-string decoding (including a 10-character name, whose length word contains a hex
 letter, and truncated/absurd offsets), result-length discipline, and full flows for the happy
@@ -122,6 +123,24 @@ USDC-quoted — the exact shape that used to print "no liquidity anywhere".
 of the JavaScript, plus properties a size curve lives or dies on: output rises with size,
 effective price strictly worsens, a fee costs exactly its rate at the limit, deeper liquidity
 fills better, and no fill can exceed the output-side virtual reserve. Emits the fixture below.
+
+`test/run-index.mjs` — 138, drives the $SNOOZE landing page. Most of it is about one
+distinction: a plot of a FORMULA and a plot of a MARKET look identical from three feet away, so
+the suite asserts which one is on screen. With nothing deployed the chart shows Rule 1 itself —
+exact, checkable against `burnBps()` in the contract, labelled *this is arithmetic, not a
+market* — and `window.__CHART.marketSeries` is empty. It only becomes a market series when a
+chain read produced one, and a single deposit is never drawn as a line. The launch-day path is
+driven before launch day against a mock node, including one that refuses `eth_getLogs`, one that
+serves a short window, and one that is not there at all — none of which may produce a number.
+
+The rest is the MVP's own rules. The depth-versus-speed table is checked against
+`bond_model.py`'s closed form rather than against the copy that quotes it. Every term with a
+definition attached must be a real `<button>` with an aria-label, must define itself in thirty
+words or fewer, and must carry no border — a word with a box round it is a control, and the
+page is not a control panel. Base blue is asserted to appear as a fill and never as text or a
+border, because #0052ff is 2.91:1 on this ground. The tool links are asserted to have no
+border, no fill and a 36px tap target: an icon in a box reads as *press me*, and these are
+places to go. And the whole rendered page has to come in under 700 words.
 
 `test/run-buy.mjs` — 33, drives the venue comparison against a three-venue fixture with
 deliberately different depths and asserts the ranking follows depth, the spread is quantified,
@@ -156,7 +175,7 @@ cap and its construction-time validation, the turn-off, rounding that conserves 
 freezable exemption list, and the three ramp units measured against each other for splitting
 evasion and same-block fairness.
 
-`test/run-snooze.mjs` — 68, compiles `contracts/Snooze.sol` and executes both rules. Most of it
+`test/run-snooze.mjs` — 76, compiles `contracts/Snooze.sol` and executes both rules. Most of it
 tests the SPEC rather than the code: that a dump is free, that sleeping does not bank the
 spike, that the dial is also the buyer's instant loss, that an unregistered venue is outside
 both rules, that the oracle fails open, and that "no lock" is false.
@@ -165,6 +184,21 @@ both rules, that the oracle fails open, and that "no lock" is false.
 distribution still cannot complete: `claim()` is an outbound transfer and the 20%/day cap
 applies to it. Also carries the axiomatics — the decay condition, depth-versus-appreciation,
 and what a large supply does and does not buy.
+
+`test/run-curve.mjs` — 64, compiles `contracts/SnoozeCurve.sol` and executes it. The virtual
+curve's ETH side starts imaginary, so most of this suite is one property attacked from several
+directions: **the curve can only ever pay out ETH that arrived.** That rests entirely on it never
+buying back more than it sold — tokens exist outside the curve, and on a Snooze launch the
+launcher holds the whole supply from block one — so the sell path refuses above `sold` and the
+test drives that attack. It also checks the closed forms against `bond_model.py`'s (three
+implementations, one answer), that the leftover at graduation is exactly `curveSupply/m`, that
+the pool opens AT the curve's closing price rather than below it, and that a token which burns
+part of a sale on its way in is priced on what arrived rather than on what was sent.
+
+`bond_model.py` — 16, the curve's arithmetic derived and checked against a simulated walk up it:
+the price multiple `((E0+R)/E0)²`, the real ETH to reach a multiple `E0(√m−1)`, the fraction sold
+`1−1/√m`, and the graduation leftover `1/m`. It also prints the table that answers the depth
+question, because depth and speed turn out to be one dial and not two.
 
 `test/run-deployable.mjs` — 32, the go/no-go before a wallet is opened: every runtime under
 EIP-170 and every init code under EIP-3860 (the launchpad is the big one at 52.9% of the
@@ -177,7 +211,7 @@ transaction, and comes in at 7.2% of a 30M block. It writes `deploy/`.
 can arrive, the three-way distribution that could not settle by hand settling in one block,
 every admin call from every party reverting afterwards, and the parameters it refuses.
 
-`test/run-pooled.mjs` — 72, compiles `contracts/PooledLaunchBuy.sol` and executes it against a
+`test/run-pooled.mjs` — 77, compiles `contracts/PooledLaunchBuy.sol` and executes it against a
 hostile token (fee-on-transfer, returns-false, reentrant), a router that lies about its output
 or keeps the ETH, a depositor that refuses ETH and one that reenters on receive. It reads the
 ABI and fails if a sweep, rescue, withdraw or ownership function ever appears.
@@ -259,6 +293,31 @@ the Python is right, the same arrangement `size.html` has with `test_size_math.p
 
 The page is not linked from the buyer navigation — operator tool, reachable by URL. Still a
 static file on a public site, so not secret, just not advertised.
+
+## Launching — read `LAUNCH.md` first
+
+[`LAUNCH.md`](LAUNCH.md) is the runbook: what only you can decide, what has to exist before the
+launch transaction, the sequence, and what can still go wrong afterwards. Three things in it are
+worth naming here because they change what is possible rather than what is advisable.
+
+**One wallet is outside both rules.** `launch()` cap-exempts the launcher so it can seed the
+pool — seeding and selling are the same transfer — and `_move()` guards the haircut with
+`if (isPool[to] && !capExempt[from])`, so the flag that skips the cap skips the burn too. That
+wallet holds 100% of supply the moment the token exists. Measured at a 50% dial: an ordinary
+holder is refused above 20% and burns half of what it does sell; the exempt one sells its entire
+balance and burns nothing. Every page that said the rules applied "to everyone, including whoever
+deployed it" was wrong; `test/run-snooze.mjs` now pins the behaviour and `test/run-index.mjs`
+fails if the sentence comes back.
+
+**The TWAP oracle is not in this repository**, and a reverting one is a permanent honeypot —
+sells revert, buys do not, and the address is immutable.
+
+**No router on Base implements the interface `PooledLaunchBuy` calls.** It wants
+`swapExactETHForTokens(address,uint256,address)`, selector `0x1930789c`; the Uniswap-V2 family
+and Aerodrome have `0x7ff36ab5`. Worse, `launch()` passes one address as both the router the
+pooled buy calls and the pool Rule 1 taxes, and nothing deployed is both. `LAUNCH.md` §2.2 works
+through the three shapes that follow from that, one of which is broken in a way that looks
+correct.
 
 ## Snooze — the launchpad
 

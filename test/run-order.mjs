@@ -247,7 +247,10 @@ ok("the address is printed for character-by-character comparison",
    (await txt("#caLine")).toLowerCase() === "0xb095274743941e953c746f9c228da9c18bb6ec29");
 ok("the links are marked unverified from here", /verified none of the links/i.test(body));
 ok("every link is paired with a manual recipe", /manual recipe/i.test(body));
-ok("the reader is sent to the checker before pasting", src.includes('href="/"'));
+// This asserted href="/" and was named for the checker. Those were the same link only for as
+// long as the checker was the front page; it has not been since the buy screen moved there,
+// and the assertion went on passing while testing something else. It now tests its own name.
+ok("the reader is sent to the checker before pasting", src.includes('href="/checker.html"'));
 
 console.log("── cancelling and notification are described without overclaiming");
 ok("the cancel race is admitted", /Cancelling is a race/i.test(body));

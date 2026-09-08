@@ -377,6 +377,65 @@ console.log("── the dial and the trade cannot disagree");
   ok("at exactly 20% it goes through", okSale.ok, okSale.revert);
 }
 
+// THE EXEMPT WALLET IS OUTSIDE BOTH RULES, NOT ONE.
+//
+// _move() guards the haircut with `if (isPool[to] && !capExempt[from])`. capExempt was added
+// for Rule 2 — a pool that could only pay out 20% of its balance a day is not a pool — but the
+// same flag also skips the Rule 1 branch entirely. So an address exempted so that it can SEED
+// liquidity is also an address that can SELL without ever burning anything, and the two are
+// indistinguishable from outside: both are a transfer into the pool.
+//
+// SnoozeLaunchpad.launch() cap-exempts msg.sender and then freezes, so the launcher wallet
+// holds that position permanently, and it is the wallet holding 100% of the supply the moment
+// launch() returns. Every page that said the rules apply "to everyone, including whoever
+// deployed it" was wrong, and this is here so that sentence cannot come back.
+console.log("── the exemption is from BOTH rules, which is not what the pages used to say");
+{
+  const evm = await createEVM();
+  const orc = await deploy(all.MockOracle.evm.bytecode.object, "", { evm });
+  await call({ evm, address: orc.address }, "set(uint256,uint256,bool)", [2n * E, E, 1]);
+  const SUPPLY = 1000n * E;
+  const t = await deploy(all.Snooze.evm.bytecode.object,
+    [SUPPLY, orc.address.toString(), "0x00000000000000000000000000000000000000de", 0]
+      .map(w).join(""), { evm });
+  const T = { evm, address: t.address };
+  const POOL = "0x00000000000000000000000000000000000000b0";
+  const PLAIN = "0x00000000000000000000000000000000000000a1";
+  const FREE  = "0x00000000000000000000000000000000000000a2";
+  await call(T, "setPool(address,bool)", [POOL, 1]);
+
+  const dial = await call(T, "burnBps()", []);
+  ok("the dial is at 50% for this test", dial.words[0] === 5000n, String(dial.words[0]));
+
+  // An ordinary holder: capped at 20% of the balance, and half of what gets through burns.
+  await call(T, "transfer(address,uint256)", [PLAIN, 100n * E]);
+  const s0 = (await call(T, "totalSupply()", [])).words[0];
+  const tooMuch = await call(T, "transfer(address,uint256)", [POOL, 100n * E], { from: PLAIN });
+  ok("an ordinary holder cannot sell its whole balance at all", !tooMuch.ok, tooMuch.revert);
+  const sale = await call(T, "transfer(address,uint256)", [POOL, 20n * E], { from: PLAIN });
+  ok("but it can sell a fifth", sale.ok, sale.revert);
+  const burnedPlain = s0 - (await call(T, "totalSupply()", [])).words[0];
+  ok("and half of that fifth burns", burnedPlain === 10n * E, String(burnedPlain / E));
+
+  // The exempt holder: no cap, and no burn either.
+  await call(T, "transfer(address,uint256)", [FREE, 100n * E]);
+  await call(T, "setCapExempt(address,bool)", [FREE, 1]);
+  const s1 = (await call(T, "totalSupply()", [])).words[0];
+  const dump = await call(T, "transfer(address,uint256)", [POOL, 100n * E], { from: FREE });
+  ok("a cap-exempt holder CAN sell its whole balance in one go", dump.ok, dump.revert);
+  const burnedFree = s1 - (await call(T, "totalSupply()", [])).words[0];
+  ok("and none of it burns, at the same 50% dial", burnedFree === 0n, String(burnedFree / E));
+  const got = (await call(T, "balanceOf(address)", [POOL])).words[0];
+  ok("the pool received the exempt seller's tokens in full",
+     got === 10n * E + 100n * E, String(got / E));
+
+  // The consequence, stated as the assertion it is.
+  ok("so the exemption granted for seeding is also an exemption from the haircut",
+     burnedPlain > 0n && burnedFree === 0n,
+     "if this ever fails the two exemptions have been split, and the pages may say " +
+     "'applies to everyone' again");
+}
+
 console.log("\n" + results.join("\n"));
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

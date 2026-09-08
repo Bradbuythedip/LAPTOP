@@ -307,8 +307,8 @@ await useScenario("happy");
 await type("0xB095274743941e953c746F9C228DA9c18Bb6ec29");
 const ctaMatch = await page.$$eval("#verdictArea a.cta", as => as.map(a => a.getAttribute("href")));
 ok("a match offers a primary action", ctaMatch.length >= 1, JSON.stringify(ctaMatch));
-ok("it leads to the venue comparison, which is now the front page",
-   ctaMatch.includes("/"), JSON.stringify(ctaMatch));
+ok("it leads to the venue comparison", ctaMatch.includes("/buy.html"),
+   JSON.stringify(ctaMatch));
 ok("and to the size curve", ctaMatch.includes("/size.html"), JSON.stringify(ctaMatch));
 await type("0x0000000000000000000000000000000000001234");
 const ctaMiss = await page.$$eval("#verdictArea a.cta", as => as.length);
@@ -368,43 +368,188 @@ const stackOf = await page.evaluate(() => {
   }
   return out;
 });
+// Hoisted: the non-text-contrast section below needs the same measured extremes.
+let art;
 {
-  // Worst case for a light theme is the page centre with the darkest possible artwork:
-  // the vignette is weakest there, so nothing lightens the ground back up.
-  const PAGE = [244, 245, 251];
+  // WHICH artwork pixel is the worst case depends on the theme, and hardcoding one of them is
+  // how a theme change ships an unreadable page with a green build. Dark text wants the ground
+  // as DARK as possible; light text wants it as BRIGHT as possible. So both extremes are
+  // composited and the WORSE of the two ratios has to clear the bar — that holds whichever way
+  // the theme goes.
+  //
+  // The extremes are MEASURED from the artwork actually shipped, not assumed. The previous
+  // version composited pure black, which is not a pixel bg.png contains: its real range is
+  // roughly #02091b to #212829, so it was testing a page nobody sees while leaving the bright
+  // end — the end that matters once the theme is dark — unchecked.
+  art = await page.evaluate(async () => {
+    const img = new Image();
+    await new Promise((res, rej) => { img.onload = res; img.onerror = rej; img.src = "/bg.png"; });
+    const c = document.createElement("canvas");
+    c.width = img.naturalWidth; c.height = img.naturalHeight;
+    const g = c.getContext("2d", { willReadFrequently: true });
+    g.drawImage(img, 0, 0);
+    const d = g.getImageData(0, 0, c.width, c.height).data;
+    let hi = -1, lo = 1e9, hp = null, lp = null;
+    for (let i = 0; i < d.length; i += 4) {
+      if (d[i + 3] === 0) continue;
+      const L = 0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2];
+      if (L > hi) { hi = L; hp = [d[i], d[i + 1], d[i + 2]]; }
+      if (L < lo) { lo = L; lp = [d[i], d[i + 1], d[i + 2]]; }
+    }
+    return { bright: hp, dark: lp,
+             page: getComputedStyle(document.documentElement).backgroundColor
+                   || getComputedStyle(document.body).backgroundColor };
+  });
+  ok("the artwork's real luminance range could be measured", !!art.bright && !!art.dark,
+     JSON.stringify(art));
+
+  // The page colour is read, not assumed, so flipping the theme cannot leave this lying.
+  const PAGE = parseRGB(art.page).slice(0, 3).length === 3
+    ? parseRGB(art.page).slice(0, 3)
+    : parseRGB(await page.evaluate(() => getComputedStyle(document.body).backgroundColor)).slice(0, 3);
   const composite = (fg, a, bg) => fg.map((c, i) => a * c + (1 - a) * bg[i]);
-  for (const st of stackOf) {
-    if (!st) continue;
-    const artOn = composite([0, 0, 0], st.artOpacity, PAGE);   // black artwork
-    const scrim = composite(PAGE, 0.30, artOn);                // vignette at its weakest
-    let ground = scrim;
+  // The vignette is a gradient, so there is no single alpha to read. 0.30 is its weakest
+  // point — the page centre — which is where it helps least.
+  const VIGNETTE_WEAKEST = 0.30;
+
+  const groundFor = (st, artPixel) => {
+    let g = composite(artPixel, st.artOpacity, PAGE);
+    g = composite(PAGE, VIGNETTE_WEAKEST, g);
     for (const l of st.layers.slice().reverse()) {
       const v = parseRGB(l); if (v.length < 3) continue;
       const a = v.length === 4 ? v[3] : 1;
-      if (a > 0) ground = composite(v.slice(0, 3), a, ground);
+      if (a > 0) g = composite(v.slice(0, 3), a, g);
     }
+    return g;
+  };
+
+  for (const st of stackOf) {
+    if (!st) continue;
     const fg = parseRGB(st.color).slice(0, 3);
-    const r = contrast(fg, ground);
-    ok(`${st.sel} clears WCAG AA over the darkest possible composited ground`,
-       r >= 4.5, `ratio ${r.toFixed(2)} of ${st.color} on rgb(${ground.map(Math.round)})`);
+    const rDark = contrast(fg, groundFor(st, art.dark));
+    const rBright = contrast(fg, groundFor(st, art.bright));
+    const worst = Math.min(rDark, rBright);
+    ok(`${st.sel} clears WCAG AA over the artwork's darkest AND brightest ground`,
+       worst >= 4.5,
+       `worst ratio ${worst.toFixed(2)} (dark ${rDark.toFixed(2)}, bright ${rBright.toFixed(2)}) ` +
+       `for ${st.color}`);
+  }
+}
+
+// NON-TEXT CONTRAST, and the trap inside it. WCAG 1.4.11 wants 3:1 on the boundary of
+// anything you can interact with, which is why interactive borders moved from --line (1.28:1
+// over a card) to --edge (4.87:1). But a focus indicator is only visible by its DELTA from the
+// resting state, and raising the resting border collapsed --line->--gold at 7.68:1 down to
+// --edge->--gold at 2.02:1 — while `outline:none` had already thrown away the other
+// affordance. Fixing 1.4.11 broke 2.4.11, and the box-shadow meant to carry it is 1.66:1.
+// Both are checked here so the trade cannot be made again silently.
+console.log("── borders you can touch, and a focus state you can see");
+{
+  // The composited card ground, recomputed here rather than reached for: the artwork at its
+  // brightest measured pixel is the worst case for a light-on-dark border.
+  const hex2 = h => { h = h.replace("#", ""); return [0, 2, 4].map(i => parseInt(h.slice(i, i + 2), 16)); };
+  const comp = (fg, a, bg) => fg.map((c, i) => a * c + (1 - a) * bg[i]);
+  const page0 = parseRGB(art.page).slice(0, 3);
+  const artOpacity = await page.evaluate(() =>
+    parseFloat(getComputedStyle(document.body, "::before").opacity));
+  let ground = comp(art.bright, artOpacity, page0);
+  ground = comp(page0, 0.30, ground);            // the vignette at its weakest
+  ground = comp([255, 255, 255], 0.045, ground); // the card
+
+  const probe = await page.evaluate(() => {
+    const out = { tokens: {} };
+    const cs = getComputedStyle(document.documentElement);
+    for (const t of ["--line", "--edge", "--gold"]) out.tokens[t] = cs.getPropertyValue(t).trim();
+    out.touch = [];
+    for (const sel of ["a.cta", "a.cta.sub2", "button.act", "input", "select", ".tools a"]) {
+      const el = document.querySelector(sel);
+      if (!el) continue;
+      const st = getComputedStyle(el);
+      out.touch.push({ sel, border: st.borderTopColor, width: parseFloat(st.borderTopWidth) });
+    }
+    return out;
+  });
+
+  // A guard on the guard: if --line ever clears 3:1 by itself then moving borders to --edge
+  // bought nothing and this whole section is measuring the wrong thing.
+  ok("the divider token really is too faint to be a touch boundary",
+     contrast(hex2(probe.tokens["--line"]), ground) < 3,
+     `--line is ${contrast(hex2(probe.tokens["--line"]), ground).toFixed(2)}:1, which is fine`);
+  ok("and the interactive token really does clear it",
+     contrast(hex2(probe.tokens["--edge"]), ground) >= 3,
+     `--edge is ${contrast(hex2(probe.tokens["--edge"]), ground).toFixed(2)}:1`);
+
+  for (const t of probe.touch) {
+    const c = parseRGB(t.border).slice(0, 3);
+    if (c.length < 3 || t.width === 0) continue;
+    const r = contrast(c, ground);
+    ok(`${t.sel} has a boundary you can see (WCAG 1.4.11)`, r >= 3,
+       `ratio ${r.toFixed(2)} for ${t.border}`);
   }
 }
 
 // The site is about one token. Anything else named on it is either cross-promotion or a
 // chance for a reader to confuse two things, and both are out.
 console.log("── one token, and only one");
-const pages = ["index.html", "checker.html", "size.html", "route.html", "order.html",
-               "slot.html", "launch.html", "snooze.html"];
+const pages = ["index.html", "buy.html", "checker.html", "size.html", "route.html",
+               "order.html", "slot.html", "launch.html", "snooze.html"];
 for (const f of pages) {
   const t = fs.readFileSync(path.join(ROOT, "web", f), "utf8");
   ok(`${f} never mentions $TWD`, !/\$TWD|%24TWD/.test(t));
   ok(`${f} never mentions another token`, !/POT ?PAL|POTPAL/i.test(t));
   ok(`${f} does not link to another token's page`, !/potpal\.html/.test(t));
 }
+// The artwork, named exhaustively. A wildcard here would let anything ending in .png be
+// served from the site root, which is the hole this check exists to close.
+//   bg.png     the dark ground behind every page
+//   snooze.png the bear with a TRANSPARENT background, 1024px — the one that composites
+//   hero.png   the same bear with its navy disc baked in, for og:image and the medallion
+// plus the WebP derivatives tools/encode-art.mjs writes, because 1.2 MB of PNG is not a
+// thing to put in front of somebody on a phone.
+// The focus indicator, checked in the stylesheet rather than by focusing something. A DOM
+// probe measures one input on one page and depends on the browser window actually holding
+// focus; the rule is a property of every page's CSS, so that is where it is checked.
+//
+// The specific regression: `outline:none` plus a border recolour is only visible by its DELTA
+// from the resting border. Raising the resting border from --line to --edge for WCAG 1.4.11
+// took --line->--gold at 7.68:1 down to --edge->--gold at 2.02:1, and the box-shadow meant to
+// carry it is 1.66:1 against a card. Fixing one success criterion broke another.
+console.log("── a focus state you can actually see");
+for (const f of pages) {
+  const t = fs.readFileSync(path.join(ROOT, "web", f), "utf8");
+  if (!/<input|<select|<textarea/.test(t)) { ok(`${f} has no field to focus`, true); continue; }
+  const kills = [...t.matchAll(/(input|select|textarea):focus(?:-visible)?[^{]*\{([^}]*)\}/g)]
+    .filter(m => /outline:\s*none/.test(m[2]));
+  ok(`${f} does not throw the focus outline away`, kills.length === 0,
+     kills.map(m => m[0].slice(0, 70)).join(" | "));
+  const draws = [...t.matchAll(/(input|select|textarea):focus(?:-visible)?[^{]*\{([^}]*)\}/g)]
+    .some(m => /outline:\s*(\d+(?:\.\d+)?)px\s+solid/.test(m[2])
+            && parseFloat(m[2].match(/outline:\s*(\d+(?:\.\d+)?)px/)[1]) >= 2);
+  ok(`${f} draws a real outline on a focused field`, draws,
+     "a recoloured border is not a focus indicator once the resting border is already bright");
+}
+
+// Every infinite animation has to be switchable off, not just the one that was thought about.
+// Three spinners on three pages rotated forever regardless of the setting, because the guard
+// was written for the hero and nothing else.
+console.log("── nothing animates forever at somebody who asked it not to");
+for (const f of pages) {
+  const t = fs.readFileSync(path.join(ROOT, "web", f), "utf8");
+  const infinite = [...t.matchAll(/animation:\s*([\w-]+)[^;}]*infinite/g)].map(m => m[1]);
+  if (!infinite.length) { ok(`${f} has no endless animation to guard`, true); continue; }
+  const guard = t.match(/@media\s*\(prefers-reduced-motion:\s*reduce\)\s*\{([\s\S]*?)\n\}/);
+  ok(`${f} guards its endless animation${infinite.length > 1 ? "s" : ""} ` +
+     `(${infinite.join(", ")})`,
+     !!guard && /animation:\s*none/.test(guard[1]),
+     "an infinite animation with no prefers-reduced-motion escape");
+}
+
+const ART = ["bg.png", "snooze.png", "hero.png",
+             "snooze-256.webp", "snooze-512.webp", "snooze-768.webp", "hero-512.webp"];
 for (const f of fs.readdirSync(path.join(ROOT, "web"))) {
   ok(`web/${f} is not an asset named after another token`, !/TWD|POT ?PAL|POTPAL/i.test(f));
   ok(`web/${f} is a page or the artwork, nothing else`,
-     pages.includes(f) || f === "bg.png", `unexpected file served at /${f}`);
+     pages.includes(f) || ART.includes(f), `unexpected file served at /${f}`);
 }
 
 // The site's one safety rule. It is only worth anything if a visitor meets it wherever they
@@ -445,13 +590,17 @@ console.log("── one build tag, and the README agrees with it");
 console.log("── the README's test inventory adds up");
 {
   const readme = fs.readFileSync(path.join(ROOT, "README.md"), "utf8");
+  // Reference models live at the root beside the thing they are a reference for, so the scan
+  // is test/ plus the named ones. launch_model.py is exercised by test/test_launch_model.py;
+  // bond_model.py checks itself and is run directly by run-all.sh, so it is a suite.
   const onDisk = fs.readdirSync(path.join(ROOT, "test"))
     .filter(f => /^run(-[\w.-]+)?\.mjs$/.test(f) || /^test_.*\.py$/.test(f))
-    .map(f => "test/" + f);
+    .map(f => "test/" + f)
+    .concat(fs.existsSync(path.join(ROOT, "bond_model.py")) ? ["bond_model.py"] : []);
   ok("there are suites on disk to check", onDisk.length > 10, String(onDisk.length));
 
   const listed = new Map();
-  for (const m of readme.matchAll(/`(test\/[\w.-]+)` \u2014 (\d+),/g))
+  for (const m of readme.matchAll(/`([\w./-]+\.(?:mjs|py))` \u2014 (\d+),/g))
     listed.set(m[1], Number(m[2]));
   for (const f of onDisk)
     ok(`the README lists ${f} with a count`, listed.has(f),

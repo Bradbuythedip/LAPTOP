@@ -16,9 +16,16 @@ const UPSTREAM = process.env.UPSTREAM_RPC || "https://mainnet.base.org";
 const PORT = Number(process.env.PORT || 3000);
 
 // Only read methods. A relay that can broadcast is a relay that can be abused.
+//
+// This list is the site's read set and nothing else, and it used to be neither. eth_getLogs
+// was missing, which is the ONE method a public Base endpoint refuses outright — so switching
+// the relay on made the live chart less able to work, not more. eth_getBalance was missing
+// too, so wallet balances broke behind it. Meanwhile eth_getTransactionReceipt and
+// eth_getBlockByNumber were allowed and are used by no page: a relay that permits more than
+// the site asks for is a relay that answers for somebody else.
 const ALLOWED = new Set([
-  "eth_chainId", "eth_blockNumber", "eth_call", "eth_getCode",
-  "eth_getTransactionReceipt", "eth_getStorageAt", "eth_getBlockByNumber",
+  "eth_chainId", "eth_blockNumber", "eth_call", "eth_getCode", "eth_getStorageAt",
+  "eth_getLogs", "eth_getBalance",
 ]);
 const MAX_BATCH = 200;
 const MAX_BODY = 512 * 1024;
