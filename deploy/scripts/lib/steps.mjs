@@ -426,19 +426,40 @@ export function buildSteps({ cfg, artifacts, state }) {
           precondition: {
             needsChain: "setPool is only safe once the curve is already funded, and that is a " +
                         "fact about the chain rather than about this file",
-            calls: () => tokenAddress && curveAddress ? [{
-              sig: "token.balanceOf(curve)", to: tokenAddress,
-              data: selector("balanceOf(address)") + addressWord(curveAddress),
-            }] : [],
+            calls: () => tokenAddress && curveAddress ? [
+              { sig: "token.balanceOf(curve)", to: tokenAddress,
+                data: selector("balanceOf(address)") + addressWord(curveAddress) },
+              { sig: "curve.sold()", to: curveAddress, data: selector("sold()") },
+            ] : [],
+            // held + sold, NOT held == curveSupply, and the difference is the launch.
+            //
+            // The curve is public and tradeable the moment it is funded, and setPool is a
+            // separate transaction — so there is a window, and anybody may buy in it. A strict
+            // balance check turns that ordinary event into a permanent brick: one 0.1 ETH buy
+            // leaves the curve holding less than curveSupply forever, so this precondition
+            // never passes again, setPool is never built, neither rule ever fires, and step 6
+            // is gated on step 5 so freeze() and seal() are unreachable for the life of the
+            // token. Measured: it happens on the first buy.
+            //
+            // What actually has to hold is that the curve RECEIVED its allocation, and
+            // SnoozeCurve maintains exactly that: buy does `sold += out` then transfers out,
+            // sell reverses both, so held + sold is invariant at curveSupply.
             check: (results) => {
               const held = decode(results, "token.balanceOf(curve)", readUint);
+              const sold = decode(results, "curve.sold()", readUint);
+              const got = held === null || sold === null ? null : held + sold;
               return [{
-                ok: held !== null && held >= cfg.curve.curveSupply,
-                name: "the curve already holds its whole allocation",
-                detail: held === null ? "could not read the curve's balance"
-                  : held >= cfg.curve.curveSupply ? ""
-                  : `it holds ${held} of ${cfg.curve.curveSupply}. Send the rest FIRST: after ` +
-                    "setPool, a transfer into the curve is a sell and part of it burns.",
+                ok: got !== null && got >= cfg.curve.curveSupply,
+                name: "the curve has received its whole allocation",
+                detail: got === null ? "could not read the curve's balance and sold()"
+                  : got >= cfg.curve.curveSupply
+                    ? (sold > 0n ? `holds ${held}, already sold ${sold} — trading has started, ` +
+                                   "so register it now" : "")
+                    : `it has received ${got} of ${cfg.curve.curveSupply}. Send the REST of the ` +
+                      "allocation before registering: once setPool lands, a transfer into the " +
+                      "curve is a sell, and Rule 2 rejects it while Rule 1 burns part of a " +
+                      "retry. This shortfall is missing funding, not trading — trading moves " +
+                      "tokens from the balance into sold() and leaves the sum alone.",
               }];
             },
           },

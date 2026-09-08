@@ -606,8 +606,10 @@ function STEPS(){
            SUCCEEDS while Rule 1 burns part of it. The curve then holds a fraction of what it was
            meant to and its parameters are already immutable. */
         needs:function(){ return ST.fundedOk ? null :
-          "the curve must already hold its whole allocation. Verify step 5 after funding — " +
-          "after setPool, a transfer into the curve is a sell and part of it burns."; } }
+          "the curve must have received its whole allocation. Verify step 5 after funding — " +
+          "once setPool lands, a transfer into the curve is a sell, and Rule 2 rejects it " +
+          "while Rule 1 burns part of a retry. A buy in the meantime is fine: it moves tokens " +
+          "from the balance into sold() and leaves the sum alone."; } }
     ],
     irreversible:[
       "feeTo is immutable. There is no setFeeTo: a fee address that can be repointed later is an admin key with a different name.",
@@ -656,11 +658,30 @@ function STEPS(){
       numIs(c, r, "bondTarget()", L.curve.bondTarget);
       addrIs(c, r, "gateToken()", L.curve.gateToken || SNOOZE.ZERO);
       numIs(c, r, "gateMin()", L.curve.gateMin);
-      numIs(c, r, "sold()", "0", "sold() is 0 — nothing has traded yet");
-      numIs(c, r, "reserveEth()", "0", "reserveEth() is 0");
+      /* NOT "sold() is 0" and NOT "balanceOf(curve) == curveSupply". The curve is public and
+         tradeable the moment it is funded, so a single buy — by anybody, at any time between
+         funding it and reading it back — used to fail step 5 forever. Step 6 is gated on step
+         5, so freeze() and seal() would be unreachable for the life of the token because
+         somebody bought a tenth of an ether at the wrong moment.
+
+         What SnoozeCurve actually maintains is held + sold == curveSupply: buy does
+         `sold += out` then transfers out, sell reverses both. That is the invariant, and the
+         two raw numbers are reported so you can see whether trading has started — which is a
+         fact, not a failure. deploy/scripts/lib/steps.mjs says the same thing; these two had
+         drifted, and the byte-equality test between page and scripts only covers calldata. */
+      var sold = got(r, "sold()", SNOOZE.readUint);
+      var held = got(r, "token.balanceOf(curve)", SNOOZE.readUint);
+      push(c, sold !== null && sold <= BigInt(L.curve.curveSupply),
+           "sold() is within what the curve was funded with",
+           sold === null ? "could not be read"
+             : sold === 0n ? "nothing has traded yet"
+             : sold + " already sold — trading has started, so freeze quickly");
+      push(c, held !== null && sold !== null && held + sold >= BigInt(L.curve.curveSupply),
+           "the curve has received every token it is allowed to sell",
+           held === null || sold === null ? "could not be read"
+             : "holds " + held + ", sold " + sold + ", funded with " + L.curve.curveSupply);
+      push(c, got(r, "reserveEth()", SNOOZE.readUint) !== null, "reserveEth() reads");
       boolIs(c, r, "bonded()", false);
-      numIs(c, r, "token.balanceOf(curve)", L.curve.curveSupply,
-            "the curve actually holds every token it is allowed to sell");
       boolIs(c, r, "token.isPool(curve)", true,
              "isPool(curve) is true, so both Snooze rules are on");
       boolIs(c, r, "token.capExempt(curve)", true,
@@ -668,7 +689,8 @@ function STEPS(){
       /* The gate that unlocks 5.register, recorded from a read rather than from having sent
          the funding transaction. */
       try{
-        ST.fundedOk = SNOOZE.readUint(r["token.balanceOf(curve)"].data) >= BigInt(L.curve.curveSupply);
+        ST.fundedOk = SNOOZE.readUint(r["token.balanceOf(curve)"].data)
+                    + SNOOZE.readUint(r["sold()"].data) >= BigInt(L.curve.curveSupply);
       }catch(e){ ST.fundedOk = false; }
       save();
       return c;
@@ -1154,7 +1176,13 @@ async function verify(step, card){
     ? bad + " of " + list.length + " failed. This step is NOT verified, so nothing after it " +
       "can be sent."
     : "all " + list.length + " passed."));
+  /* render() rebuilds every card, which threw this list away in the same tick that produced
+     it — so a failing verify showed a red count and no reason, and the reason is the whole
+     output. Re-attached after the rebuild. */
+  var keep = out.cloneNode(true);
   render();
+  var slot = $("out-" + step.id);
+  if(slot && slot.parentNode) slot.parentNode.replaceChild(keep, slot);
 }
 
 $("wConnect").addEventListener("click", connect);

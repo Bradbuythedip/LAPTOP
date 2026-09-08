@@ -106,10 +106,10 @@ calls `setCapExempt`. So the owner's residual treasury is subject to Rule 1 and 
 like everybody else's, and `freeze()` makes that permanent. There is no wallet to move it out
 of, and no exemption to disclose.
 
-Which matters for where the supply ends up: at `curveSupply` 8e29 of a 1e30 supply, 20% stays in
+Which matters for where the supply ends up: at `curveSupply` 8e34 of a 1e35 supply, 20% stays in
 the owner's hands from the moment the token is deployed, and `bondPreview()`'s leftover —
-`curveSupply / m`, so 8e28 at the m = 10 this `bondTarget` encodes — returns to `feeTo` if the
-curve graduates. Publish the owner's address alongside the token's; it is an ordinary holder
+`curveSupply / m`, so 8e33 (8% of supply) at the m = 10 this `bondTarget` encodes — returns to
+`feeTo` if the curve graduates. Publish the owner's address alongside the token's; it is an ordinary holder
 under both rules, and it is checkable.
 
 ## The sequence
