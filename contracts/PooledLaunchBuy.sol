@@ -40,9 +40,17 @@ interface ILaunchRouter {
 ///   discipline fixes that — the contract cannot make its deployer honest.
 ///
 ///   What it CAN do, and does, is make the two addresses immutable and public before anybody
-///   deposits. So the check is external and it is on the depositor: read `router()` and
-///   `token()`, confirm they are the real router and the real token, and only then send
-///   money. A contract that could swap them later would remove even that.
+///   deposits, plus publish an immutable price floor so a stranger cannot buy the pool out at
+///   an arbitrary price.
+///
+///   And the depositor-side check is weaker than it sounds, so do not oversell it: reading
+///   `router()` before depositing does NOT prove what that address will do. It may be a proxy
+///   whose implementation is swapped after deposits land — its own codehash never changes, so
+///   pinning the codehash does not catch it — or a CREATE2 address with no code at all yet,
+///   since `deposit()` never touches the router. A round funds normally against empty
+///   bytecode and the deployer chooses the semantics afterwards, having seen how much arrived.
+///   The only real check is that the router is a contract you already trust for other
+///   reasons, at an address you recognise.
 ///
 /// What remains after that is code risk, not counterparty risk. That is a real reduction and
 /// it is not zero: an unaudited contract holding pooled funds is how people lose everything,
@@ -57,6 +65,13 @@ contract PooledLaunchBuy {
     uint64  public immutable refundAfter;    // depositors may walk from here, unconditionally
     uint256 public immutable minDeposit;
     uint256 public immutable exitFeeBps;     // charged only on EARLY exit, never on refund
+    /// The immutable price floor, in token base units per 1e18 wei. This is the whole defence
+    /// against a caller-chosen minOut: `execute()` is permissionless, so the caller is
+    /// potentially the attacker, and a bound they supply themselves bounds nobody. Published
+    /// at construction, before anyone deposits, and the caller's own minOut may only TIGHTEN
+    /// it. An earlier version trusted the caller's argument alone and its comment called that
+    /// "a floor the caller must satisfy" — which read as a protection and was not one.
+    uint256 public immutable minTokensPerEth;
     address public immutable admin;
 
     uint256 public totalDeposited;
@@ -95,19 +110,23 @@ contract PooledLaunchBuy {
         uint64 _executeAfter,
         uint64 _refundAfter,
         uint256 _minDeposit,
-        uint256 _exitFeeBps
+        uint256 _exitFeeBps,
+        uint256 _minTokensPerEth
     ) {
         // A refund deadline at or before the execute time would let depositors refund out of a
         // round that is still live, and a 100% exit fee is confiscation.
         if (_refundAfter <= _executeAfter) revert BadConfig();
         if (_exitFeeBps >= 10_000) revert BadConfig();
         if (address(_router) == address(0) || _token == address(0)) revert BadConfig();
+        // A zero floor is the bug this parameter exists to prevent, so it is not a default.
+        if (_minTokensPerEth == 0) revert BadConfig();
         router = _router;
         token = _token;
         executeAfter = _executeAfter;
         refundAfter = _refundAfter;
         minDeposit = _minDeposit;
         exitFeeBps = _exitFeeBps;
+        minTokensPerEth = _minTokensPerEth;
         admin = msg.sender;
     }
 
@@ -143,12 +162,17 @@ contract PooledLaunchBuy {
     // ------------------------------------------------------------------ the buy
 
     /// @notice Spend the whole pool on one buy. Anyone may call this.
-    /// @param minOut the caller's slippage bound, in tokens, for the entire pooled size.
-    /// @dev Permissionless on purpose. If only the operator could call it, the operator could
+    /// @param minOut the caller's own slippage bound. It may only TIGHTEN the immutable floor.
+    /// @dev Permissionless on purpose: if only the operator could call it, the operator could
     ///      sit on everyone's money until it suited them, which is the arrangement this
-    ///      contract exists to avoid. The trade-off is that a griefer can execute at a bad
-    ///      moment, so `minOut` is a floor the caller must satisfy and the whole call reverts
-    ///      beneath it.
+    ///      contract exists to avoid.
+    ///
+    ///      But permissionless means the caller may be the attacker, and a bound the attacker
+    ///      supplies is not a bound. Without the immutable floor below, one atomic
+    ///      transaction — push the price up, call execute(1), sell back — buys the whole pool
+    ///      at any price the attacker likes and leaves every depositor with dust and no
+    ///      refund, because `executed` is set before the swap. The floor is published at
+    ///      construction and the caller cannot loosen it.
     function execute(uint256 minOut) external {
         if (executed) revert AlreadyDone();
         if (block.timestamp < executeAfter) revert NotYet();
@@ -182,7 +206,10 @@ contract PooledLaunchBuy {
         // entirely: an over-reporting router would let the last claimers find the cupboard
         // bare, and an UNDER-reporting one would strand the difference forever, which an
         // earlier version of this line did by taking min(actual, reported).
-        if (actual == 0 || actual < minOut) revert SwapFailed();
+        // The binding constraint is the immutable floor; the caller's minOut only raises it.
+        uint256 floor = (amount * minTokensPerEth) / 1e18;
+        uint256 required = minOut > floor ? minOut : floor;
+        if (actual == 0 || actual < required) revert SwapFailed();
         tokensReceived = actual;
 
         emit Executed(msg.sender, amount, tokensReceived);

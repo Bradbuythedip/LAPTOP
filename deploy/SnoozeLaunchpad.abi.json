@@ -1,0 +1,328 @@
+[
+  {
+    "inputs": [
+      {
+        "internalType": "string",
+        "name": "why",
+        "type": "string"
+      }
+    ],
+    "name": "BadParams",
+    "type": "error"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "token",
+        "type": "address"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "pool",
+        "type": "address"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "launcher",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "supply",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "devBps",
+        "type": "uint256"
+      }
+    ],
+    "name": "Launched",
+    "type": "event"
+  },
+  {
+    "inputs": [],
+    "name": "MAX_DEV_BPS",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "MIN_REFUND_WINDOW",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "count",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "spotNow",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "spotNext",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "tauNowBps",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "tauNextBps",
+        "type": "uint256"
+      }
+    ],
+    "name": "earlyStaysBetter",
+    "outputs": [
+      {
+        "internalType": "bool",
+        "name": "",
+        "type": "bool"
+      }
+    ],
+    "stateMutability": "pure",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "components": [
+          {
+            "internalType": "uint256",
+            "name": "supply",
+            "type": "uint256"
+          },
+          {
+            "internalType": "contract ITwapOracle",
+            "name": "oracle",
+            "type": "address"
+          },
+          {
+            "internalType": "address",
+            "name": "dev",
+            "type": "address"
+          },
+          {
+            "internalType": "uint256",
+            "name": "devBps",
+            "type": "uint256"
+          },
+          {
+            "internalType": "contract ILaunchRouter",
+            "name": "router",
+            "type": "address"
+          },
+          {
+            "internalType": "uint64",
+            "name": "executeAfter",
+            "type": "uint64"
+          },
+          {
+            "internalType": "uint64",
+            "name": "refundAfter",
+            "type": "uint64"
+          },
+          {
+            "internalType": "uint256",
+            "name": "minDeposit",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "exitFeeBps",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "minTokensPerEth",
+            "type": "uint256"
+          }
+        ],
+        "internalType": "struct SnoozeLaunchpad.Params",
+        "name": "p",
+        "type": "tuple"
+      }
+    ],
+    "name": "launch",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "token",
+        "type": "address"
+      },
+      {
+        "internalType": "address",
+        "name": "pool",
+        "type": "address"
+      }
+    ],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "name": "launchOf",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "name": "launches",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "token",
+        "type": "address"
+      },
+      {
+        "internalType": "address",
+        "name": "pool",
+        "type": "address"
+      },
+      {
+        "internalType": "address",
+        "name": "launcher",
+        "type": "address"
+      },
+      {
+        "internalType": "uint64",
+        "name": "launchedAt",
+        "type": "uint64"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "components": [
+          {
+            "internalType": "uint256",
+            "name": "supply",
+            "type": "uint256"
+          },
+          {
+            "internalType": "contract ITwapOracle",
+            "name": "oracle",
+            "type": "address"
+          },
+          {
+            "internalType": "address",
+            "name": "dev",
+            "type": "address"
+          },
+          {
+            "internalType": "uint256",
+            "name": "devBps",
+            "type": "uint256"
+          },
+          {
+            "internalType": "contract ILaunchRouter",
+            "name": "router",
+            "type": "address"
+          },
+          {
+            "internalType": "uint64",
+            "name": "executeAfter",
+            "type": "uint64"
+          },
+          {
+            "internalType": "uint64",
+            "name": "refundAfter",
+            "type": "uint64"
+          },
+          {
+            "internalType": "uint256",
+            "name": "minDeposit",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "exitFeeBps",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "minTokensPerEth",
+            "type": "uint256"
+          }
+        ],
+        "internalType": "struct SnoozeLaunchpad.Params",
+        "name": "p",
+        "type": "tuple"
+      }
+    ],
+    "name": "validate",
+    "outputs": [
+      {
+        "internalType": "bool",
+        "name": "okAll",
+        "type": "bool"
+      },
+      {
+        "internalType": "string",
+        "name": "why",
+        "type": "string"
+      }
+    ],
+    "stateMutability": "pure",
+    "type": "function"
+  }
+]

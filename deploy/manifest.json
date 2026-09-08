@@ -1,0 +1,42 @@
+[
+  {
+    "contract": "SnoozeLaunchpad",
+    "initCodeBytes": 13021,
+    "runtimeBytes": 12993,
+    "constructorInputs": []
+  },
+  {
+    "contract": "Snooze",
+    "initCodeBytes": 5428,
+    "runtimeBytes": 4977,
+    "constructorInputs": [
+      "uint256 supply",
+      "address _oracle",
+      "address _dev",
+      "uint256 _devBps"
+    ]
+  },
+  {
+    "contract": "PooledLaunchBuy",
+    "initCodeBytes": 4462,
+    "runtimeBytes": 3828,
+    "constructorInputs": [
+      "address _router",
+      "address _token",
+      "uint64 _executeAfter",
+      "uint64 _refundAfter",
+      "uint256 _minDeposit",
+      "uint256 _exitFeeBps",
+      "uint256 _minTokensPerEth"
+    ]
+  },
+  {
+    "contract": "LaunchTaxRamp",
+    "initCodeBytes": 3233,
+    "runtimeBytes": 2462,
+    "constructorInputs": [
+      "tuple s",
+      "address seedLp"
+    ]
+  }
+]

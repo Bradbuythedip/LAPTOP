@@ -48,7 +48,8 @@ async function world(opts = {}) {
     w(tok.address.toString()), { evm });
   const pool = await deploy(contracts.PooledLaunchBuy.evm.bytecode.object,
     [rtr.address.toString(), tok.address.toString(), T_EXEC, T_REFUND,
-     opts.minDeposit ?? 0, opts.exitFeeBps ?? 500].map(w).join(""), { evm });
+     opts.minDeposit ?? 0, opts.exitFeeBps ?? 500,
+     opts.minTokensPerEth ?? 1].map(w).join(""), { evm });
   return { evm, tok, rtr, pool };
 }
 const at = (ctx, addr) => ({ evm: ctx.evm, address: addr });
@@ -114,6 +115,48 @@ console.log("── rounding strands dust, it never mints it");
   const sum = (await call(x.pool, "totalClaimed()")).words[0];
   ok("the sum of every claim is at most what was received", sum <= got, `${sum} > ${got}`);
   ok("and the shortfall is dust, not a hole", got - sum < 10n, `${got - sum}`);
+}
+
+console.log("── a stranger cannot choose the price your pool buys at");
+{
+  // Found by adversarial audit, and it was CRITICAL. execute() is permissionless, so the
+  // caller may be the attacker, and minOut is the caller's own argument — a bound the
+  // attacker supplies bounds nobody. One transaction: move the price, call execute(1), sell
+  // back. The pool spends everything and receives one base unit; `executed` is already true
+  // so refund() is dead and claim() floor-divides to zero for everyone.
+  //
+  // The fix is an immutable floor published before anyone deposits. The caller's minOut can
+  // only tighten it.
+  const x = await world({ minTokensPerEth: 500n });   // at least 500 units per 1e18 wei
+  await call(x.pool, "deposit()", [], { from: A, value: 2n * ETH, timestamp: T_OPEN });
+  await call(x.pool, "deposit()", [], { from: B, value: 2n * ETH, timestamp: T_OPEN });
+
+  // The attacker crashes the rate so the pool would get almost nothing, then asks for 1.
+  await call(at(x, x.rtr.address), "setRate(uint256)", [1]);
+  const attack = await call(x.pool, "execute(uint256)", [1], { from: C, timestamp: T_EXEC });
+  ok("execute(1) at a terrible rate is REFUSED by the immutable floor", !attack.ok,
+     "a stranger just bought the pool out at a price they chose");
+  eq("and the round stays open, so refunds still work",
+     (await call(x.pool, "executed()")).words[0], 0n);
+  const r = await call(x.pool, "refund()", [], { from: A, timestamp: T_REFUND });
+  ok("the depositor can still walk away with their ETH", r.ok, r.revert);
+}
+{
+  // The floor is a floor, not a ceiling: an honest execute at a good rate still works, and a
+  // caller who wants a TIGHTER bound than the floor still gets it.
+  const x = await world({ minTokensPerEth: 500n });
+  await call(x.pool, "deposit()", [], { from: A, value: 2n * ETH, timestamp: T_OPEN });
+  await call(at(x, x.rtr.address), "setRate(uint256)", [1000]);
+  const good = await call(x.pool, "execute(uint256)", [0], { from: C, timestamp: T_EXEC });
+  ok("a rate above the floor executes with minOut zero", good.ok, good.revert);
+
+  const y = await world({ minTokensPerEth: 500n });
+  await call(y.pool, "deposit()", [], { from: A, value: 2n * ETH, timestamp: T_OPEN });
+  await call(at(y, y.rtr.address), "setRate(uint256)", [1000]);
+  const tighter = await call(y.pool, "execute(uint256)",
+    [10_000_000n * ETH], { from: C, timestamp: T_EXEC });
+  ok("and a caller may still demand MORE than the floor", !tighter.ok);
+  eq("leaving the round open", (await call(y.pool, "executed()")).words[0], 0n);
 }
 
 console.log("── refund is unconditional once the deadline passes");
@@ -367,8 +410,8 @@ console.log("── configuration that would trap depositors is rejected at cons
   const evm = await createEVM();
   const tok = await deploy(all.MockToken.evm.bytecode.object, "", { evm });
   const rtr = await deploy(all.MockRouter.evm.bytecode.object, w(tok.address.toString()), { evm });
-  const mk = (ea, ra, fee, tokAddr) => deploy(contracts.PooledLaunchBuy.evm.bytecode.object,
-    [rtr.address.toString(), tokAddr ?? tok.address.toString(), ea, ra, 0, fee]
+  const mk = (ea, ra, fee, tokAddr, floor) => deploy(contracts.PooledLaunchBuy.evm.bytecode.object,
+    [rtr.address.toString(), tokAddr ?? tok.address.toString(), ea, ra, 0, fee, floor ?? 1]
       .map(w).join(""), { evm }).then(() => null).catch(e => e);
   ok("a refund deadline at or before the buy time is rejected",
      (await mk(T_EXEC, T_EXEC, 500)) !== null);
@@ -377,6 +420,8 @@ console.log("── configuration that would trap depositors is rejected at cons
   ok("a 100% exit fee is rejected", (await mk(T_EXEC, T_REFUND, 10_000)) !== null);
   ok("a zero token address is rejected",
      (await mk(T_EXEC, T_REFUND, 500, "0x" + "0".repeat(40))) !== null);
+  ok("a zero price floor is rejected — it is the bug, not a default",
+     (await mk(T_EXEC, T_REFUND, 500, null, 0)) !== null);
   ok("a sane configuration deploys", (await mk(T_EXEC, T_REFUND, 500)) === null);
 }
 

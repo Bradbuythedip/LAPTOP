@@ -95,9 +95,9 @@ sha256(web/snooze.html)  = db91da622599c27a8b4947ba0e693027619b5164203065801514c
 sh test/run-all.sh         # everything below, no network touched
 ```
 
-**1200 assertions across sixteen suites.**
+**1272 assertions across seventeen suites.**
 
-`test/run.mjs` — 225, drives the real page in Chromium against `test/mock-rpc.mjs`: Keccak vectors,
+`test/run.mjs` — 277, drives the real page in Chromium against `test/mock-rpc.mjs`: Keccak vectors,
 the four EIP-55 reference addresses, the v4 poolId derivation checked against a real Base pool
 id, ABI-string decoding (including a 10-character name, whose length word contains a hex
 letter, and truncated/absurd offsets), result-length discipline, and full flows for the happy
@@ -166,11 +166,16 @@ distribution still cannot complete: `claim()` is an outbound transfer and the 20
 applies to it. Also carries the axiomatics — the decay condition, depth-versus-appreciation,
 and what a large supply does and does not buy.
 
+`test/run-deployable.mjs` — 27, the go/no-go before a wallet is opened: every runtime under
+EIP-170 and every init code under EIP-3860 (the launchpad is the big one at 52.9% of the
+limit), every constructor run with real encoded arguments, and a full `launch()` sent from an
+ordinary externally-owned account rather than from another contract. It writes `deploy/`.
+
 `test/run-launchpad.mjs` — 37, `launch()` end to end: the wiring granted before any deposit
 can arrive, the three-way distribution that could not settle by hand settling in one block,
 every admin call from every party reverting afterwards, and the parameters it refuses.
 
-`test/run-pooled.mjs` — 65, compiles `contracts/PooledLaunchBuy.sol` and executes it against a
+`test/run-pooled.mjs` — 72, compiles `contracts/PooledLaunchBuy.sol` and executes it against a
 hostile token (fee-on-transfer, returns-false, reentrant), a router that lies about its output
 or keeps the ETH, a depositor that refuses ETH and one that reenters on receive. It reads the
 ABI and fails if a sweep, rescue, withdraw or ownership function ever appears.

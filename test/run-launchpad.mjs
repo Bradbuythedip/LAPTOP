@@ -43,6 +43,7 @@ const w = v => (typeof v === "string" && v.startsWith("0x")
 const params = o => [
   o.supply ?? SUPPLY, o.oracle, o.dev ?? DEV, o.devBps ?? 0, o.router,
   o.executeAfter ?? T_EXEC, o.refundAfter ?? T_REFUND, o.minDeposit ?? 0, o.exitFeeBps ?? 0,
+  o.minTokensPerEth ?? 1,
 ].map(w).join("");
 
 async function pad() {
@@ -60,7 +61,7 @@ console.log("── a launch wires everything, in one transaction");
     w("0x0000000000000000000000000000000000000001"), { evm: x.evm });
   const data = params({ oracle: x.orc.address.toString(), router: rtr.address.toString() });
   const r = await call(x.lp,
-    "launch((uint256,address,address,uint256,address,uint64,uint64,uint256,uint256))",
+    "launch((uint256,address,address,uint256,address,uint64,uint64,uint256,uint256,uint256))",
     [], { from: LAUNCHER, timestamp: T_OPEN, raw: data });
   ok("launch succeeds", r.ok, r.revert);
   const [token, pool] = r.words;
@@ -84,7 +85,7 @@ console.log("── nobody keeps a key, including the launchpad");
   const rtr = await deploy(all.SnoozeRouter.evm.bytecode.object,
     w("0x0000000000000000000000000000000000000001"), { evm: x.evm });
   const r = await call(x.lp,
-    "launch((uint256,address,address,uint256,address,uint64,uint64,uint256,uint256))",
+    "launch((uint256,address,address,uint256,address,uint64,uint64,uint256,uint256,uint256))",
     [], { from: LAUNCHER, timestamp: T_OPEN,
           raw: params({ oracle: x.orc.address.toString(), router: rtr.address.toString() }) });
   const tokAddr = "0x" + r.words[0].toString(16).padStart(40, "0");
@@ -116,7 +117,7 @@ console.log("── the distribution completes, which is the whole point");
   const rtr = await deploy(all.SnoozeRouter.evm.bytecode.object,
     w("0x0000000000000000000000000000000000000001"), { evm: x.evm });
   const r = await call(x.lp,
-    "launch((uint256,address,address,uint256,address,uint64,uint64,uint256,uint256))",
+    "launch((uint256,address,address,uint256,address,uint64,uint64,uint256,uint256,uint256))",
     [], { from: LAUNCHER, timestamp: T_OPEN,
           raw: params({ oracle: x.orc.address.toString(), router: rtr.address.toString() }) });
   const tokAddr = "0x" + r.words[0].toString(16).padStart(40, "0");
@@ -167,7 +168,7 @@ console.log("── what it refuses, before the money is in rather than after");
     w("0x0000000000000000000000000000000000000001"), { evm: x.evm });
   const base = { oracle: x.orc.address.toString(), router: rtr.address.toString() };
   const tryLaunch = async o => call(x.lp,
-    "launch((uint256,address,address,uint256,address,uint64,uint64,uint256,uint256))",
+    "launch((uint256,address,address,uint256,address,uint64,uint64,uint256,uint256,uint256))",
     [], { from: LAUNCHER, timestamp: T_OPEN, raw: params({ ...base, ...o }) });
 
   ok("a zero supply is refused", !(await tryLaunch({ supply: 0 })).ok);
@@ -184,7 +185,7 @@ console.log("── what it refuses, before the money is in rather than after");
 
   // validate() is pure, so a page can check a proposal without sending anything.
   const v = await call(x.lp,
-    "validate((uint256,address,address,uint256,address,uint64,uint64,uint256,uint256))",
+    "validate((uint256,address,address,uint256,address,uint64,uint64,uint256,uint256,uint256))",
     [], { raw: params({ ...base, devBps: 5000 }) });
   eq("validate says no without a transaction", v.words[0], 0n);
 }

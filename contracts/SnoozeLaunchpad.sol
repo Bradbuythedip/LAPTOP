@@ -44,6 +44,10 @@ contract SnoozeLaunchpad {
         uint64 refundAfter;
         uint256 minDeposit;
         uint256 exitFeeBps;
+        /// Token base units per 1e18 wei. The floor a permissionless execute() cannot go
+        /// below, published before anyone deposits. Without it any stranger can move the
+        /// price, call execute(1), and buy the whole pool out at a price they chose.
+        uint256 minTokensPerEth;
     }
 
     struct Launch {
@@ -74,6 +78,8 @@ contract SnoozeLaunchpad {
         if (uint256(p.refundAfter) - uint256(p.executeAfter) < MIN_REFUND_WINDOW)
             return (false, "refund window shorter than a day");
         if (p.exitFeeBps >= 10_000) return (false, "exit fee confiscates the deposit");
+        if (p.minTokensPerEth == 0)
+            return (false, "no price floor: any stranger could buy the pool out at any price");
         return (true, "");
     }
 
@@ -106,7 +112,8 @@ contract SnoozeLaunchpad {
         // This contract is the token's admin for the length of this transaction and no longer.
         Snooze t = new Snooze(p.supply, p.oracle, p.dev, p.devBps);
         PooledLaunchBuy b = new PooledLaunchBuy(
-            p.router, address(t), p.executeAfter, p.refundAfter, p.minDeposit, p.exitFeeBps);
+            p.router, address(t), p.executeAfter, p.refundAfter, p.minDeposit, p.exitFeeBps,
+            p.minTokensPerEth);
 
         // The venue. setPool also grants the cap exemption, because a pool that could only pay
         // out 20% of its balance per day is not a pool.

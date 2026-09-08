@@ -21,7 +21,7 @@ export function compile(files) {
     sources,
     settings: {
       optimizer: { enabled: true, runs: 200 },
-      outputSelection: { "*": { "*": ["abi", "evm.bytecode.object"] } },
+      outputSelection: { "*": { "*": ["abi", "evm.bytecode.object", "evm.deployedBytecode.object"] } },
     },
   })));
   const errors = (out.errors || []).filter(e => e.severity === "error");

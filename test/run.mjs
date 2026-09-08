@@ -434,6 +434,46 @@ console.log("── one build tag, and the README agrees with it");
   }
 }
 
+// The README's test inventory drifted twice in one afternoon: run.mjs was listed at 225 when
+// it had grown to 239, run-pooled at 65 when it was 72, and the headline total was the sum of
+// the stale numbers, so it looked self-consistent while being wrong in three places.
+//
+// Two checks live in two places because they need different things. This one needs only the
+// filesystem: every suite that exists is mentioned, and the headline is the sum of the numbers
+// printed beside them. It cannot tell whether those numbers are TRUE — only run-all.sh knows
+// that, because only run-all.sh has just run everything, and it checks there.
+console.log("── the README's test inventory adds up");
+{
+  const readme = fs.readFileSync(path.join(ROOT, "README.md"), "utf8");
+  const onDisk = fs.readdirSync(path.join(ROOT, "test"))
+    .filter(f => /^run(-[\w.-]+)?\.mjs$/.test(f) || /^test_.*\.py$/.test(f))
+    .map(f => "test/" + f);
+  ok("there are suites on disk to check", onDisk.length > 10, String(onDisk.length));
+
+  const listed = new Map();
+  for (const m of readme.matchAll(/`(test\/[\w.-]+)` \u2014 (\d+),/g))
+    listed.set(m[1], Number(m[2]));
+  for (const f of onDisk)
+    ok(`the README lists ${f} with a count`, listed.has(f),
+       "a suite exists that the README never mentions");
+  for (const f of listed.keys())
+    ok(`${f} is a suite that still exists`, onDisk.includes(f),
+       "the README lists a suite that has been deleted or renamed");
+
+  const head = readme.match(/\*\*(\d+) assertions across (\w+) suites\.\*\*/);
+  ok("the README states a headline total", !!head);
+  if (head) {
+    const sum = [...listed.values()].reduce((a, b) => a + b, 0);
+    ok("the headline total is the sum of the per-suite counts", Number(head[1]) === sum,
+       `README says ${head[1]}, its own list adds to ${sum}`);
+    const WORDS = { fourteen: 14, fifteen: 15, sixteen: 16, seventeen: 17, eighteen: 18,
+                    nineteen: 19, twenty: 20 };
+    ok("the headline suite count matches how many suites there are",
+       WORDS[head[2]] === onDisk.length,
+       `README says ${head[2]} (${WORDS[head[2]]}), there are ${onDisk.length}`);
+  }
+}
+
 // The site now asks for a wallet, so "we never prompt" is gone as a clone defence, and the
 // rule that replaces it has to be one that stays true: this connects and reads, and never
 // asks you to sign. Worth stating only if it is enforced, so the enforcement is mechanical —

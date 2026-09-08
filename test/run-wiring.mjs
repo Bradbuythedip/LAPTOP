@@ -66,7 +66,7 @@ async function launch(opts = {}) {
 
   const pool = await deploy(all.PooledLaunchBuy.evm.bytecode.object,
     [rtr.address.toString(), tok.address.toString(), T_EXEC, T_REFUND, 0,
-     opts.exitFeeBps ?? 0].map(w).join(""), { evm });
+     opts.exitFeeBps ?? 0, opts.minTokensPerEth ?? 1].map(w).join(""), { evm });
 
   if (opts.exemptPool !== false)
     await call({ evm, address: tok.address }, "setCapExempt(address,bool)",
