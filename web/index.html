@@ -7,7 +7,7 @@
 <meta name="color-scheme" content="dark">
 <title>$SNOOZE — you snooze, you win</title>
 <meta name="description" content="Two rules, in code. Selling into a spike burns most of what you would have taken, and nobody moves more than a fifth of their bag a day.">
-<meta property="og:title" content="$SNOOZE — you snooze, you win">
+<meta property="og:title" content="Snooze Bear — you snooze, you win">
 <meta property="og:description" content="Two rules, in code. Selling into a spike burns most of what you would have taken.">
 <meta property="og:image" content="/hero.png">
 <meta name="twitter:card" content="summary_large_image">
@@ -107,6 +107,9 @@ a:focus-visible,button:focus-visible{outline:2px solid var(--gold);outline-offse
 .ticker{font-size:34px;font-weight:800;letter-spacing:-.02em;margin:2px 0 2px;
   color:var(--gold)}
 .tag{font-size:19px;font-weight:600;margin:0 0 10px;color:var(--fg)}
+.tick{display:inline-block;font-family:var(--mono);font-size:13px;font-weight:700;
+  padding:3px 9px;border-radius:999px;background:var(--goldSoft);color:var(--gold);
+  vertical-align:middle;margin-left:4px}
 .lede{color:var(--dim);font-size:14.5px;line-height:1.6;margin:0 auto 16px;max-width:52ch}
 .heroCta{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-bottom:6px}
 a.cta{display:inline-flex;align-items:center;justify-content:center;gap:8px;
@@ -150,46 +153,27 @@ a.cta.sub2:hover{border-color:var(--gold);color:var(--goldHi)}
 
 /* ------------------------------------------------------------------------ the infographic.
    Inline SVG, no library, no external asset — the same rule as everything else here. */
-.panels{display:grid;gap:12px}
-@media (min-width:760px){ .panels{grid-template-columns:1fr 1fr} }
-.panel{background:var(--cardBg);border:1px solid var(--line);border-radius:12px;padding:14px;
-  box-shadow:inset 0 1px 0 rgba(255,255,255,.05), 0 1px 2px rgba(0,0,0,.5)}
-.panel .num{display:inline-flex;align-items:center;justify-content:center;
-  width:24px;height:24px;border-radius:7px;background:var(--goldSoft);
-  border:1.5px solid var(--gold);color:var(--gold);font-weight:700;font-size:13px;
-  margin-right:8px;flex:none}
-.panel h3{display:flex;align-items:center;margin:0 0 8px;font-size:15px}
-.panel p{margin:0;font-size:13.5px;color:var(--dim);line-height:1.6}
-.panel figure{margin:0 0 10px}
-.panel svg{width:100%;height:auto;display:block}
-.panel.no{border-color:var(--warn)}
-.panel.no .num{background:var(--warnbg);border-color:var(--warn);color:var(--warn)}
-.panel.no ul{margin:0;padding-left:18px;font-size:13px;color:var(--dim);line-height:1.65}
-.panel.no li{margin-bottom:5px}
 
-.tools{display:flex;gap:8px;flex-wrap:wrap;margin:4px 0 0}
-.tools a{display:inline-flex;align-items:center;min-height:40px;padding:8px 12px;
-  border:1.5px solid var(--line);border-radius:9px;font-size:13px;text-decoration:none;
-  color:var(--fg);background:rgba(255,255,255,.02)}
-.tools a:hover{border-color:var(--gold);color:var(--goldHi)}
 
 /* ------------------------------------------------------------------------- click to define.
    A dotted underline on the word itself, not a chip and not an icon — a reader should be able
    to see at a glance which words have a definition without the page turning into a control
    panel. It is a <button> for the keyboard and the screen reader, and it is styled like text
    because that is what it is. */
-.d{all:unset;cursor:help;border-bottom:1.5px dotted var(--baseLt);color:inherit;
+.d{all:unset;cursor:pointer;border-bottom:1.5px dotted var(--baseLt);color:inherit;
   font:inherit;-webkit-tap-highlight-color:transparent}
-.d:hover{border-bottom-color:var(--gold)}
-.d:focus-visible{outline:2px solid var(--gold);outline-offset:2px;border-radius:2px}
+.d:hover{border-bottom-color:var(--baseLt);background:var(--baseSoft)}
+.d:focus-visible{outline:2px solid var(--baseLt);outline-offset:2px;border-radius:2px}
 #defbox{position:fixed;left:12px;right:12px;bottom:12px;z-index:50;
   background:#0d1322;border:1.5px solid var(--baseLt);border-radius:12px;padding:13px 14px;
   box-shadow:0 -6px 30px rgba(0,0,0,.6);max-width:520px;margin:0 auto}
 #defbox[hidden]{display:none}
 #defbox .t{font-weight:700;font-size:14px;margin-bottom:4px;color:var(--baseLt)}
 #defbox .b{font-size:13.5px;line-height:1.55;color:var(--fg)}
-#defbox .x{position:absolute;top:8px;right:10px;all:unset;cursor:pointer;color:var(--dim);
-  font-size:18px;line-height:1;padding:4px 6px}
+#defbox .x{position:absolute;top:4px;right:4px;all:unset;cursor:pointer;color:var(--dim);
+  font-size:20px;line-height:1;width:44px;height:44px;display:flex;align-items:center;
+  justify-content:center;border-radius:10px}
+#defbox .x:hover{color:var(--fg);background:rgba(255,255,255,.06)}
 #defbox .x:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
 
 /* The chain chip. Base blue as a fill, which is the only place it clears contrast. */
@@ -226,6 +210,18 @@ td.n{font-family:var(--mono)}
 tbody tr:last-child td{border-bottom:0}
 .scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
 ul{margin:0;padding-left:18px} li{margin-bottom:5px}
+/* A pay/get card. The old version was two pills with an arrow between them — the universal
+   swap-widget shape, with nothing clickable — sitting under a heading about getting in early.
+   People tap that. It is now either a real route to a buy or an honest "not launched". */
+.swap{display:grid;gap:6px;margin:2px 0 0}
+.leg{display:flex;justify-content:space-between;align-items:baseline;gap:10px;
+  padding:11px 13px;border-radius:11px;background:rgba(255,255,255,.03);
+  border:1px solid var(--line)}
+.leg.out{background:var(--baseSoft);border-color:var(--baseLt)}
+.leg .k{font-size:12px;color:var(--dim)}
+.leg .v{font-family:var(--mono);font-size:16px;font-weight:600}
+.leg.out .v{color:var(--baseLt)}
+.swap .arrow{text-align:center;color:var(--dim);font-size:15px;line-height:1}
 .pair{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:2px 0 0}
 .pill{display:inline-flex;align-items:center;gap:7px;padding:7px 12px;border-radius:999px;
   font-weight:700;font-size:14px;background:var(--goldSoft);border:1.5px solid var(--gold);
@@ -243,7 +239,6 @@ html::before{
 /* Boundaries of things you can touch, at 3:1. --line is 1.28:1 on a card and is for dividers
    only; anything with a hit area gets --edge (4.87:1). */
 a.cta.sub2{border-color:var(--edge)}
-.tools a{border-color:var(--edge)}
 /* Three spinners rotated forever regardless of the setting, on three different pages, because
    the reduced-motion guard was written for the hero and nothing else. */
 @media (prefers-reduced-motion:reduce){
@@ -259,8 +254,8 @@ a.cta.sub2{border-color:var(--edge)}
     <img class="bear" src="/snooze-512.webp" width="512" height="512" alt=""
          fetchpriority="high" decoding="async">
   </div>
-  <h1 class="ticker">$SNOOZE</h1>
-  <p class="tag">You snooze, you win.</p>
+  <h1 class="ticker">Snooze&nbsp;Bear</h1>
+  <p class="tag">You snooze, you win. <span class="tick">$SNOOZE</span></p>
   <p class="lede">A launchpad on Base. <b>Anyone can launch.</b> No permission, no listing, and
   no liquidity of your own &mdash; it starts
   <button class="d" data-t="Virtual liquidity" data-d="Pretend reserves that set the price. Real money buys against them; no real money is behind them until the token bonds.">virtual</button>
@@ -318,11 +313,7 @@ a.cta.sub2{border-color:var(--edge)}
 <p class="sub">$SNOOZE is the launchpad. LAPTOP is the first launch on it.</p>
 
 <div class="card">
-  <div class="pair">
-    <span class="pill">$SNOOZE</span><span class="arrow">&rarr;</span>
-    <span class="pill lp">LAPTOP</span>
-  </div>
-  <p style="margin:12px 0 0;font-size:14.5px"><b>Holding $SNOOZE is how you get into LAPTOP
+  <p style="margin:0;font-size:14.5px"><b>Holding $SNOOZE is how you get into LAPTOP
   early.</b> The curve opens to $SNOOZE holders first, and an allocation is set aside for
   whoever holds it at a
   <button class="d" data-t="Snapshot" data-d="A single block, fixed in advance, at which balances are read. What you hold at that block is what you get; what you do after does not change it.">snapshot block</button>
@@ -336,21 +327,37 @@ a.cta.sub2{border-color:var(--edge)}
   </div>
 </div>
 
+<div class="card" id="buylaptop">
+  <div class="hdr"><h2>Buy LAPTOP</h2><span class="badge warn" id="lapBadge">not launched</span></div>
+  <div class="swap">
+    <div class="leg"><div class="k">you pay</div><div class="v">ETH</div></div>
+    <div class="arrow" aria-hidden="true">&darr;</div>
+    <div class="leg out"><div class="k">you get</div><div class="v">LAPTOP</div></div>
+  </div>
+  <p class="mono" id="lapAddr" style="margin:10px 0 0">&mdash;</p>
+  <a class="cta" id="lapCta" href="/buy.html">Where to buy</a>
+  <p class="tiny dim" style="margin:9px 0 0">Buying happens on the curve, from your wallet.
+  This page reads and does not sign. Once there is a curve, check its address against
+  <a class="ext" href="/checker.html">the checker</a> before you send anything.</p>
+</div>
+
 <div class="card">
   <div class="hdr"><h2>Depth costs speed. Pick one.</h2></div>
-  <p class="tiny" style="margin:0 0 8px">The
+  <p class="tiny" style="margin:0 0 8px">Raising the virtual ETH makes every buy cheaper in
   <button class="d" data-t="Slippage" data-d="The gap between the price you see and the price you get. Bigger trades against a thinner book pay more of it.">slippage</button>
-  you remove is real money somebody has to spend before the token bonds. Same dial.</p>
+  and raises what bonding costs by exactly as much. The number of buys it takes does not
+  move:</p>
   <div class="scroll"><table>
-    <thead><tr><th>virtual ETH</th><th>0.1 ETH buy</th><th>1 ETH buy</th><th>to bond at 10&times;</th></tr></thead>
+    <thead><tr><th>slippage per buy</th><th>buys to bond at 10&times;</th><th>at 3 virtual ETH</th><th>at 25</th></tr></thead>
     <tbody>
-      <tr><td class="n">3</td><td class="n">3.3%</td><td class="n">33%</td><td class="n">6.5 ETH</td></tr>
-      <tr><td class="n">10</td><td class="n">1.0%</td><td class="n">10%</td><td class="n">21.6 ETH</td></tr>
-      <tr><td class="n">25</td><td class="n">0.4%</td><td class="n">4.0%</td><td class="n">54.1 ETH</td></tr>
+      <tr><td class="n">0.5%</td><td class="n">433</td><td class="n">433</td><td class="n">433</td></tr>
+      <tr><td class="n">2%</td><td class="n">109</td><td class="n">109</td><td class="n">109</td></tr>
+      <tr><td class="n">5%</td><td class="n">44</td><td class="n">44</td><td class="n">44</td></tr>
     </tbody>
   </table></div>
-  <p class="tiny dim" style="margin:8px 0 0">There is no row that is both. A token nobody can
-  move the price of is also a token that never bonds.</p>
+  <p class="tiny dim" style="margin:8px 0 0">The last two columns are the same on purpose.
+  Virtual ETH sets what a comfortable buy is <i>denominated</i> in; it does not buy depth. So
+  "deep enough that slippage is never an issue" is a choice of units, not of depth.</p>
 </div>
 
 <div class="card no" style="border-color:var(--warn)">
@@ -364,6 +371,8 @@ a.cta.sub2{border-color:var(--edge)}
     <li><b>A falling market burns nothing.</b> The rule only bites above the average.</li>
     <li><b>One wallet is outside both rules</b> &mdash; the launcher's, which has to be exempt
     to seed at all. <a class="ext" href="/snooze.html">the detail</a></li>
+    <li><b>Slippage gets 46% worse at bonding, not better.</b> Only the real ETH goes into the
+    pool; the virtual part does not exist to move. The curve is the deepest the book ever is.</li>
     <li><b>Most tokens never bond.</b> That is the normal outcome, not the failure case.</li>
     <li><b>No audit, no testnet run.</b> Nothing here has been either.</li>
   </ul>
@@ -686,6 +695,24 @@ window.__SNOOZE = { burnAt, POOL, TOKEN };
   for(const el of document.querySelectorAll(".d")){
     el.setAttribute("type", "button");
     el.setAttribute("aria-label", (el.dataset.t || el.textContent) + " — what this means");
+  }
+})();
+
+/* The buy card, honest about there being nothing to buy yet. LAPTOP is a token launched on
+   this pad like any other; when its curve exists, the address goes here and the button points
+   at it. Until then the card says so rather than linking somewhere hopeful. */
+const LAPTOP_CURVE = "";
+(function(){
+  const badge = $("lapBadge"), addr = $("lapAddr"), cta = $("lapCta");
+  if(!badge) return;
+  if(LAPTOP_CURVE){
+    badge.textContent = "live"; badge.className = "badge good";
+    addr.textContent = LAPTOP_CURVE;
+    cta.textContent = "Buy on the curve";
+  }else{
+    badge.textContent = "not launched"; badge.className = "badge warn";
+    addr.textContent = "no curve yet";
+    cta.textContent = "Where to buy";
   }
 })();
 

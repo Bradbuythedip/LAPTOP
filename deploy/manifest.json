@@ -1,16 +1,16 @@
 [
   {
     "contract": "SnoozeLaunchpad",
-    "initCodeBytes": 13021,
-    "runtimeBytes": 12993,
-    "deployExecutionGas": 2601414,
+    "initCodeBytes": 13026,
+    "runtimeBytes": 12998,
+    "deployExecutionGas": 2602414,
     "constructorInputs": []
   },
   {
     "contract": "Snooze",
-    "initCodeBytes": 5428,
-    "runtimeBytes": 4977,
-    "deployExecutionGas": 1043243,
+    "initCodeBytes": 5433,
+    "runtimeBytes": 4982,
+    "deployExecutionGas": 1044243,
     "constructorInputs": [
       "uint256 supply",
       "address _oracle",

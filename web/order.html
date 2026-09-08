@@ -733,6 +733,7 @@ function wRender(){
     out.appendChild(n);
   }
   out.style.display="block";
+  const c=$("wConnect"); if(c) c.style.display="none";
   const d=$("wDisconnect"); if(d) d.style.display="";
 }
 
@@ -773,7 +774,7 @@ async function wConnect(){
     }catch(e){ /* declined, or Base not added — reported in the table, never forced */ }
   }
   W_BAL=await wBalances(prov,W_ADDR);
-  wSet(wShort(W_ADDR),W_CHAIN===W_BASE_ID?"good":"warn","");
+  wSet(W_CHAIN===W_BASE_ID?"connected":"wrong network",W_CHAIN===W_BASE_ID?"good":"warn","");
   wRender();
   return true;
 }
@@ -785,6 +786,7 @@ function wForget(){
   wSet("not connected","","Forgotten here. To revoke the connection itself, use "+
     "Phantom → Settings → Connected apps.");
   wRender();
+  const c=$("wConnect"); if(c) c.style.display="";
   const d=$("wDisconnect"); if(d) d.style.display="none";
 }
 
@@ -795,7 +797,7 @@ function wInit(){
   if(p&&p.on){
     p.on("accountsChanged",a=>{
       if(!a||!a.length) wForget();
-      else { W_ADDR=a[0]; wSet(wShort(W_ADDR),W_CHAIN===W_BASE_ID?"good":"warn",""); wRender(); }
+      else { W_ADDR=a[0]; wSet(W_CHAIN===W_BASE_ID?"connected":"wrong network",W_CHAIN===W_BASE_ID?"good":"warn",""); wRender(); }
     });
     p.on("chainChanged",()=>{ if(W_ADDR) wConnect(); });
   }

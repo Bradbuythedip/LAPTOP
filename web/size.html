@@ -283,7 +283,20 @@ const SEL={slot0:"0x3850c7bd",liquidity:"0x1a686502",fee:"0xddca3f43",tickSpacin
   stable:"0x22be3de1",getReserves:"0x0902f1ac",token0:"0x0dfe1681",token1:"0xd21220a7",
   decimals:"0x313ce567",symbol:"0x95d89b41",balanceOf:"0x70a08231",factory:"0xc45a0155",
   getFee:"0xcc56b2c5"};
-const DEFAULT_RPC=localStorage.getItem("laptop.rpc")||"https://mainnet.base.org";
+const DEFAULT_RPC=localStorage.getItem("laptop.rpc")||"/api/rpc";
+/* THE ENDPOINT FALL-THROUGH. RPC points at a same-origin path so a keyed endpoint can live
+   server-side — a vendor URL in a static file is a bearer credential handed to everyone who
+   views source, and referrer restriction cannot save it because every fetch here sets
+   no-referrer. But until that path is deployed it 404s, and a page that only knows about it
+   is a page that is down. So: try it, fall through to the public endpoint once, remember. */
+const RPC_PUBLIC="https://mainnet.base.org";
+let RPC_FELL=false;
+function rpcFallThrough(){
+  if(RPC_FELL) return false;
+  RPC_FELL=true;
+  return true;
+}
+
 const Q96=2**96;
 const CHAIN_ID=8453;
 
@@ -340,9 +353,14 @@ let RPC=DEFAULT_RPC;
 async function rpcCall(method,params,timeout=9000){
   const ctl=new AbortController(); const t=setTimeout(()=>ctl.abort(),timeout);
   try{
-    const r=await fetch(RPC,{method:"POST",headers:{"content-type":"application/json"},
+    let r=await fetch(RPC,{method:"POST",headers:{"content-type":"application/json"},
       body:JSON.stringify({jsonrpc:"2.0",id:1,method,params}),signal:ctl.signal,
       cache:"no-store",referrerPolicy:"no-referrer"});
+    if(!r.ok && RPC!==RPC_PUBLIC && rpcFallThrough()){
+      RPC=RPC_PUBLIC;
+      r=await fetch(RPC,{method:"POST",headers:{"content-type":"application/json"},
+        body:JSON.stringify({jsonrpc:"2.0",id:1,method,params}),signal:ctl.signal,cache:"no-store",referrerPolicy:"no-referrer"});
+    }
     if(!r.ok) return {ok:false,reason:r.status===429?"rate limited (429)":"HTTP "+r.status};
     const j=await r.json();
     if(j.error) return {ok:false,reason:"node error: "+(j.error.message||"").slice(0,80)};
@@ -355,9 +373,15 @@ async function rpcCall(method,params,timeout=9000){
 async function batch(calls){
   const ctl=new AbortController(); const t=setTimeout(()=>ctl.abort(),20000);
   try{
-    const r=await fetch(RPC,{method:"POST",headers:{"content-type":"application/json"},
+    let r=await fetch(RPC,{method:"POST",headers:{"content-type":"application/json"},
       body:JSON.stringify(calls.map((c,i)=>({jsonrpc:"2.0",id:i,method:c.m,params:c.p}))),
       signal:ctl.signal,cache:"no-store",referrerPolicy:"no-referrer"});
+    if(!r.ok && RPC!==RPC_PUBLIC && rpcFallThrough()){
+      RPC=RPC_PUBLIC;
+      r=await fetch(RPC,{method:"POST",headers:{"content-type":"application/json"},
+        body:JSON.stringify(calls.map((c,i)=>({jsonrpc:"2.0",id:i,method:c.m,params:c.p}))),
+        signal:ctl.signal,cache:"no-store",referrerPolicy:"no-referrer"});
+    }
     if(!r.ok) throw new Error("HTTP "+r.status);
     const j=await r.json();
     if(!Array.isArray(j)) throw new Error("no batch");
@@ -791,6 +815,7 @@ function wRender(){
     out.appendChild(n);
   }
   out.style.display="block";
+  const c=$("wConnect"); if(c) c.style.display="none";
   const d=$("wDisconnect"); if(d) d.style.display="";
 }
 
@@ -831,7 +856,7 @@ async function wConnect(){
     }catch(e){ /* declined, or Base not added — reported in the table, never forced */ }
   }
   W_BAL=await wBalances(prov,W_ADDR);
-  wSet(wShort(W_ADDR),W_CHAIN===W_BASE_ID?"good":"warn","");
+  wSet(W_CHAIN===W_BASE_ID?"connected":"wrong network",W_CHAIN===W_BASE_ID?"good":"warn","");
   wRender();
   return true;
 }
@@ -843,6 +868,7 @@ function wForget(){
   wSet("not connected","","Forgotten here. To revoke the connection itself, use "+
     "Phantom → Settings → Connected apps.");
   wRender();
+  const c=$("wConnect"); if(c) c.style.display="";
   const d=$("wDisconnect"); if(d) d.style.display="none";
 }
 
@@ -853,7 +879,7 @@ function wInit(){
   if(p&&p.on){
     p.on("accountsChanged",a=>{
       if(!a||!a.length) wForget();
-      else { W_ADDR=a[0]; wSet(wShort(W_ADDR),W_CHAIN===W_BASE_ID?"good":"warn",""); wRender(); }
+      else { W_ADDR=a[0]; wSet(W_CHAIN===W_BASE_ID?"connected":"wrong network",W_CHAIN===W_BASE_ID?"good":"warn",""); wRender(); }
     });
     p.on("chainChanged",()=>{ if(W_ADDR) wConnect(); });
   }

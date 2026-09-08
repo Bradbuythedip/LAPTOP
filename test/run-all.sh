@@ -36,6 +36,7 @@ suite "solidity: contracts/Snooze.sol (compiled and executed)" test/run-snooze.m
 suite "solidity: Snooze + PooledLaunchBuy wired together" test/run-wiring.mjs node
 suite "solidity: contracts/SnoozeLaunchpad.sol (compiled and executed)" test/run-launchpad.mjs node
 suite "solidity: contracts/SnoozeCurve.sol (virtual liquidity, compiled and executed)" test/run-curve.mjs node
+suite "solidity: contracts/SnoozeGate.sol (why you need SNOOZE to get LAPTOP)" test/run-gate.mjs node
 suite "solidity: is any of it deployable? (EIP-170/3860, real ctor args)" test/run-deployable.mjs node
 suite "python: laptop_base edge cases" test/test_laptop_base.py python3
 suite "python: patched script integration" test/test_scripts.py python3
@@ -57,7 +58,9 @@ awk -v readme=README.md '
   END {
     bad = 0
     while ((getline line < readme) > 0) {
-      if (match(line, /^\*\*[0-9]+ assertions across [a-z]+ suites\.\*\*/)) {
+      # [a-z]+ does not match "twenty-one", so the headline read as absent rather than as
+      # wrong — a check reporting the wrong failure is worse than one reporting none.
+      if (match(line, /^\*\*[0-9]+ assertions across [a-z-]+ suites\.\*\*/)) {
         said = line; gsub(/[^0-9]/, "", said) + 0
         headline = said + 0; seenhead = 1
       }

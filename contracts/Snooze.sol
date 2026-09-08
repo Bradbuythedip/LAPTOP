@@ -42,7 +42,7 @@ interface ITwapOracle {
 ///     immutable. At the default the supply claim is exactly true. Above zero it is not, and
 ///     `supplyOnlyFalls()` returns false so the site cannot claim otherwise by accident.
 contract Snooze {
-    string public constant name = "Snooze";
+    string public constant name = "Snooze Bear";
     string public constant symbol = "SNOOZE";
     uint8  public constant decimals = 18;
 
@@ -215,12 +215,28 @@ contract Snooze {
         return true;
     }
 
+    /// @dev BOTH rules fire on the same condition — a sell by a non-exempt address — and that
+    ///      is a correction, not a simplification. The cap used to apply to EVERY outbound
+    ///      transfer, which sounded stronger and made the token unusable:
+    ///
+    ///      The cap is 20% of a balance that INCLUDES the amount being sent, so a contract that
+    ///      receives N and forwards N needs `N <= 0.2*(B+N)`, i.e. `N <= B/4` — four times the
+    ///      trade parked permanently. Every router, aggregator, settler and wallet swap widget
+    ///      is exactly that shape, so they reverted on BUYS as well as sells. A CEX deposit
+    ///      address, which sweeps 100% of its balance, could never be emptied: measured, it
+    ///      stranded 400 of 500 tokens and then the allowance floored to zero, permanently.
+    ///
+    ///      What the wider rule bought was "moving to a fresh wallet is throttled too", and it
+    ///      bought almost nothing, because the cap is split-invariant either way: one wallet
+    ///      with B sells 0.2B a day, and n wallets holding B/n each sell 0.2B/n, which is the
+    ///      same 0.2B. Splitting was never an evasion. So the wide rule cost every integration
+    ///      on Base and prevented a thing that was not possible anyway.
     function _move(address from, address to, uint256 v) internal {
         require(balanceOf[from] >= v, "balance");
-        _chargeWindow(from, v);
 
         uint256 delivered = v;
         if (isPool[to] && !capExempt[from]) {
+            _chargeWindow(from, v);
             // A sell. The haircut never touches a buy, a wallet-to-wallet move, or the pool
             // paying a buyer out — only tokens going INTO the market.
             (uint256 d, uint256 b, uint256 g) = quoteSell(v);

@@ -609,14 +609,17 @@ console.log("── the README's test inventory adds up");
     ok(`${f} is a suite that still exists`, onDisk.includes(f),
        "the README lists a suite that has been deleted or renamed");
 
-  const head = readme.match(/\*\*(\d+) assertions across (\w+) suites\.\*\*/);
+  // \w does not include the hyphen, so "twenty-one" did not match and the check reported the
+  // headline missing rather than wrong — a false alarm that hides a real one.
+  const head = readme.match(/\*\*(\d+) assertions across ([\w-]+) suites\.\*\*/);
   ok("the README states a headline total", !!head);
   if (head) {
     const sum = [...listed.values()].reduce((a, b) => a + b, 0);
     ok("the headline total is the sum of the per-suite counts", Number(head[1]) === sum,
        `README says ${head[1]}, its own list adds to ${sum}`);
     const WORDS = { fourteen: 14, fifteen: 15, sixteen: 16, seventeen: 17, eighteen: 18,
-                    nineteen: 19, twenty: 20 };
+                    nineteen: 19, twenty: 20, "twenty-one": 21, "twenty-two": 22,
+                    "twenty-three": 23, "twenty-four": 24, "twenty-five": 25 };
     ok("the headline suite count matches how many suites there are",
        WORDS[head[2]] === onDisk.length,
        `README says ${head[2]} (${WORDS[head[2]]}), there are ${onDisk.length}`);

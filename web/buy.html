@@ -270,7 +270,20 @@ const SEL={getPair:"0xe6a43905",getPoolV3:"0x1698ee82",getPoolAero:"0x79bc57d5",
   feeTick:"0x22afcccb",slot0:"0x3850c7bd",liquidity:"0x1a686502",getReserves:"0x0902f1ac",
   token0:"0x0dfe1681",decimals:"0x313ce567",balanceOf:"0x70a08231",fee:"0xddca3f43"};
 const CHAIN_ID=8453, Q96=2**96;
-let RPC=localStorage.getItem("laptop.rpc")||"https://mainnet.base.org";
+let RPC=localStorage.getItem("laptop.rpc")||"/api/rpc";
+/* THE ENDPOINT FALL-THROUGH. RPC points at a same-origin path so a keyed endpoint can live
+   server-side — a vendor URL in a static file is a bearer credential handed to everyone who
+   views source, and referrer restriction cannot save it because every fetch here sets
+   no-referrer. But until that path is deployed it 404s, and a page that only knows about it
+   is a page that is down. So: try it, fall through to the public endpoint once, remember. */
+const RPC_PUBLIC="https://mainnet.base.org";
+let RPC_FELL=false;
+function rpcFallThrough(){
+  if(RPC_FELL) return false;
+  RPC_FELL=true;
+  return true;
+}
+
 
 /* ---- swap math: identical to web/size.html, same virtual-reserve form ---- */
 function v2Out(amountIn,reserveIn,reserveOut,feeBps){
@@ -289,8 +302,13 @@ const spotPrice=(sqrtP,z,dIn,dOut)=>(z?sqrtP*sqrtP:1/(sqrtP*sqrtP))*10**(dIn-dOu
 async function post(body,ms=20000){
   const ctl=new AbortController(), t=setTimeout(()=>ctl.abort(),ms);
   try{
-    const r=await fetch(RPC,{method:"POST",headers:{"content-type":"application/json"},
+    let r=await fetch(RPC,{method:"POST",headers:{"content-type":"application/json"},
       body:JSON.stringify(body),signal:ctl.signal,cache:"no-store",referrerPolicy:"no-referrer"});
+    if(!r.ok && RPC!==RPC_PUBLIC && rpcFallThrough()){
+      RPC=RPC_PUBLIC;
+      r=await fetch(RPC,{method:"POST",headers:{"content-type":"application/json"},
+        body:JSON.stringify(body),signal:ctl.signal,cache:"no-store",referrerPolicy:"no-referrer"});
+    }
     if(!r.ok) return {ok:false,reason:r.status===429?"rate limited (429)":"HTTP "+r.status};
     const txt=await r.text();
     try{ return {ok:true,body:JSON.parse(txt)}; }
@@ -662,6 +680,7 @@ function wRender(){
     out.appendChild(n);
   }
   out.style.display="block";
+  const c=$("wConnect"); if(c) c.style.display="none";
   const d=$("wDisconnect"); if(d) d.style.display="";
 }
 
@@ -702,7 +721,7 @@ async function wConnect(){
     }catch(e){ /* declined, or Base not added — reported in the table, never forced */ }
   }
   W_BAL=await wBalances(prov,W_ADDR);
-  wSet(wShort(W_ADDR),W_CHAIN===W_BASE_ID?"good":"warn","");
+  wSet(W_CHAIN===W_BASE_ID?"connected":"wrong network",W_CHAIN===W_BASE_ID?"good":"warn","");
   wRender();
   return true;
 }
@@ -714,6 +733,7 @@ function wForget(){
   wSet("not connected","","Forgotten here. To revoke the connection itself, use "+
     "Phantom → Settings → Connected apps.");
   wRender();
+  const c=$("wConnect"); if(c) c.style.display="";
   const d=$("wDisconnect"); if(d) d.style.display="none";
 }
 
@@ -724,7 +744,7 @@ function wInit(){
   if(p&&p.on){
     p.on("accountsChanged",a=>{
       if(!a||!a.length) wForget();
-      else { W_ADDR=a[0]; wSet(wShort(W_ADDR),W_CHAIN===W_BASE_ID?"good":"warn",""); wRender(); }
+      else { W_ADDR=a[0]; wSet(W_CHAIN===W_BASE_ID?"connected":"wrong network",W_CHAIN===W_BASE_ID?"good":"warn",""); wRender(); }
     });
     p.on("chainChanged",()=>{ if(W_ADDR) wConnect(); });
   }

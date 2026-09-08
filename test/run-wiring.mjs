@@ -99,12 +99,20 @@ console.log("── the happy path, end to end");
      (await bal(x, A)) + (await bal(x, B)) <= got);
 }
 
-console.log("── the wiring bug: Rule 2 throttles the distribution");
+// THE WIRING BUG IS GONE, and this is the record of that rather than of the bug.
+//
+// It used to be the whole reason to run these two together: claim() is an outbound transfer
+// from the pool contract, the 20%/day cap applied to every outbound transfer, and so a
+// distribution where anyone was owed more than 20% of the bag could not complete — ever,
+// because the baseline shrank each day and never caught up.
+//
+// The cap now measures SELLS — transfers INTO a registered pool — and claim() is not one. So
+// the distribution completes with no exemption at all. That is a consequence of fixing the
+// pass-through defect (a router receiving N and forwarding N needed 4N parked, so every
+// aggregator reverted on buys as well as sells), and it is worth stating plainly: the
+// launchpad's setCapExempt(pooledBuy) call is no longer what makes distribution work.
+console.log("── the wiring bug the cap change removed");
 {
-  // This is the whole reason to run the two together. PooledLaunchBuy.claim() is an OUTBOUND
-  // transfer from the pool contract, so Snooze's 20%/day cap applies to it. Without an
-  // exemption the distribution cannot complete: the fifth claimant is refused, and the pool's
-  // baseline shrinks each day so it never catches up.
   const x = await launch({ exemptPool: false });
   for (const who of [A, B, C]) await fund(x.evm, who, 1000n * E);
   await call(x.pool, "deposit()", [], { from: A, value: 1n * E, timestamp: T_OPEN });
@@ -112,33 +120,22 @@ console.log("── the wiring bug: Rule 2 throttles the distribution");
   await call(x.pool, "deposit()", [], { from: C, value: 1n * E, timestamp: T_OPEN });
   await call(x.pool, "execute(uint256)", [0], { from: A, timestamp: T_EXEC });
 
-  const first = await call(x.pool, "claim()", [], { from: A, timestamp: T_EXEC });
-  ok("the first claimant gets 33%, which is over the 20% cap, and is REFUSED",
-     !first.ok, "if this passes, the cap is not being applied to the distribution");
-
-  // And it is not a timing problem that waiting fixes: each depositor's share is a third of
-  // the bag, and no single day ever allows a third.
-  const later = await call(x.pool, "claim()", [], { from: A, timestamp: T_EXEC + DAY * 30 });
-  ok("and still refused thirty days later, because the share is fixed and the cap is not",
-     !later.ok);
-}
-{
-  // With the exemption the same distribution completes in one block.
-  const x = await launch({ exemptPool: true });
-  for (const who of [A, B, C]) await fund(x.evm, who, 1000n * E);
-  for (const who of [A, B, C])
-    await call(x.pool, "deposit()", [], { from: who, value: 1n * E, timestamp: T_OPEN });
-  await call(x.pool, "execute(uint256)", [0], { from: A, timestamp: T_EXEC });
-  let allOk = true;
-  for (const who of [A, B, C]) {
+  // A third each, which is over the old 20% and used to be refused outright.
+  for (const [who, name] of [[A, "first"], [B, "second"], [C, "third"]]) {
     const r = await call(x.pool, "claim()", [], { from: who, timestamp: T_EXEC });
-    if (!r.ok) allOk = false;
+    ok(`the ${name} claimant receives a third, with no exemption anywhere`, r.ok, r.revert);
   }
-  ok("exempting the distributor lets every claim settle immediately", allOk);
-  const got = (await call(x.pool, "tokensReceived()")).words[0];
-  const sum = (await bal(x, A)) + (await bal(x, B)) + (await bal(x, C));
-  ok("and the three shares still never exceed what arrived", sum <= got, `${sum} > ${got}`);
-  ok("with only dust left behind", got - sum < 10n, String(got - sum));
+  const total = (await bal(x, A)) + (await bal(x, B)) + (await bal(x, C));
+  ok("and the three of them together get the whole bag", total > 0n, String(total));
+  const left = await call(x.tok, "balanceOf(address)", [x.pool.address.toString()]);
+  ok("leaving the distributor with nothing but rounding dust", left.words[0] < 10n,
+     String(left.words[0]));
+
+  // What capExempt still means, now that it means one thing: the holder may SELL without the
+  // cap and without the burn. That is the launcher's exemption, and it is the only one that
+  // does anything.
+  const exempt = await call(x.tok, "capExempt(address)", [x.pool.address.toString()]);
+  ok("the distributor is not exempt, and does not need to be", !exempt.words[0]);
 }
 
 console.log("── but the exemption is a hole, so it must be bounded");

@@ -79,15 +79,15 @@ file and opening it locally removes the hosting party from the trust question en
 Published build `2026-09-08a`:
 
 ```
-sha256(web/index.html)   = 671fe8da042810cb2082d2a27cbeb9805dc9f84dadc11321be1ddaa579606f58
-sha256(web/buy.html)     = 22599395fae6b4961e1cacbb5c7c7377d9aad803b503b0f561099e4b939a037d
-sha256(web/checker.html) = dba98abcc786bfe9da93c947c42350d8437d3729cfd7de4171751310e05716eb
-sha256(web/size.html)    = d35504a3248a34fff23257524de797dcb93502f14be87406a0ec28cca14c30c5
-sha256(web/route.html)   = 51447c4aea769adb62e9fae568dec397c38b42a3013ee0ec96e01158306fc106
-sha256(web/order.html)   = fe6f8b6541e4d130c2c6479f5e92f89eefa028555423f3482230629829f1d8ff
-sha256(web/slot.html)    = 4ba9b18da2f5f27803e42af72edf32006175216570ff51e1a8b3b4a500e38af2
+sha256(web/index.html)   = bb2035b42c7d19f4c277ea8ae2b72c5cf23a8bf44ea4596adb8895b2dd4911f5
+sha256(web/buy.html)     = af3a9400230b04c05cf39551b350df3af7a0a8017a30ccde9fa00aa5492213fe
+sha256(web/checker.html) = 6bd11830f2b24414da1526e02f75401a2149a6a170a003539c771246d12b1735
+sha256(web/size.html)    = 44079d063a4fd69485d417e91def3dc1f14db9d23834b6049eb88f9896eee496
+sha256(web/route.html)   = 2391fb5a910a6969c2b2421a9a1340163c949e7f1efdd0736707f4fb6545990e
+sha256(web/order.html)   = 6bf2ed923a53495afa3847d641cb8fd37b3078c13145fd43deaf80f85cecb8eb
+sha256(web/slot.html)    = ff02df3549c3bde329456ae8565452dcf2d70ec6f24fdf4ff6dd227b5c4bff75
 sha256(web/launch.html)  = 386009886adc54c2bce639ce68259b38005ebfebadad22153e131438e0da0caa
-sha256(web/snooze.html)  = af52292a0f32cf44e32e2b609fcc677430dc2d08b29f2effc11a357f052086fb
+sha256(web/snooze.html)  = 97eb7aa63998d04f811ca62c07736ae8adae747b8fda47fba3122f15dbdcc9b8
 ```
 
 ### Tests
@@ -96,9 +96,9 @@ sha256(web/snooze.html)  = af52292a0f32cf44e32e2b609fcc677430dc2d08b29f2effc11a3
 sh test/run-all.sh         # everything below, no network touched
 ```
 
-**1571 assertions across twenty suites.**
+**1650 assertions across twenty-one suites.**
 
-`test/run.mjs` — 340, drives the real page in Chromium against `test/mock-rpc.mjs`: Keccak vectors,
+`test/run.mjs` — 342, drives the real page in Chromium against `test/mock-rpc.mjs`: Keccak vectors,
 the four EIP-55 reference addresses, the v4 poolId derivation checked against a real Base pool
 id, ABI-string decoding (including a 10-character name, whose length word contains a hex
 letter, and truncated/absurd offsets), result-length discipline, and full flows for the happy
@@ -124,7 +124,7 @@ of the JavaScript, plus properties a size curve lives or dies on: output rises w
 effective price strictly worsens, a fee costs exactly its rate at the limit, deeper liquidity
 fills better, and no fill can exceed the output-side virtual reserve. Emits the fixture below.
 
-`test/run-index.mjs` — 138, drives the $SNOOZE landing page. Most of it is about one
+`test/run-index.mjs` — 142, drives the $SNOOZE landing page. Most of it is about one
 distinction: a plot of a FORMULA and a plot of a MARKET look identical from three feet away, so
 the suite asserts which one is on screen. With nothing deployed the chart shows Rule 1 itself —
 exact, checkable against `burnBps()` in the contract, labelled *this is arithmetic, not a
@@ -175,12 +175,12 @@ cap and its construction-time validation, the turn-off, rounding that conserves 
 freezable exemption list, and the three ramp units measured against each other for splitting
 evasion and same-block fairness.
 
-`test/run-snooze.mjs` — 76, compiles `contracts/Snooze.sol` and executes both rules. Most of it
+`test/run-snooze.mjs` — 87, compiles `contracts/Snooze.sol` and executes both rules. Most of it
 tests the SPEC rather than the code: that a dump is free, that sleeping does not bank the
 spike, that the dial is also the buyer's instant loss, that an unregistered venue is outside
 both rules, that the oracle fails open, and that "no lock" is false.
 
-`test/run-wiring.mjs` — 35, Snooze and PooledLaunchBuy joined. Both pass alone and the
+`test/run-wiring.mjs` — 36, Snooze and PooledLaunchBuy joined. Both pass alone and the
 distribution still cannot complete: `claim()` is an outbound transfer and the 20%/day cap
 applies to it. Also carries the axiomatics — the decay condition, depth-versus-appreciation,
 and what a large supply does and does not buy.
@@ -195,10 +195,27 @@ implementations, one answer), that the leftover at graduation is exactly `curveS
 the pool opens AT the curve's closing price rather than below it, and that a token which burns
 part of a sale on its way in is priced on what arrived rather than on what was sent.
 
-`bond_model.py` — 16, the curve's arithmetic derived and checked against a simulated walk up it:
+`bond_model.py` — 32, the curve's arithmetic derived and checked against a simulated walk up it:
 the price multiple `((E0+R)/E0)²`, the real ETH to reach a multiple `E0(√m−1)`, the fraction sold
-`1−1/√m`, and the graduation leftover `1/m`. It also prints the table that answers the depth
-question, because depth and speed turn out to be one dial and not two.
+`1−1/√m`, and the graduation leftover `1/m`. It also settles the depth question, and not
+the way the question is usually asked: a buy of `dE` at reserve `E` costs exactly `dE/E`, so the
+number of buys it takes to bond is `ceil((√m−1)/x)` for a slippage `x` per buy — **and `E0` is
+not in that formula.** Halving everyone's slippage exactly doubles the raise and leaves the
+count untouched at 109 buys. Virtual ETH sets what a comfortable ticket is denominated in; it
+does not buy depth. It also records the cliff that runs the wrong way: slippage improves all the
+way up the curve and then gets 1.46× *worse* at graduation, because only the real ETH goes into
+the pool and the virtual part does not exist to move.
+
+`test/run-gate.mjs` — 45, compiles `contracts/SnoozeGate.sol`, which is the reason you need
+$SNOOZE to get LAPTOP: an allocation claimable in proportion to what you held at one block. The
+design question the suite is really about is that **a gate which makes people buy a token that
+is expensive to exit is a trap** — so it checks there is no way for the contract to hold, lock
+or take anybody's $SNOOZE at all (no `transferFrom`, nothing payable, no deposit or stake or
+vault, and none of it in the ABI), alongside the ordinary Merkle work: somebody else's proof
+does not work for you, a bigger number with a real proof does not work, there is no
+`claimFor`, and after every attempt the gate still holds the whole allocation. The snapshot's
+honest weakness — a balance at a block can be borrowed for one block — is written into the
+contract rather than left for somebody to find.
 
 `test/run-deployable.mjs` — 32, the go/no-go before a wallet is opened: every runtime under
 EIP-170 and every init code under EIP-3860 (the launchpad is the big one at 52.9% of the
@@ -369,9 +386,25 @@ now exempts itself, and the exemption dies with the freeze three lines later.
 1. **You sell at yesterday's price.** If spot is above the 24-hour average, only `twap/spot`
    of what you send reaches the pool and the rest burns. `burnBps = (spot − twap)/spot`. At
    spot 70% over the average that is **41%** — the number on the dial.
-2. **Nobody can nuke it.** No wallet moves more than 20% of its balance per rolling day,
+2. **Nobody can nuke it.** No wallet *sells* more than 20% of its balance per rolling day,
    baselined on the balance at the *start* of the window. Charging 20% of the current balance
    each time would allow 20%, then 20% of the remaining 80%, and so on.
+
+   It used to cap every outbound transfer, and that had to change. The cap is 20% of a balance
+   that INCLUDES the amount being sent, so a contract receiving N and forwarding N needs
+   `N ≤ 0.2(B+N)`, i.e. four times the trade parked permanently — which is the shape of every
+   router, aggregator, settler and wallet swap widget, so they reverted on **buys** as well as
+   sells. A deposit address sweeping 100% of its balance could never be emptied: measured, it
+   stranded 400 of 500 tokens and then the allowance floored to zero. What the wider rule
+   bought was "moving to a fresh wallet is throttled too", and it bought nothing, because the
+   cap is split-invariant either way — one wallet with B sells 0.2B a day, and n wallets
+   holding B/n each sell 0.2B/n, the same 0.2B. It cost every integration on Base to prevent
+   something that was never possible. `run-snooze.mjs` drives both halves of that.
+
+   One consequence worth recording: this removed the wiring bug the launchpad was built to
+   prevent. `claim()` is a transfer to a plain address, not a sell, so a distribution completes
+   with no exemption at all. `capExempt` now means exactly one thing — this holder may sell
+   without the cap and without the burn — which is the launcher's exemption and nothing else.
 
 **Three of the pitch's claims are false as written, and the tests say so rather than the
 marketing.** Each is asserted in `run-snooze.mjs` and stated on the page itself.
