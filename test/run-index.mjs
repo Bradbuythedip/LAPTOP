@@ -310,6 +310,65 @@ console.log("── Base blue where it clears contrast, and nowhere else");
   ok("and the page names the chain and its id", /Base/.test(body) && /8453/.test(body));
 }
 
+console.log("── the owner view is a convenience and says so");
+{
+  ok("it is hidden with no wallet connected", await page.isHidden("#ownerPanel"));
+  // Injecting an account the way Phantom would, to check the match is on the address and not
+  // on merely being connected.
+  // Driving the decision directly rather than through a reload: page.evaluate sets
+  // window.phantom and page.reload immediately wipes it, so the injected wallet was never
+  // there when the page looked for it and the panel stayed hidden for the right address.
+  const show = async who => {
+    await page.evaluate(a => window.__OWNER.view(a), who);
+    await page.waitForTimeout(50);
+  };
+  await show("0x00000000000000000000000000000000deadbeef");
+  ok("and stays hidden for a wallet that is not the owner",
+     await page.isHidden("#ownerPanel"));
+  await show("0x4296e9A65582358221EEd0e9A2B4EC94ad4F5929");
+  ok("it appears for the owner's address, whatever its casing",
+     await page.isVisible("#ownerPanel"));
+  const t = flat(await txt("#ownerPanel"));
+  ok("and says outright that it is a convenience, not a permission",
+     /convenience, not a permission/i.test(t), t.slice(0, 120));
+  ok("and names what the real gate is", /onlyOwner/.test(t));
+  ok("the fee destination shown is the owner",
+     (await txt("#oFees")).toLowerCase() === "0x4296e9a65582358221eed0e9a2b4ec94ad4f5929",
+     await txt("#oFees"));
+  await show(null);
+  ok("disconnecting hides it again", await page.isHidden("#ownerPanel"));
+  // And the load-time path, which is the one a real visitor takes: an already-connected wallet
+  // is read with eth_accounts and nothing is prompted.
+  const ctx2 = await browser.newContext({ viewport: { width: 375, height: 900 } });
+  await ctx2.addInitScript(a => {
+    window.phantom = { ethereum: {
+      request: ({ method }) => Promise.resolve(method === "eth_accounts" ? [a] : null),
+      on(){} } };
+  }, "0x4296e9A65582358221EEd0e9A2B4EC94ad4F5929");
+  const p2 = await ctx2.newPage();
+  const asked = [];
+  await p2.exposeFunction("__note", m => asked.push(m));
+  await p2.goto(SITE + "/", { waitUntil: "load" });
+  await p2.waitForTimeout(300);
+  ok("an already-connected owner sees it on load, with no prompt",
+     await p2.isVisible("#ownerPanel"));
+  await ctx2.close();
+}
+
+console.log("── disclosures look like disclosures");
+{
+  // Checked across the site, not only here: a <summary> styled as dim text is a control whose
+  // only signifier somebody removed.
+  for (const f of ["index.html", "checker.html", "buy.html", "size.html", "slot.html"]) {
+    const src = fs.readFileSync(path.join(ROOT, "web", f), "utf8");
+    if (!/<summary/.test(src)) { ok(`${f} has no disclosure to signpost`, true); continue; }
+    ok(`${f} gives its disclosures a caret`,
+       /summary::before\{content:""/.test(src.replace(/\s+/g, "")) ||
+       /summary::before/.test(src), "a summary with no marker");
+    ok(`${f} gives them a real tap target`, /summary\{[^}]*min-height:3\dpx/.test(src));
+  }
+}
+
 console.log("── the tools are places to go, not a row of buttons");
 {
   const tools = await page.$$eval(".tools a", els => els.map(e => {

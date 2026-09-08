@@ -236,6 +236,8 @@ ul{margin:0;padding-left:18px} li{margin-bottom:5px}
 .copy:hover{border-color:var(--gold);color:var(--goldHi)}
 .copy:active{transform:translateY(1px)}
 .copy:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
+.owner{border-left:3px solid var(--gold)}
+.owner[hidden]{display:none}
 .pair{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:2px 0 0}
 .pill{display:inline-flex;align-items:center;gap:7px;padding:7px 12px;border-radius:999px;
   font-weight:700;font-size:14px;background:var(--goldSoft);border:1.5px solid var(--gold);
@@ -444,6 +446,19 @@ tbody tr:last-child td{border-bottom:0}
     <li><b>No audit, no testnet run.</b> Nothing here has been either.</li>
   </ul>
 </div>
+
+<section class="card owner" id="ownerPanel" hidden>
+  <div class="hdr"><h2>Launch status</h2><span class="badge gold">owner</span></div>
+  <p class="tiny dim" style="margin:0 0 10px">Visible because the connected wallet matches the
+  deployer's owner. <b>This is a convenience, not a permission.</b> Nothing here can send a
+  transaction, and hiding it from everybody else protects nobody &mdash; the real gate is
+  <span class="mono">onlyOwner</span> on the deployer, which a stranger cannot pass whatever
+  this page renders.</p>
+  <div class="ca"><span class="k">deployer</span><code class="v" id="oDeployer">not deployed</code></div>
+  <div class="ca"><span class="k">$SNOOZE</span><code class="v" id="oToken">not deployed</code></div>
+  <div class="ca"><span class="k">LAPTOP curve</span><code class="v" id="oCurve">not deployed</code></div>
+  <div class="ca"><span class="k">fees to</span><code class="v" id="oFees">&mdash;</code></div>
+</section>
 
 <h1 style="margin-top:26px">Tools</h1>
 <p class="sub">Read-only. None of them ask you to sign anything.</p>
@@ -806,6 +821,39 @@ const GATE_MIN_TEXT = "$SNOOZE";   // set to the real minimum once the curve is 
     setTimeout(() => { c.textContent = "copy"; }, 1400);
   });
 })();
+
+/* THE OWNER VIEW. Shown when the connected wallet is the deployer's owner, and worth being
+   precise about what that is and is not: it is a convenience, not a permission. A page cannot
+   enforce anything — anybody can open devtools and unhide this — and it does not need to,
+   because the deployer refuses a stranger on chain. Hiding it is about not showing everyone a
+   panel that is no use to them, not about keeping anyone out. */
+const OWNER = "0x4296e9a65582358221eed0e9a2b4ec94ad4f5929";
+const DEPLOYER_ADDR = "";
+function ownerView(addr){
+  const panel = $("ownerPanel");
+  if(!panel) return;
+  const match = !!addr && addr.toLowerCase() === OWNER;
+  panel.hidden = !match;
+  if(!match) return;
+  const set = (id, v) => { const e = $(id); if(e) e.textContent = v || "not deployed"; };
+  set("oDeployer", DEPLOYER_ADDR);
+  set("oToken", SNOOZE_TOKEN);
+  set("oCurve", LAPTOP_CURVE);
+  set("oFees", OWNER);
+}
+(function(){
+  // No prompt on load. The panel appears if a wallet is ALREADY connected and it is the right
+  // one; asking every visitor to connect so one of them can see a status card is backwards.
+  const p = (window.phantom && window.phantom.ethereum) ||
+            (window.ethereum && window.ethereum.isPhantom ? window.ethereum : null);
+  if(!p || !p.request) return;
+  p.request({ method: "eth_accounts" })
+   .then(a => ownerView(a && a[0]))
+   .catch(() => {});
+  if(p.on) p.on("accountsChanged", a => ownerView(a && a[0]));
+})();
+
+window.__OWNER = { view: ownerView, owner: OWNER };
 
 showPool();
 loadLive();

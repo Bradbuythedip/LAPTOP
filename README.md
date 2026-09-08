@@ -79,9 +79,9 @@ file and opening it locally removes the hosting party from the trust question en
 Published build `2026-09-08a`:
 
 ```
-sha256(web/index.html)   = bd01d01a2f634ebf8233355b99dbba6a15f2f61af3e717f1a9d62d0286020344
+sha256(web/index.html)   = db884de9945316e6458d6b9af3c112c1c04c2a487998c594cfc581e462061db1
 sha256(web/buy.html)     = 2e41166e2adee2b4d823e766a13ed39c3e8376fc1522ff85c12a7abe146c1726
-sha256(web/checker.html) = 8745a407c08ee2c086d93488548a0323ea81907c49a0c3d6a7ba537b5987d97c
+sha256(web/checker.html) = f353cc03fae59f4a05d99ada22b94028e3b2e5656dca858fab33a7b461b3555e
 sha256(web/size.html)    = bbdf523d9a92489bc0a13dbd7aaecd256e0c02f66de1dc1d6ad332a9060e1fb1
 sha256(web/route.html)   = f9b02a6499d628cb315e02a4c941c0f75c934e6a4ab9197b3643c3235301bbf8
 sha256(web/order.html)   = 56e8927d76863a91ab8b2faef7e9b83e9694a3e9098a84e11d57b8cb7932682c
@@ -96,9 +96,9 @@ sha256(web/snooze.html)  = 853fd2c8e91db008592707307be8c0a45bc3229c3ed0d78efbf59
 sh test/run-all.sh         # everything below, no network touched
 ```
 
-**1699 assertions across twenty-two suites.**
+**1722 assertions across twenty-two suites.**
 
-`test/run.mjs` — 344, drives the real page in Chromium against `test/mock-rpc.mjs`: Keccak vectors,
+`test/run.mjs` — 353, drives the real page in Chromium against `test/mock-rpc.mjs`: Keccak vectors,
 the four EIP-55 reference addresses, the v4 poolId derivation checked against a real Base pool
 id, ABI-string decoding (including a 10-character name, whose length word contains a hex
 letter, and truncated/absurd offsets), result-length discipline, and full flows for the happy
@@ -124,7 +124,7 @@ of the JavaScript, plus properties a size curve lives or dies on: output rises w
 effective price strictly worsens, a fee costs exactly its rate at the limit, deeper liquidity
 fills better, and no fill can exceed the output-side virtual reserve. Emits the fixture below.
 
-`test/run-index.mjs` — 153, drives the $SNOOZE landing page. Most of it is about one
+`test/run-index.mjs` — 167, drives the $SNOOZE landing page. Most of it is about one
 distinction: a plot of a FORMULA and a plot of a MARKET look identical from three feet away, so
 the suite asserts which one is on screen. With nothing deployed the chart shows Rule 1 itself —
 exact, checkable against `burnBps()` in the contract, labelled *this is arithmetic, not a

@@ -272,6 +272,18 @@ th{font-weight:600;letter-spacing:.04em;text-transform:uppercase;font-size:10.5p
   color:var(--dim)}
 th,td{border-bottom:1px solid rgba(255,255,255,.05)}
 tbody tr:last-child td{border-bottom:0}
+/* Disclosures. A caret that turns, a real tap target, and no borrowed button styling. */
+summary{list-style:none;cursor:pointer;display:flex;align-items:center;gap:7px;
+  min-height:36px;padding:4px 0;color:var(--baseLt);font-weight:600;
+  -webkit-tap-highlight-color:transparent}
+summary::-webkit-details-marker{display:none}
+summary::before{content:"";width:0;height:0;flex:none;
+  border-left:5px solid currentColor;border-top:4px solid transparent;
+  border-bottom:4px solid transparent;transition:transform .15s ease}
+details[open]>summary::before{transform:rotate(90deg)}
+summary:hover{color:var(--goldHi)}
+summary:focus-visible{outline:2px solid var(--gold);outline-offset:3px;border-radius:3px}
+@media (prefers-reduced-motion:reduce){ summary::before{transition:none} }
 </style>
 </head>
 <body>
