@@ -95,7 +95,7 @@ sha256(web/snooze.html)  = db91da622599c27a8b4947ba0e693027619b5164203065801514c
 sh test/run-all.sh         # everything below, no network touched
 ```
 
-**1046 assertions across thirteen suites.**
+**1200 assertions across sixteen suites.**
 
 `test/run.mjs` — 225, drives the real page in Chromium against `test/mock-rpc.mjs`: Keccak vectors,
 the four EIP-55 reference addresses, the v4 poolId derivation checked against a real Base pool
@@ -155,6 +155,20 @@ sell-tax interaction, the seed-LP exemption and whether an exempt trade advances
 cap and its construction-time validation, the turn-off, rounding that conserves every wei, the
 freezable exemption list, and the three ramp units measured against each other for splitting
 evasion and same-block fairness.
+
+`test/run-snooze.mjs` — 68, compiles `contracts/Snooze.sol` and executes both rules. Most of it
+tests the SPEC rather than the code: that a dump is free, that sleeping does not bank the
+spike, that the dial is also the buyer's instant loss, that an unregistered venue is outside
+both rules, that the oracle fails open, and that "no lock" is false.
+
+`test/run-wiring.mjs` — 35, Snooze and PooledLaunchBuy joined. Both pass alone and the
+distribution still cannot complete: `claim()` is an outbound transfer and the 20%/day cap
+applies to it. Also carries the axiomatics — the decay condition, depth-versus-appreciation,
+and what a large supply does and does not buy.
+
+`test/run-launchpad.mjs` — 37, `launch()` end to end: the wiring granted before any deposit
+can arrive, the three-way distribution that could not settle by hand settling in one block,
+every admin call from every party reverting afterwards, and the parameters it refuses.
 
 `test/run-pooled.mjs` — 65, compiles `contracts/PooledLaunchBuy.sol` and executes it against a
 hostile token (fee-on-transfer, returns-false, reentrant), a router that lies about its output
