@@ -80,7 +80,7 @@ sha256(web/route.html) = e2cce3fafbac12ddeabb9870bacd0b2b64d779292eba03b944e6242
 sha256(web/buy.html)   = 558b6318841d0d51a27bf4fc1a5cfd924ed226cfdc237516ed6a44db0ff211c5
 sha256(web/order.html) = dbcef0b37a2e710ba4103b5f85a6df400125e869e52c029f14b17a167683e175
 sha256(web/slot.html)  = 57330d5e9e10a08ff6965f249926a1066c08a73b4110966eb46cd33c4b61af97
-sha256(web/launch.html) = 2e48b7f42e6c4581e172b2fd8ff7c46a19a7c0130bd012b665a1167553b23e27
+sha256(web/launch.html) = 4fcfdf6f7a0b2d30330c60f56eb41d52c6e203ebd3be47a6a846e84428ff4fec
 ```
 
 ### Tests

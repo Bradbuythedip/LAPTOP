@@ -8,10 +8,6 @@
 <title>LAPTOP launch economics</title>
 <style>
 :root{
-  /* Light, cool, Ethereum-ish: lavender-white ground, slate text, the ETH blue-violet as the
-     one accent. Every colour here was picked against the composited ground (art + scrim +
-     card), not against a swatch — the suite recomputes the WCAG ratios and fails on a
-     regression, which is the only reason these are the exact values they are. */
   --bg:#f4f5fb; --fg:#1f2033; --dim:#565a72; --line:#dde0f0; --card:#ffffff; --cardBg:rgba(255,255,255,.92);
   --eth:#4a63d8; --ethSoft:rgba(74,99,216,.09);
   --ok:#0c6b3a; --okbg:rgba(12,107,58,.10); --bad:#b3251c; --badbg:rgba(179,37,28,.09);
@@ -54,17 +50,20 @@ th,td{text-align:right;padding:6px 4px;border-bottom:1px solid var(--line)}
 th{color:var(--dim);font-weight:500}
 th:first-child,td:first-child{text-align:left}
 td.n{font-family:var(--mono)}
-tr.best td{background:var(--okbg);color:var(--ok);font-weight:600}
 .scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
 a{color:inherit} a.ext{text-decoration:underline;text-underline-offset:2px}
 .footer{color:var(--dim);font-size:11.5px;margin:22px 0 30px;line-height:1.55}
 .hr{height:1px;background:var(--line);margin:14px 0}
 .pub{background:var(--unkbg);border:1px solid var(--line);border-radius:8px;padding:11px;
   font-family:var(--mono);font-size:12px;white-space:pre-wrap;word-break:break-word;margin-top:8px}
+/* The histogram of what the model says across worlds it cannot tell apart. Bars are drawn
+   with a border-box width, not an image, so the page still loads nothing. */
+.hist{font-family:var(--mono);font-size:12px;line-height:1.7}
+.hist .bar{display:inline-block;height:11px;background:var(--eth);border-radius:2px;
+  vertical-align:middle;margin:0 6px}
+.guess{border-left:3px solid var(--warn);padding-left:9px}
 
-/* ---- readability ----
-   Matches the other pages: nothing below 12.5px, 16px inputs so iOS does not zoom on focus,
-   and the scale grows again once there is room. */
+/* ---- readability ---- */
 body{font-size:16px;line-height:1.6;max-width:680px;padding-left:16px;padding-right:16px}
 h1{font-size:21px;margin:20px 0 3px}
 .sub{font-size:13.5px;margin:0 0 16px;line-height:1.55}
@@ -101,8 +100,8 @@ html::before{
 <body>
 
 <h1>LAPTOP launch economics</h1>
-<p class="sub">What a buy tax actually earns you, and where raising it starts costing you money.
-<a href="/">checker</a> &middot; <a href="/size.html">size curve</a> &middot;
+<p class="sub">What a fee design costs the people buying, and why this page will not tell you
+which rate to pick. <a href="/">checker</a> &middot; <a href="/size.html">size curve</a> &middot;
 <a href="/buy.html">where to buy</a> &middot; <a href="/order.html">standing order</a> &middot;
 <a href="/slot.html">getting a slot</a> &middot; <a href="/route.html">get ready</a></p>
 
@@ -110,407 +109,440 @@ html::before{
   <div class="warnbox" style="margin:0">
     <b>This page is for whoever sets the launch parameters, not for buyers.</b> It does
     arithmetic on numbers you type. It does not ask you to sign anything, cannot send a
-    transaction, and does not deploy or configure anything &mdash; it tells you what a fee
-    design would do so you can pick one before it is set in a contract.
+    transaction, and does not deploy or configure anything.
   </div>
 </div>
 
 <div class="card">
-  <div class="hdr"><h2>The pool at launch</h2></div>
+  <div class="hdr"><h2>The book</h2><span class="badge good">you can estimate these</span></div>
   <div class="grid">
-    <div>
-      <label for="seedE">Seed liquidity (ETH)</label>
-      <input id="seedE" value="10" inputmode="decimal">
-    </div>
-    <div>
-      <label for="poolFee">Pool fee (%)</label>
-      <input id="poolFee" value="1" inputmode="decimal">
-    </div>
+    <div><label for="seedE">Seed liquidity (ETH)</label><input id="seedE" value="25" inputmode="decimal"></div>
+    <div><label for="poolFee">Pool fee (%)</label><input id="poolFee" value="1" inputmode="decimal"></div>
   </div>
   <div class="grid" style="margin-top:8px">
-    <div>
-      <label for="buySize">Typical buy (ETH)</label>
-      <input id="buySize" value="0.25" inputmode="decimal">
-    </div>
-    <div>
-      <label for="nBuys">Buys at zero tax</label>
-      <input id="nBuys" value="400" inputmode="decimal">
-    </div>
+    <div><label for="volume">First-hour volume at zero tax (ETH)</label><input id="volume" value="100" inputmode="decimal"></div>
+    <div><label for="snipeShare">Of that, bots (%)</label><input id="snipeShare" value="70" inputmode="decimal"></div>
   </div>
-  <p class="tiny dim" style="margin:9px 0 0">
-    &ldquo;Buys at zero tax&rdquo; is your estimate of launch-day demand if you charged nothing,
-    and it changes the answer more than it looks like it should. Once total spending is large
-    next to the seed, the pool fee and the sell tax already capture that volume, and a buy tax
-    mostly deters the buyers who would have generated it &mdash; so the best buy tax falls as
-    you expect more demand, and can reach zero. The tables below sweep a range of estimates
-    rather than trusting one.
+  <div class="grid" style="margin-top:8px">
+    <div><label for="nSnipe">How many bots</label><input id="nSnipe" value="40" inputmode="decimal"></div>
+    <div><label for="nOrg">How many people</label><input id="nOrg" value="360" inputmode="decimal"></div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="hdr"><h2>Your schedule</h2><span class="badge" id="unitBadge">&mdash;</span></div>
+  <label for="unit">The ramp advances per</label>
+  <select id="unit">
+    <option value="volume" selected>ETH of cumulative volume</option>
+    <option value="buy">buy</option>
+    <option value="block">block</option>
+  </select>
+  <div id="unitNote"></div>
+  <div class="grid" style="margin-top:8px">
+    <div><label for="start">Starting buy tax (%)</label><input id="start" value="0" inputmode="decimal"></div>
+    <div><label for="step">Added per unit (%)</label><input id="step" value="1" inputmode="decimal"></div>
+  </div>
+  <div class="grid" style="margin-top:8px">
+    <div><label for="stepUnit">ETH per step (volume unit)</label><input id="stepUnit" value="5" inputmode="decimal"></div>
+    <div><label for="cap">Cap (%)</label><input id="cap" value="10" inputmode="decimal"></div>
+  </div>
+  <div class="grid" style="margin-top:8px">
+    <div><label for="sellTax">Sell tax (%)</label><input id="sellTax" value="5" inputmode="decimal"></div>
+    <div><label for="offAfter">Turn off after N units (0 = never)</label><input id="offAfter" value="0" inputmode="decimal"></div>
+  </div>
+</div>
+
+<div class="card guess">
+  <div class="hdr"><h2>The guesses</h2><span class="badge warn">nothing here is fitted</span></div>
+  <p class="tiny dim" style="margin:0 0 8px">
+    How buyers respond to a tax. Snipers are near-unit-elastic to the buy tax and nearly
+    indifferent to the sell tax &mdash; they are out in minutes. People are the reverse: a buy
+    tax is a fee, a sell tax is a trap. Each type has a <i>knee</i>, the rate at which half of
+    them stop buying. <b>None of these have been fit to an observed book.</b> This page has no
+    network access and no launch data, so every number below is a prior, and the section under
+    it exists because the answer depends on them more than on anything you set above.
   </p>
-</div>
-
-<div class="card">
-  <div class="hdr"><h2>Your fee design</h2></div>
   <div class="grid">
-    <div>
-      <label for="tax0">Starting buy tax (%)</label>
-      <input id="tax0" value="1" inputmode="decimal">
-    </div>
-    <div>
-      <label for="taxStep">Added per 100 buys (%)</label>
-      <input id="taxStep" value="1" inputmode="decimal">
-    </div>
+    <div><label for="snipeBuyKnee">Bots: buy-tax knee (%)</label><input id="snipeBuyKnee" value="6" inputmode="decimal"></div>
+    <div><label for="snipeSellKnee">Bots: sell-tax knee (%)</label><input id="snipeSellKnee" value="40" inputmode="decimal"></div>
   </div>
   <div class="grid" style="margin-top:8px">
-    <div>
-      <label for="taxCap">Cap the buy tax at (%)</label>
-      <input id="taxCap" value="10" inputmode="decimal">
-    </div>
-    <div>
-      <label for="sellTax">Sell tax (%)</label>
-      <input id="sellTax" value="5" inputmode="decimal">
-    </div>
+    <div><label for="orgBuyKnee">People: buy-tax knee (%)</label><input id="orgBuyKnee" value="9" inputmode="decimal"></div>
+    <div><label for="orgSellKnee">People: sell-tax knee (%)</label><input id="orgSellKnee" value="7" inputmode="decimal"></div>
   </div>
   <div style="margin-top:8px">
-    <label for="elast">How many buyers walk away per 1% of tax (%)</label>
-    <input id="elast" value="6" inputmode="decimal">
-  </div>
-  <div class="warnbox">
-    <b>That last number is a guess, not a measurement.</b> Nothing on chain tells you how
-    price-sensitive your buyers are, and this page will not pretend otherwise. It is the one
-    input the answer is genuinely sensitive to, so the table below shows the optimum across a
-    range of guesses rather than a single confident number.
+    <label for="sharpness">How cliff-like the knee is</label><input id="sharpness" value="6" inputmode="decimal">
   </div>
 </div>
 
 <div class="card">
-  <div class="hdr"><h2>What you earn</h2><span class="badge" id="verdictBadge">&mdash;</span></div>
-  <div id="summary"></div>
-  <div class="scroll"><table id="curve"><tbody></tbody></table></div>
-  <p class="tiny dim" style="margin:9px 0 0">
-    Take is buy tax plus sell tax plus your share of pool fees, assuming each buyer eventually
-    sells once. The highlighted row is the design that pays you most.
+  <div class="hdr"><h2>What this cannot tell you</h2><span class="badge" id="verdictBadge">&mdash;</span></div>
+  <p class="tiny dim" style="margin:0 0 6px">
+    The best starting tax, computed in 81 worlds &mdash; every guess above halved, kept and
+    doubled. If the bars cluster, the answer is robust. If they spread, the model is reporting
+    your priors back to you.
   </p>
+  <div class="hist" id="hist"></div>
+  <div id="verdict"></div>
 </div>
 
 <div class="card">
-  <div class="hdr"><h2>How sure is that?</h2></div>
-  <p class="tiny dim" style="margin:0 0 4px">The best starting tax, if buyers turn out to be
-  more or less sensitive than you guessed.</p>
-  <div class="scroll"><table id="sens"><tbody></tbody></table></div>
-  <p class="tiny dim" style="margin:12px 0 4px">And if launch-day demand turns out bigger or
-  smaller. This is the one that moves the answer most.</p>
-  <div class="scroll"><table id="dsens"><tbody></tbody></table></div>
-  <div id="demandNote"></div>
-</div>
-
-<div class="card">
-  <div class="hdr"><h2>What a buyer pays</h2></div>
+  <div class="hdr"><h2>What a buyer pays</h2><span class="badge good">no guess involved</span></div>
+  <p class="tiny dim" style="margin:0 0 4px">
+    Pure arithmetic on your schedule and the pool fee. This is identical in all 81 worlds
+    because no demand parameter appears in it.
+  </p>
   <div class="scroll"><table id="buyer"><tbody></tbody></table></div>
-  <p class="tiny dim" style="margin:9px 0 0">
-    Effective price includes the tax, the pool fee and price impact &mdash; the same arithmetic
-    <a href="/size.html">the size curve</a> runs, so a buyer can check these numbers against it.
-    Round trip is what a buyer loses buying and selling immediately, with no price movement.
-  </p>
   <div id="roundtripNote"></div>
+</div>
+
+<div class="card">
+  <div class="hdr"><h2>Where the tax goes</h2></div>
+  <p class="tiny dim" style="margin:0 0 4px">
+    Three different objectives, reported in three different units. They are deliberately not
+    added up or converted: valuing a recycled or burned tax means marking holdings at a price
+    this model itself moved, which is circular and was producing numbers 11,000&times; too big
+    in an earlier draft.
+  </p>
+  <div class="scroll"><table id="dest"><tbody></tbody></table></div>
 </div>
 
 <div class="card">
   <div class="hdr"><h2>Publish this</h2></div>
   <p class="tiny dim" style="margin:0 0 4px">
     The checker flags other tokens for undisclosed taxes. If LAPTOP has one and this site does
-    not say so, the checker fails its own test. Put this on the launch page and in the token's
-    docs, and a buyer who reads it cannot say they were surprised.
+    not say so, the checker fails its own test.
   </p>
   <div class="pub" id="disclosure"></div>
 </div>
 
 <div class="footer">
   <div class="hr"></div>
-  <p><b>What this does not tell you.</b> It has no opinion on whether a tax is a good idea, and
-  it cannot tell you what demand will actually be &mdash; both the buyer count and the
-  sensitivity are your estimates, not measurements. It models one buy size repeated; real flow
-  is a mix of sizes, and large buys pay disproportionately more to price impact. It assumes
-  every buyer sells exactly once, which overstates sell-tax income if some hold and understates
-  it if some trade repeatedly.</p>
-  <p><b>What a tax cannot do.</b> It cannot make a launch succeed. Every point of tax is a point
-  of worse execution for the person buying, and it shows up in <a href="/size.html">the size
-  curve</a> and in <a href="/buy.html">the venue comparison</a> like any other cost. A design
-  that pays you most is not the same as a design people want to buy into, and this page only
-  answers the first.</p>
+  <p><b>Why there is no recommended rate.</b> An earlier version of this page swept the
+  starting tax against a single elasticity number and reported an optimum &mdash; 2% at the
+  defaults. Replacing that one number with two buyer types and a knee moved the answer to
+  either 0% or 8&ndash;10% depending on parameters nobody here can measure, and almost never
+  to anything in between. The 2% was the answer a straight-line model gives when the real
+  surface is bimodal. Neither parameterisation is fitted, so neither is a recommendation. The
+  band above is the honest output.</p>
+  <p><b>What would fix it.</b> First-hour order books from comparable Base launches: sizes,
+  arrival clustering, and how participation actually fell as fees rose. With those, the knees
+  become measurements and the band collapses. Without them this page can price a schedule but
+  cannot choose one.</p>
+  <p><b>What it still cannot model.</b> Snipers routing around a schedule by splitting across
+  wallets or waiting out a decaying ramp; a hook that reverts; the launch not happening. It
+  assumes every buyer sells exactly once, which overstates sell-tax income if some hold. It
+  prices one launch, not the reputational cost of the design.</p>
   <p> &middot; totalworlddomination.xyz &middot; Build <span class="mono" id="buildId">2026-09-08a</span> &middot; no analytics,
-  no trackers, no cookies. Everything here is computed in your browser; this page makes no
-  network request of any kind.</p>
+  no trackers, no cookies. Everything is computed in your browser; this page makes no network
+  request of any kind.</p>
 </div>
 
 <script>
 "use strict";
 const $=id=>document.getElementById(id);
 
-/* ===================== the pool =====================
-   Constant product, the same identity web/size.html and test_size_math.py use. Taxes are
-   taken off the top of the trade, before the pool sees it, which is how a hook or a transfer
-   tax actually behaves: the pool prices what is left, not what the buyer sent. */
-function buyThrough(E,T,spend,poolFee,tax){
-  const taxPaid=spend*tax;
-  const net=spend-taxPaid;
-  const afterFee=net*(1-poolFee);
-  const out=T*afterFee/(E+afterFee);
-  return {taxPaid, out, E:E+net, T:T-out,
-          price: out>0 ? spend/out : Infinity};
+/* Mirrors launch_model.py exactly. That file is the reference implementation and
+   test/test_launch_model.py pins its properties; test/run-launch.mjs checks this against it.
+   Where the two disagree, the Python is right. */
+
+function participation(pressure,sharpness){
+  if(pressure<=0) return 1;
+  const x=sharpness*(pressure-1);
+  if(x>60) return 0;
+  if(x<-60) return 1;
+  return 1/(1+Math.exp(x));
 }
 
-/* Selling the same tokens straight back, so a round trip can be quoted honestly. */
-function sellThrough(E,T,tokens,poolFee,tax){
-  const afterFee=tokens*(1-poolFee);
-  const gross=E*afterFee/(T+afterFee);
-  const taxPaid=gross*tax;
-  return {taxPaid, out:gross-taxPaid, E:E-gross, T:T+tokens};
+/* Shape only, normalised to sum to 1. The caller multiplies by an elicited total, so the
+   uncalibrated parameter is the exponent alone and never the scale. */
+function paretoShape(n,alpha){
+  if(n<=0) return [];
+  const raw=[]; let tot=0;
+  for(let i=0;i<n;i++){ const v=Math.pow(1-(i+0.5)/n,-1/alpha); raw.push(v); tot+=v; }
+  return raw.map(r=>r/tot).sort((a,b)=>b-a);
 }
 
-/* The tax schedule: starts at tax0, adds step per 100 buys, never exceeds cap. */
-function taxAt(i,tax0,step,cap){
-  return Math.min(cap, tax0 + step*(i/100));
+function taxAt(s,buys,volume,block){
+  let u;
+  if(s.unit==="buy") u=buys;
+  else if(s.unit==="block") u=block;
+  else u=Math.floor(volume/s.stepUnit);
+  if(s.offAfter&&u>=s.offAfter) return 0;
+  return Math.min(s.cap,s.start+s.step*u);
 }
 
-/* How many buyers survive a given average tax. Linear deterrence — walk% of them leave for
-   each 1% of tax — floored at zero. This is the assumption, and it is the whole reason the
-   sensitivity table below exists. */
-function demandAt(n0,avgTaxPct,walkPerPct){
-  return Math.max(0, n0*(1 - avgTaxPct*walkPerPct/100));
+function meanRate(s,nBuys,totalVolume){
+  if(nBuys<=0) return s.start;
+  const per=totalVolume/nBuys;
+  let acc=0,vol=0;
+  for(let i=0;i<nBuys;i++){ acc+=taxAt(s,i,vol,Math.floor(i/Math.max(1,s.perBlock))); vol+=per; }
+  return acc/nBuys;
 }
 
-/* Run a whole launch and report what the operator takes.
-   Two passes: the first finds the average tax so demand can be sized, the second runs that
-   many buys through the pool for real. Without the first pass the tax schedule and the buyer
-   count depend on each other and the answer moves depending on which you compute first. */
-function simulate(p){
-  const {seedE,poolFee,buySize,nBuys,tax0,taxStep,taxCap,sellTax,walk}=p;
-  const probe=Math.max(1,Math.round(nBuys));
-  let s=0;
-  for(let i=0;i<probe;i++) s+=taxAt(i,tax0,taxStep,taxCap);
-  const avgTax=s/probe;
-  const n=Math.round(demandAt(nBuys,avgTax*100,walk));
-  if(n<=0) return {n:0,buyTax:0,sellTaxTake:0,lpFees:0,take:0,avgTax,volume:0,
-                   endPrice:null,firstPrice:null};
+const buy=(E,T,spend,fee)=>{const a=spend*(1-fee);const out=T*a/(E+a);return [E+spend,T-out,out];};
+const sell=(E,T,tok,fee)=>{const a=tok*(1-fee);const out=E*a/(T+a);return [E-out,T+tok,out];};
 
-  /* LAPTOP supply in the pool is a free scale factor: every quantity reported here is in ETH,
-     and the token amounts cancel. Seeding with 1 unit keeps the numbers well-conditioned. */
-  let E=seedE, T=1, buyTax=0, lpFees=0, volume=0;
-  let firstPrice=null, held=0;
-  for(let i=0;i<n;i++){
-    const t=taxAt(i,tax0,taxStep,taxCap);
-    const r=buyThrough(E,T,buySize,poolFee,t);
-    buyTax+=r.taxPaid;
-    lpFees+=(buySize-r.taxPaid)*poolFee;
-    volume+=buySize-r.taxPaid;
-    held+=r.out;
-    if(firstPrice===null) firstPrice=r.price;
-    E=r.E; T=r.T;
+function simulate(pop,s,seedE,poolFee,destination){
+  /* A buyer prices tax + pool fee + the impact of their own size against the depth on offer.
+     Impact is the only channel through which seed and tax are substitutes; without it seed
+     had no effect on the answer at all. Buy-side and sell-side are independent hurdles and
+     multiply — adding them made being at both knees read as total refusal. */
+  const probe=meanRate(s,pop.nSnipe+pop.nOrg,pop.volume);
+  const sizeS=(pop.volume*pop.snipeShare)/Math.max(1,pop.nSnipe);
+  const sizeO=(pop.volume*(1-pop.snipeShare))/Math.max(1,pop.nOrg);
+  const imp=x=>x/(seedE+x);
+  const pS=participation((probe+poolFee+imp(sizeS))/Math.max(pop.snipeBuyKnee,1e-9),pop.sharpness)
+          *participation(s.sell/Math.max(pop.snipeSellKnee,1e-9),pop.sharpness);
+  const pO=participation((probe+poolFee+imp(sizeO))/Math.max(pop.orgBuyKnee,1e-9),pop.sharpness)
+          *participation(s.sell/Math.max(pop.orgSellKnee,1e-9),pop.sharpness);
+  const nS=Math.round(pop.nSnipe*pS), nO=Math.round(pop.nOrg*pO);
+  const deterred=(pop.nSnipe+pop.nOrg)-(nS+nO);
+
+  /* The round trip is arithmetic on the schedule, not a measurement of the launch, so it
+     holds whether or not anybody buys. Returning 0 here would say a buyer loses nothing
+     about a schedule that drove every one of them away. */
+  const rt0=1-(1-s.start)*Math.pow(1-poolFee,2)*(1-s.sell);
+  if(nS+nO===0)
+    return {buyers:0,volume:0,treasury:0,depth:0,burned:0,priceMultiple:1,avgTax:0,
+            roundTrip:rt0,deterred};
+
+  const vS=pop.volume*pop.snipeShare*pS, vO=pop.volume*(1-pop.snipeShare)*pO;
+  const orders=paretoShape(nS,pop.snipeAlpha).map(f=>[vS*f,0])
+    .concat(paretoShape(nO,pop.orgAlpha).map(f=>[vO*f,1]));
+  orders.sort((a,b)=>a[1]-b[1]||b[0]-a[0]);   // bots first, largest first
+
+  let E=seedE,T=1,treasury=0,depth=0,burned=0,volume=0,held=0,taxSum=0;
+  const startPrice=E/T;
+  for(let i=0;i<orders.length;i++){
+    const size=orders[i][0];
+    const t=taxAt(s,i,volume,Math.floor(i/Math.max(1,s.perBlock)));
+    const tax=size*t;
+    const r=buy(E,T,size-tax,poolFee); E=r[0]; T=r[1]; held+=r[2];
+    taxSum+=t; volume+=size-tax;
+    if(destination==="treasury") treasury+=tax;
+    else if(destination==="lp"){ E+=tax; depth+=tax; }
+    else if(destination==="burn"&&tax>0){ const b=buy(E,T,tax,poolFee); E=b[0]; T=b[1]; burned+=b[2]; }
   }
-  const endPrice=(T>0&&E>0)? E/T : null;
-
-  /* Everyone sells once, in one block, worst case for the sell side. */
-  let sellTaxTake=0;
-  if(held>0&&sellTax>0){
-    const sr=sellThrough(E,T,held,poolFee,sellTax);
-    sellTaxTake=sr.taxPaid;
-    lpFees+=held*poolFee*(E/(T+held));
+  if(held>0&&s.sell>0){
+    const r=sell(E,T,held,poolFee);
+    const take=r[2]*s.sell;
+    if(destination==="treasury") treasury+=take;
+    else if(destination==="lp"){ depth+=take; }
+    E=r[0]+(destination==="lp"?take:0); T=r[1];
   }
-  return {n,buyTax,sellTaxTake,lpFees,take:buyTax+sellTaxTake+lpFees,
-          avgTax,volume,endPrice,firstPrice};
+  const endPrice=T>0?E/T:Infinity;
+  return {buyers:orders.length,volume,treasury,depth,burned,
+          priceMultiple:endPrice/startPrice,avgTax:taxSum/Math.max(1,orders.length),
+          roundTrip:rt0,deterred};
 }
 
-/* Sweep the starting tax and return the whole curve, so the maximum is shown rather than
-   asserted. A tax has a maximum for the same reason any price does: past it, the buyers you
-   lose are worth more than the points you gain. */
-function sweep(p,lo,hi,stepPct){
-  const rows=[];
-  for(let t=lo;t<=hi+1e-9;t+=stepPct){
-    const r=simulate({...p,tax0:t/100});
-    rows.push({tax0:t,...r});
+const objective=(r,d)=>d==="treasury"?r.treasury:(d==="lp"?r.depth:r.burned);
+
+/* The honest output is a band, not an argmax. Reporting the argmax of a model whose
+   deterrence curve is a guess implies a precision that is not there. */
+function stableRegion(pop,s,seedE,poolFee,dest,tol){
+  tol=tol===undefined?0.05:tol;
+  let best=0; const rows=[];
+  for(let t=0;t<=0.2501;t+=0.01){
+    const r=simulate(pop,Object.assign({},s,{start:t}),seedE,poolFee,dest);
+    const v=objective(r,dest); rows.push([t,v]);
+    if(v>best) best=v;
   }
-  let best=rows[0];
-  for(const r of rows) if(r.take>best.take) best=r;
-  return {rows,best};
+  if(best<=0) return {lo:0,hi:0,best:0,rows};
+  const good=rows.filter(x=>x[1]>=best*(1-tol)).map(x=>x[0]);
+  return {lo:Math.min.apply(null,good),hi:Math.max.apply(null,good),best,rows};
 }
 
+/* 81 worlds: every guessed parameter halved, kept, doubled. If the recommendation moves
+   across the range, there is no recommendation to give. */
+function worldSweep(pop,s,seedE,poolFee,dest){
+  const out=[];
+  for(const sbk of [pop.snipeBuyKnee/2,pop.snipeBuyKnee,pop.snipeBuyKnee*2])
+   for(const obk of [pop.orgBuyKnee/2,pop.orgBuyKnee,pop.orgBuyKnee*2])
+    for(const osk of [pop.orgSellKnee/2,pop.orgSellKnee,pop.orgSellKnee*2])
+     for(const sh of [pop.sharpness/2,pop.sharpness,pop.sharpness*2]){
+       const w=Object.assign({},pop,{snipeBuyKnee:sbk,orgBuyKnee:obk,orgSellKnee:osk,sharpness:sh});
+       out.push(stableRegion(w,s,seedE,poolFee,dest).lo);
+     }
+  return out;
+}
+
+/* ---------------------------------------------------------------- ui */
 const num=(id,d)=>{const v=parseFloat($(id).value); return Number.isFinite(v)?v:d;};
-function params(){
-  return {
-    seedE:Math.max(1e-9,num("seedE",10)),
-    poolFee:Math.min(.5,Math.max(0,num("poolFee",1)/100)),
-    buySize:Math.max(1e-12,num("buySize",.25)),
-    nBuys:Math.max(1,num("nBuys",400)),
-    tax0:Math.max(0,num("tax0",1)/100),
-    taxStep:Math.max(0,num("taxStep",1)/100),
-    taxCap:Math.max(0,num("taxCap",10)/100),
-    sellTax:Math.max(0,num("sellTax",5)/100),
-    walk:Math.max(0,num("elast",6)),
-  };
-}
+const pop=()=>({
+  volume:Math.max(0,num("volume",100)),
+  nSnipe:Math.max(0,Math.round(num("nSnipe",40))),
+  nOrg:Math.max(0,Math.round(num("nOrg",360))),
+  snipeShare:Math.min(1,Math.max(0,num("snipeShare",70)/100)),
+  snipeAlpha:1.8, orgAlpha:2.2,
+  snipeBuyKnee:Math.max(1e-4,num("snipeBuyKnee",6)/100),
+  snipeSellKnee:Math.max(1e-4,num("snipeSellKnee",40)/100),
+  orgBuyKnee:Math.max(1e-4,num("orgBuyKnee",9)/100),
+  orgSellKnee:Math.max(1e-4,num("orgSellKnee",7)/100),
+  sharpness:Math.max(0.1,num("sharpness",6)),
+});
+const sched=()=>({
+  unit:$("unit").value,
+  start:Math.max(0,num("start",0)/100),
+  step:Math.max(0,num("step",1)/100),
+  stepUnit:Math.max(1e-9,num("stepUnit",5)),
+  cap:Math.max(0,num("cap",10)/100),
+  sell:Math.max(0,num("sellTax",5)/100),
+  offAfter:Math.max(0,num("offAfter",0)),
+  perBlock:8,
+});
+const seed=()=>Math.max(1e-9,num("seedE",25));
+const fee=()=>Math.min(.5,Math.max(0,num("poolFee",1)/100));
 
 const eth=v=>v>=100?v.toFixed(1):v>=1?v.toFixed(3):v.toFixed(5);
 const pct=v=>v.toFixed(2)+"%";
-function row(t,cells,cls){
-  const tr=document.createElement("tr");
-  if(cls) tr.className=cls;
-  cells.forEach((c,i)=>{
-    const el=document.createElement(i===0&&t==="th"?"th":(t==="th"?"th":"td"));
-    if(typeof c==="object"&&c!==null){ el.textContent=c.v; if(c.n) el.className="n"; }
+function row(tag,cells,cls){
+  const tr=document.createElement("tr"); if(cls) tr.className=cls;
+  for(const c of cells){
+    const el=document.createElement(tag);
+    if(c&&typeof c==="object"){ el.textContent=c.v; if(c.n) el.className="n"; }
     else el.textContent=c;
     tr.appendChild(el);
-  });
+  }
   return tr;
 }
 
-function render(){
-  const p=params();
-  const now=simulate(p);
-  const {rows,best}=sweep(p,0,25,1);
+const UNIT_NOTE={
+  buy:["A per-buy ramp is evaded by splitting. Ten 1-ETH buys advance it ten times; one "+
+       "10-ETH buy advances it once, so the same money pays 11% split and 2% whole. It "+
+       "lands on the retail tail and barely prices the snipe.","bad"],
+  volume:["A volume ramp prices a splitter and a whale identically for the same money, so "+
+          "splitting does not evade it. Your rate still depends on which sequencer slot you "+
+          "got, which nobody can see before sending.","warn"],
+  block:["A block ramp is the only unit where everyone in the same block pays the same rate, "+
+         "so simultaneity is not a lottery. It is evaded by waiting instead.","warn"],
+};
 
-  /* ---- summary ---- */
-  const sum=$("summary"); sum.innerHTML="";
-  const badge=$("verdictBadge");
-  if(now.n<=0){
-    badge.textContent="nobody buys"; badge.className="badge bad";
-    const d=document.createElement("div"); d.className="badbox";
-    d.textContent="At this tax and this sensitivity the model has every buyer walking away, "+
-      "so the take is zero. That is what a tax above the deterrence ceiling looks like.";
-    sum.appendChild(d);
-  } else {
-    const better=best.take>now.take*1.0001;
-    badge.textContent=better?"leaving money on the table":"at the optimum";
-    badge.className="badge "+(better?"warn":"good");
-    const t=document.createElement("table");
-    const add=(k,v)=>{
-      const tr=document.createElement("tr");
-      const a=document.createElement("td"); a.textContent=k;
-      const b=document.createElement("td"); b.className="n"; b.textContent=v;
-      tr.appendChild(a); tr.appendChild(b); t.appendChild(tr);
-    };
-    add("Buyers who still buy", String(now.n)+" of "+Math.round(p.nBuys));
-    add("Average buy tax", pct(now.avgTax*100));
-    add("Buy tax to you", eth(now.buyTax)+" ETH");
-    add("Sell tax to you", eth(now.sellTaxTake)+" ETH");
-    add("Pool fees to you", eth(now.lpFees)+" ETH");
-    add("Total take", eth(now.take)+" ETH");
-    sum.appendChild(t);
-    if(better){
-      const d=document.createElement("div"); d.className="warnbox";
-      d.textContent="A starting tax of "+best.tax0.toFixed(0)+"% would pay you "+
-        eth(best.take)+" ETH instead of "+eth(now.take)+" ETH — "+
-        eth(best.take-now.take)+" ETH more, from "+(best.n-now.n)+" more buyers. "+
-        "Above that point each extra point of tax costs more in lost buyers than it collects.";
-      sum.appendChild(d);
-    } else {
-      const d=document.createElement("div"); d.className="okbox";
-      d.textContent="No starting tax in the 0–25% range pays you more than this one, "+
-        "given the sensitivity you entered.";
-      sum.appendChild(d);
-    }
-  }
+function renderCheap(){
+  const p=pop(), s=sched(), sd=seed(), f=fee();
 
-  /* ---- the curve ---- */
-  const c=$("curve").querySelector("tbody"); c.innerHTML="";
-  c.appendChild(row("th",["Start tax","Buyers","Volume","Your take"]));
-  for(const r of rows){
-    if(r.tax0%2!==0 && r.tax0!==best.tax0) continue;
-    c.appendChild(row("td",[
-      r.tax0.toFixed(0)+"%",
-      {v:String(r.n),n:1},
-      {v:eth(r.volume),n:1},
-      {v:eth(r.take),n:1},
-    ], r.tax0===best.tax0?"best":""));
-  }
+  const un=UNIT_NOTE[s.unit];
+  $("unitBadge").textContent=s.unit==="buy"?"splittable":"see note";
+  $("unitBadge").className="badge "+un[1];
+  const n=$("unitNote"); n.innerHTML="";
+  const d=document.createElement("div"); d.className=un[1]==="bad"?"badbox":"warnbox";
+  d.textContent=un[0]; n.appendChild(d);
 
-  /* ---- sensitivity ---- */
-  const s=$("sens").querySelector("tbody"); s.innerHTML="";
-  s.appendChild(row("th",["Buyers lost per 1%","Best start tax","Your take"]));
-  for(const w of [2,4,6,8,12,16]){
-    const sw=sweep({...p,walk:w},0,25,1);
-    s.appendChild(row("td",[
-      w+"%",
-      {v:sw.best.tax0.toFixed(0)+"%",n:1},
-      {v:eth(sw.best.take)+" ETH",n:1},
-    ], w===p.walk?"best":""));
-  }
-
-  /* ---- demand sensitivity ----
-     Kept separate from the sensitivity table above because it is a different kind of doubt:
-     that one is about buyers you cannot measure, this one is about volume you cannot predict,
-     and this one moves the answer further. */
-  const ds=$("dsens").querySelector("tbody"); ds.innerHTML="";
-  ds.appendChild(row("th",["Buys at zero tax","Spend","Best start tax","Your take"]));
-  const scales=[0.1,0.25,1,2.5,10];
-  let allZero=true, anyNonZero=false;
-  for(const k of scales){
-    const n=Math.max(1,Math.round(p.nBuys*k));
-    const sw=sweep({...p,nBuys:n},0,25,1);
-    if(sw.best.tax0>0){ allZero=false; anyNonZero=true; } else { anyNonZero=anyNonZero; }
-    ds.appendChild(row("td",[
-      String(n),
-      {v:eth(n*p.buySize)+" ETH",n:1},
-      {v:sw.best.tax0.toFixed(0)+"%",n:1},
-      {v:eth(sw.best.take)+" ETH",n:1},
-    ], k===1?"best":""));
-  }
-  const dn=$("demandNote"); dn.innerHTML="";
-  const big=sweep({...p,nBuys:p.nBuys*10},0,25,1);
-  if(big.best.tax0===0){
-    const d=document.createElement("div"); d.className="okbox";
-    d.textContent="If the launch goes well, the best buy tax is zero. At that volume the pool "+
-      "fee and the sell tax already collect more than a buy tax could, and every point of buy "+
-      "tax just removes buyers who would have paid them. A buy tax is insurance against a "+
-      "quiet launch, not a way to profit from a busy one.";
-    dn.appendChild(d);
-  }
-
-  /* ---- buyer's view ---- */
+  /* what a buyer pays — no demand parameter appears here */
   const b=$("buyer").querySelector("tbody"); b.innerHTML="";
-  b.appendChild(row("th",["Buyer","Tax paid","Effective price","vs first buyer"]));
-  let E=p.seedE, T=1, first=null;
-  const marks=[1,10,50,100,250,500];
-  const maxN=Math.max(...marks);
-  for(let i=0;i<maxN;i++){
-    const t=taxAt(i,p.tax0,p.taxStep,p.taxCap);
-    const r=buyThrough(E,T,p.buySize,p.poolFee,t);
-    E=r.E; T=r.T;
-    if(first===null) first=r.price;
-    if(marks.includes(i+1)){
-      b.appendChild(row("td",[
-        "#"+(i+1),
-        {v:pct(t*100),n:1},
-        {v:eth(r.price*1e-9)+"…",n:1},
-        {v:((r.price/first-1)*100).toFixed(1)+"%",n:1},
-      ]));
-    }
+  b.appendChild(row("th",["Buyer","Tax","Effective price","vs first"]));
+  let E=sd,T=1,first=null;
+  const per=p.volume/Math.max(1,p.nSnipe+p.nOrg);
+  const marks=[1,10,50,100,250];
+  let vol=0;
+  for(let i=0;i<Math.max.apply(null,marks);i++){
+    const t=taxAt(s,i,vol,Math.floor(i/8));
+    const tax=per*t;
+    const r=buy(E,T,per-tax,f); E=r[0]; T=r[1]; vol+=per-tax;
+    const price=r[2]>0?per/r[2]:Infinity;
+    if(first===null) first=price;
+    if(marks.indexOf(i+1)>=0)
+      b.appendChild(row("td",["#"+(i+1),{v:pct(t*100),n:1},
+        {v:(price/first).toFixed(3)+"x",n:1},
+        {v:((price/first-1)*100).toFixed(1)+"%",n:1}]));
   }
-  /* Round trip: buy and sell back immediately, no price movement in between. */
-  const rt=(1-(1-p.tax0)*(1-p.poolFee)*(1-p.poolFee)*(1-p.sellTax))*100;
+  const rt=(1-(1-s.start)*Math.pow(1-f,2)*(1-s.sell))*100;
   const note=$("roundtripNote"); note.innerHTML="";
   const rd=document.createElement("div");
   rd.className=rt>=15?"badbox":(rt>=8?"warnbox":"okbox");
   rd.textContent="Round trip at the starting tax: a buyer who buys and sells straight back "+
-    "loses "+rt.toFixed(2)+"% before the price moves at all. Anyone comparing venues on "+
-    "the buy page will see this.";
+    "loses "+rt.toFixed(2)+"% before the price moves at all.";
   note.appendChild(rd);
 
-  /* ---- disclosure ---- */
+  /* destinations, each in its own unit */
+  const dt=$("dest").querySelector("tbody"); dt.innerHTML="";
+  dt.appendChild(row("th",["Destination","Reported as","Amount"]));
+  const rT=simulate(p,s,sd,f,"treasury");
+  const rL=simulate(p,s,sd,f,"lp");
+  const rB=simulate(p,s,sd,f,"burn");
+  dt.appendChild(row("td",["Treasury wallet","ETH withdrawn",{v:eth(rT.treasury)+" ETH",n:1}]));
+  dt.appendChild(row("td",["Back into the pool","ETH of extra depth",{v:eth(rL.depth)+" ETH",n:1}]));
+  dt.appendChild(row("td",["Burned","share of pool supply",
+    {v:(rB.burned*100).toFixed(3)+"%",n:1}]));
+
   $("disclosure").textContent=
     "LAPTOP fees, as configured\n"+
-    "  Buy tax      "+pct(p.tax0*100)+" at launch, +"+pct(p.taxStep*100)+
-      " per 100 buys, capped at "+pct(p.taxCap*100)+"\n"+
-    "  Sell tax     "+pct(p.sellTax*100)+"\n"+
-    "  Pool fee     "+pct(p.poolFee*100)+" (paid to liquidity, not to the team)\n"+
+    "  Buy tax      "+pct(s.start*100)+" at launch, +"+pct(s.step*100)+" per "+
+      (s.unit==="volume"?(s.stepUnit+" ETH of volume"):s.unit)+
+      ", capped at "+pct(s.cap*100)+"\n"+
+    (s.offAfter?"  Turns off    after "+s.offAfter+" "+s.unit+" units\n":"")+
+    "  Sell tax     "+pct(s.sell*100)+"\n"+
+    "  Pool fee     "+pct(f*100)+" (paid to liquidity, not to the team)\n"+
     "  Round trip   "+rt.toFixed(2)+"% at launch, before price impact\n"+
     "  Taxes are paid to the launch wallet. They are not burned and not returned to holders.\n"+
     "  Verify all of this on chain before buying — do not take this page's word for it.";
 }
 
-for(const id of ["seedE","poolFee","buySize","nBuys","tax0","taxStep","taxCap","sellTax","elast"])
-  $(id).addEventListener("input",render);
-render();
+let sweepTimer=null;
+function renderSweep(){
+  const p=pop(), s=sched(), sd=seed(), f=fee();
+  const opts=worldSweep(p,s,sd,f,"treasury");
+  const buckets={};
+  for(const o of opts){ const k=Math.round(o*100); buckets[k]=(buckets[k]||0)+1; }
+  const keys=Object.keys(buckets).map(Number).sort((a,b)=>a-b);
+  const max=Math.max.apply(null,keys.map(k=>buckets[k]));
+  const h=$("hist"); h.innerHTML="";
+  for(const k of keys){
+    const line=document.createElement("div");
+    const lab=document.createElement("span");
+    lab.textContent=String(k).padStart(3," ")+"%";
+    const bar=document.createElement("span");
+    bar.className="bar";
+    bar.style.width=Math.max(4,Math.round(buckets[k]/max*160))+"px";
+    const cnt=document.createElement("span");
+    cnt.textContent=buckets[k];
+    line.appendChild(lab); line.appendChild(bar); line.appendChild(cnt);
+    h.appendChild(line);
+  }
+  const spread=keys.length?(Math.max.apply(null,keys)-Math.min.apply(null,keys)):0;
+  const v=$("verdict"); v.innerHTML="";
+  const badge=$("verdictBadge");
+  const box=document.createElement("div");
+  if(spread<=2){
+    badge.textContent="robust"; badge.className="badge good";
+    box.className="okbox";
+    box.textContent="Every world agrees within "+spread+" points. For once the model is not "+
+      "just reporting your priors back to you — though the priors are still priors.";
+  } else {
+    badge.textContent="no recommendation"; badge.className="badge bad";
+    box.className="badbox";
+    /* Bimodal means a gap between clusters, not an absence of middle values entirely. At the
+       defaults the modes are 0% and 7-10% with nothing in 1-6%, so the largest gap between
+       consecutive occupied rates is what detects it. A rate chosen from inside that gap —
+       which is exactly where the old straight-line model put its 2% — is supported by no
+       world at all. */
+    let gap=false;
+    for(let i=1;i<keys.length;i++) if(keys[i]-keys[i-1]>=3) gap=true;
+    box.textContent="The best rate spans "+Math.min.apply(null,keys)+"% to "+
+      Math.max.apply(null,keys)+"% across worlds this model cannot tell apart, so it has no "+
+      "rate to recommend."+(gap?" And the answer is bimodal — it is either roughly nothing "+
+      "or roughly the cap, and almost never in between. A rate picked from the middle is the "+
+      "one answer no world supports.":"")+" What is trustworthy above is what a buyer pays, "+
+      "which involves no guess at all.";
+  }
+  v.appendChild(box);
+}
 
-window.__LAUNCH={buyThrough,sellThrough,taxAt,demandAt,simulate,sweep};
+function render(){
+  renderCheap();
+  if(sweepTimer) clearTimeout(sweepTimer);
+  sweepTimer=setTimeout(renderSweep,120);   // the 81-world sweep is too heavy per keystroke
+}
+
+for(const id of ["seedE","poolFee","volume","snipeShare","nSnipe","nOrg","unit","start","step",
+                 "stepUnit","cap","sellTax","offAfter","snipeBuyKnee","snipeSellKnee",
+                 "orgBuyKnee","orgSellKnee","sharpness"])
+  $(id).addEventListener(id==="unit"?"change":"input",render);
+renderCheap(); renderSweep();
+
+window.__LAUNCH={participation,paretoShape,taxAt,meanRate,buy,sell,simulate,objective,
+                 stableRegion,worldSweep,renderSweep};
 </script>
 </body>
 </html>
