@@ -57,6 +57,45 @@ button.act:disabled{opacity:.45;cursor:default}
 .wtab td:last-child{font-family:var(--mono);word-break:break-all}
 .wnote{font-size:12px;color:var(--warn);margin-top:8px}
 #wErr{margin-top:9px;color:var(--bad)}
+
+/* ---- readability ----
+   The old scale bottomed out at 11.5px, which is under what most people can read on a phone
+   at arm's length, and every page here exists to be read in a hurry. Everything steps up,
+   line-height opens, tap targets reach 44px, and the scale grows again once there is room.
+   Inputs are 16px because anything smaller makes iOS zoom the page on focus. No colour
+   changes: the ratios the suite measures are untouched. */
+body{font-size:16px;line-height:1.6;max-width:680px;padding-left:16px;padding-right:16px}
+h1{font-size:21px;margin:20px 0 3px}
+.sub{font-size:13.5px;margin:0 0 16px;line-height:1.55}
+.card{padding:14px;margin:12px 0;border-radius:12px}
+.mono{font-size:13px;line-height:1.5}
+.small{font-size:13px} .tiny{font-size:12.5px;line-height:1.55}
+label{font-size:13px;margin-bottom:6px}
+table{font-size:12.5px} th,td{padding:7px 5px}
+.hdr h2{font-size:14.5px}
+.badge{font-size:12px;padding:4px 9px}
+.footer{font-size:12.5px;line-height:1.65}
+button.act{font-size:14px;min-height:44px;padding:10px 15px}
+input,select{font-size:16px}
+.wtab{font-size:13px} .wtab td{padding:7px 0}
+ol,ul{padding-left:22px} li{margin:6px 0}
+@media (min-width:600px){
+  body{font-size:16.5px;padding-left:22px;padding-right:22px}
+  h1{font-size:23px}
+  .card{padding:17px}
+  .sub{font-size:14px}
+  .small{font-size:13.5px} .tiny{font-size:13px}
+  table,.wtab{font-size:13.5px}
+}
+
+/* ---- Phantom ----
+   Phantom's own colour and mark, so the button looks like the thing it opens. The ghost is
+   drawn here by hand rather than fetched, because the page loads no external asset — it is an
+   approximation of Phantom's mark, not their official file. */
+button.act.phantom{background:#ab9ff2;border-color:#ab9ff2;color:#1c1c2e;font-weight:600;
+  display:inline-flex;align-items:center;justify-content:center;gap:9px}
+button.act.phantom:hover{background:#bcb0ff;border-color:#bcb0ff}
+button.act.phantom .ghost{width:20px;height:20px;flex:none;display:block}
 .okbox{background:var(--okbg);border:1px solid var(--ok);color:var(--ok);
   border-radius:8px;padding:10px;font-size:12.5px;margin:8px 0}
 ol.steps{margin:8px 0 0;padding-left:0;list-style:none;counter-reset:s}
@@ -127,7 +166,12 @@ body::before{
   plan below. It does not ask you to sign anything and cannot bridge or send &mdash; every step
   in the plan still happens in a tool you choose.</p>
   <div class="btnrow">
-    <button class="act" id="wConnect">Connect Phantom</button>
+    <button class="act phantom" id="wConnect"><svg class="ghost" viewBox="0 0 128 128"
+      aria-hidden="true" focusable="false"><path fill="#fff" d="M64 10C34.2 10 10 34.2 10 64v42c0
+      6.6 8 9.9 12.6 5.2l9.5-9.5a6.5 6.5 0 0 1 9.2 0l9.1 9.1a6.5 6.5 0 0 0 9.2 0l9.1-9.1a6.5 6.5 0
+      0 1 9.2 0l9.5 9.5c4.6 4.7 12.6 1.4 12.6-5.2V64c0-29.8-24.2-54-54-54z"/><ellipse cx="47"
+      cy="58" rx="8.5" ry="13" fill="#4a3d8f"/><ellipse cx="81" cy="58" rx="8.5" ry="13"
+      fill="#4a3d8f"/></svg>Connect Phantom</button>
     <button class="act" id="wDisconnect" style="display:none">Forget</button>
   </div>
   <div id="wOut" style="display:none"></div>

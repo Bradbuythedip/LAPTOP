@@ -4,10 +4,14 @@ On-chain tooling built while tracing the `$LAPTOP` token before its Sept 9, 2026
 
 Two halves:
 
-- **`web/`** — two read-only tools for people who are about to buy, at
-  [totalworlddomination.xyz](https://totalworlddomination.xyz). One self-contained HTML file each,
-  no wallet, no transactions: `index.html` answers *is this the right contract*, `size.html`
-  answers *what does my size actually get me*.
+- **`web/`** — seven pages for people who are about to buy, at
+  [totalworlddomination.xyz](https://totalworlddomination.xyz). One self-contained HTML file
+  each. They connect to Phantom to read your Base balances and they never ask you to sign
+  anything: `index.html` answers *is this the right contract*, `size.html` *what does my size
+  get me*, `buy.html` *which venue fills best*, `order.html` *can I commit before launch*,
+  `slot.html` *is this preorder real*, `route.html` *what should I be holding*, and
+  `launch.html` — for whoever sets the parameters, not for buyers — *what does a fee design
+  actually earn*.
 - **`*.py`** — the tracing and execution tooling: find the pools, watch for the first real
   liquidity, execute a Uniswap v4 swap, execute a classic V2/V3/Aerodrome swap.
 
@@ -70,12 +74,13 @@ file and opening it locally removes the hosting party from the trust question en
 Published build `2026-09-08a`:
 
 ```
-sha256(web/index.html) = 91d8995f71f0d62d1f91f5726f9a91015eed56ef71a410879323639b9f7adf5e
-sha256(web/size.html)  = a5c8c512cbeced5ee7a0317982bde0889cc150a4a032f7532daceaf36286d304
-sha256(web/route.html) = c1ac4bb53c79171d23ffef3e70f782f4c4911b3d8a7c5aa7dcb06f2641d3a40e
-sha256(web/buy.html)   = 6319505ecf3f39c20f2ab05b24e199caad390474632858c151636c9cbe55b38c
-sha256(web/order.html) = 7443e8b6264943016e6a675e26b0c0a1ca6028c81da1cd2fd92bcf250e6d26f6
-sha256(web/slot.html)  = 1eadddc6128b12c08701f3e0153af4b1be62bb08e5f246737640a13dc08f7201
+sha256(web/index.html) = 1f5aa45278541f20f77aad70d6e926dce1cd21aa85590d1f2fe6bbd54700705c
+sha256(web/size.html)  = 9e0a6f6e7ab2c0012f814802d7c554227e5dc4fec59728be1be9e656d4ec4329
+sha256(web/route.html) = e2cce3fafbac12ddeabb9870bacd0b2b64d779292eba03b944e62424b6d477a7
+sha256(web/buy.html)   = 558b6318841d0d51a27bf4fc1a5cfd924ed226cfdc237516ed6a44db0ff211c5
+sha256(web/order.html) = dbcef0b37a2e710ba4103b5f85a6df400125e869e52c029f14b17a167683e175
+sha256(web/slot.html)  = 57330d5e9e10a08ff6965f249926a1066c08a73b4110966eb46cd33c4b61af97
+sha256(web/launch.html) = 2e48b7f42e6c4581e172b2fd8ff7c46a19a7c0130bd012b665a1167553b23e27
 ```
 
 ### Tests
@@ -84,9 +89,9 @@ sha256(web/slot.html)  = 1eadddc6128b12c08701f3e0153af4b1be62bb08e5f246737640a13
 sh test/run-all.sh         # everything below, no network touched
 ```
 
-**661 assertions across nine suites.**
+**738 assertions across ten suites.**
 
-`test/run.mjs` — 208, drives the real page in Chromium against `test/mock-rpc.mjs`: Keccak vectors,
+`test/run.mjs` — 225, drives the real page in Chromium against `test/mock-rpc.mjs`: Keccak vectors,
 the four EIP-55 reference addresses, the v4 poolId derivation checked against a real Base pool
 id, ABI-string decoding (including a 10-character name, whose length word contains a hex
 letter, and truncated/absurd offsets), result-length discipline, and full flows for the happy
@@ -95,7 +100,7 @@ JSON-RPC batches. It also holds the cross-page invariants: that every page says 
 you to sign and mentions no `eth_*` method outside the read set, that any page touching
 `window.phantom` uses its EVM side, that they all state the same build tag and that the README
 publishes that tag and the current hash of every page, and that `web/` serves nothing but the
-six pages and the artwork. Plus the Phantom provider matrix (no wallet, Solana-only, both
+seven pages and the artwork. Plus the Phantom provider matrix (no wallet, Solana-only, both
 sides, injected as `window.ethereum`, inside a multi-provider array, and a non-Phantom wallet)
 and balance formatting and read discipline. Needs `playwright`.
 
@@ -130,6 +135,41 @@ gets the Solana-is-not-EVM distinction right.
 `test/run-size.mjs` — 68, asserts `web/size.html` agrees with that Python fixture to 1e-12,
 then drives the page against constant-product, concentrated, capped, dry, stable, foreign-token
 and no-code pool fixtures.
+
+`test/run-launch.mjs` — 60, checks the fee model against arithmetic written from the pool
+identity rather than the page's algebra: a tax comes off the top so the pool prices the net, a
+taxed buy always prices worse than an untaxed one, the schedule respects its cap, demand floors
+at zero rather than going negative, the take never exceeds what buyers spent, and its three
+parts sum. Plus the two shape properties the advice depends on — touchier buyers push the best
+tax down, and more expected demand pushes it down too, to zero for a busy launch.
+
+## `web/launch.html` — what a fee design actually earns
+
+For whoever sets the launch parameters, not for buyers. It takes a seed depth, a pool fee, a
+buy tax that escalates per 100 buys, a sell tax and one guess about how price-sensitive buyers
+are, and reports the take and what it costs the people buying.
+
+The reason it exists is that "as high as possible" is not the answer to "how much tax". Past
+some rate the buyers deterred are worth more than the points collected, so the take is a hump
+and the page sweeps it rather than asserting a number.
+
+**The finding that survived testing, and that contradicted the page's own first draft:** the
+best buy tax *falls* as expected demand rises, and reaches zero for a busy launch. Once total
+spending is large next to the seed, the pool fee and the sell tax already collect on that
+volume, while a buy tax only deters it. A buy tax is insurance against a quiet launch, not a
+way to profit from a busy one. The first draft claimed the optimum was scale-invariant;
+`run-launch.mjs` caught it, and the assertion that caught it is still there.
+
+The deterrence figure is a guess and is labelled as one on the page — nothing on chain measures
+how price-sensitive buyers are. Two sensitivity tables sweep it, and demand, instead of
+reporting one confident number.
+
+It also emits the disclosure block to publish. The checker flags other tokens for undisclosed
+taxes; if LAPTOP ships with one and the site stays quiet, the checker fails its own test.
+
+The page is not linked from the buyer pages' navigation — it is an operator tool and reachable
+by URL only. It is still a static file on a public site, so it is not secret, just not
+advertised.
 
 ## `web/slot.html` — getting a slot
 
@@ -494,12 +534,12 @@ distinguish CORS from "host is down", so the tool does not claim to either; it s
 
 ## Branding: `web/bg.png`
 
-All six pages carry a full-bleed background image. It is the only piece of branding on them —
+All seven pages carry a full-bleed background image. It is the only piece of branding on them —
 no ticker chips, no watermark layer, and no token named anywhere but LAPTOP. A test asserts
 that across every page.
 
-**`web/bg.png` is not in the repo. Drop your artwork there and it appears on all six pages.**
-It is the only external asset either page loads, it is same-origin, and it is referenced from
+**`web/bg.png` is in the repo** (added in `bed883f`) and appears on all seven pages.
+It is the only external asset any page loads, it is same-origin, and it is referenced from
 exactly one decorative CSS rule and never from script. So if the file is missing, blocked by
 CSP, or the HTML is saved and opened offline, the pages lose a picture and nothing else — every
 verdict, number and failure state is untouched. A test asserts that no script references it.

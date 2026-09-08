@@ -350,7 +350,8 @@ const parseRGB = s => (s.match(/[\d.]+/g) || []).slice(0, 4).map(Number);
 // so a card at 92% over a scrim over 12% art over the page colour resolves to one real colour.
 const stackOf = await page.evaluate(() => {
   const out = [];
-  for (const sel of ["#verdictArea .vtext", "#verdictArea", "h1", ".sub", ".badbox", ".badbox b"]) {
+  for (const sel of ["#verdictArea .vtext", "#verdictArea", "h1", ".sub", ".badbox", ".badbox b",
+                     "button.act.phantom", "label", ".tiny.dim"]) {
     const el = document.querySelector(sel);
     if (!el) { out.push(null); continue; }
     const layers = [];
@@ -389,7 +390,8 @@ const stackOf = await page.evaluate(() => {
 // The site is about one token. Anything else named on it is either cross-promotion or a
 // chance for a reader to confuse two things, and both are out.
 console.log("── one token, and only one");
-const pages = ["index.html", "size.html", "route.html", "buy.html", "order.html", "slot.html"];
+const pages = ["index.html", "size.html", "route.html", "buy.html", "order.html", "slot.html",
+               "launch.html"];
 for (const f of pages) {
   const t = fs.readFileSync(path.join(ROOT, "web", f), "utf8");
   ok(`${f} never mentions $TWD`, !/\$TWD|%24TWD/.test(t));

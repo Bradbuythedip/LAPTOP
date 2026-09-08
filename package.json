@@ -1,0 +1,16 @@
+{
+  "name": "laptop-tooling",
+  "private": true,
+  "type": "module",
+  "description": "Test-only dependencies. Nothing in web/ has a build step or a runtime dependency; Vercel serves web/ as static files and every page is one self-contained HTML file. This exists so the suite is reproducible, not so the site is built.",
+  "scripts": {
+    "test": "sh test/run-all.sh"
+  },
+  "devDependencies": {
+    "@ethereumjs/evm": "^10.0.0",
+    "@ethereumjs/util": "^10.0.0",
+    "ethereum-cryptography": "^3.2.0",
+    "playwright": "1.56.1",
+    "solc": "0.8.36"
+  }
+}
