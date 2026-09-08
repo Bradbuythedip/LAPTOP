@@ -76,6 +76,10 @@ label{display:block;font-size:13px;color:var(--dim);margin-bottom:6px}
 input{width:100%;font-family:var(--mono);font-size:16px;padding:11px;border:1.5px solid var(--edge);
   border-radius:9px;background:var(--card);color:var(--fg)}
 input:focus-visible{outline:2px solid var(--goldHi);outline-offset:2px}
+textarea{width:100%;min-height:120px;margin-top:10px;padding:10px;font-family:var(--mono);
+  font-size:12px;line-height:1.5;border:1.5px solid var(--edge);border-radius:9px;
+  background:var(--card);color:var(--fg);resize:vertical}
+textarea:focus-visible{outline:2px solid var(--goldHi);outline-offset:2px}
 button:focus-visible,a:focus-visible{outline:2px solid var(--goldHi);outline-offset:2px}
 .hdr{display:flex;justify-content:space-between;align-items:center;gap:8px;
   margin-bottom:8px;flex-wrap:wrap}
@@ -156,6 +160,28 @@ under <span class="mono">web/</span>.
 </div>
 
 <div id="launch"></div>
+
+<!-- A safety net, below the steps rather than above them: it matters most to somebody who has
+     already started. The reasoning is in the checks block; the measurement is in test/run.mjs
+     and the validator's own refusals are in test/run-deploy.mjs. -->
+<div class="card" id="progressCard">
+  <div class="hdr"><h2>If this page forgets</h2></div>
+  <p class="tiny dim" style="margin:0 0 10px">Progress lives in this browser, under
+  <span class="mono" id="pgOrigin">this exact address</span>. Open the page a different way —
+  <span class="mono">file://</span> instead of <span class="mono">http://127.0.0.1</span>, a
+  different port, a different browser, a private window — and it is a different store, and this
+  page shows nothing done. Nothing is lost when that happens: the chain still has the truth, and
+  <span class="mono">record.mjs</span> rebuilds
+  <span class="mono">deploy/launch-state.json</span> from the transaction hashes. Take a copy
+  anyway, before you start and after every step.</p>
+  <div class="row">
+    <button id="pgSave">Copy progress</button>
+    <button id="pgLoad">Restore progress</button>
+  </div>
+  <textarea id="pgBox" hidden spellcheck="false" autocomplete="off"
+    aria-label="launch progress, as text"></textarea>
+  <div class="kv" id="pgOut" hidden></div>
+</div>
 
 <div class="card" id="afterCard">
   <h2>What these six steps do not cover</h2>
@@ -409,6 +435,62 @@ function load(){
 }
 function save(){
   try{ localStorage.setItem("snooze.deploy." + L.chainId, JSON.stringify(ST)); }catch(e){}
+}
+
+/* THE PROGRESS IS TRAPPED IN ONE ORIGIN, and that is a fact about browsers rather than a choice
+   anybody made here. file:///…/deploy.html, http://127.0.0.1:8000/deploy.html and
+   http://localhost:8000/deploy.html are THREE DIFFERENT ORIGINS with three separate
+   localStorage stores — measured in one browser profile rather than assumed: test/run.mjs
+   writes under the file origin and reads null from a http one serving these identical bytes.
+   Open this page a second way halfway through a launch and it shows nothing done.
+
+   Nothing is lost when that happens: the chain has the truth and record.mjs rebuilds
+   deploy/launch-state.json from the transaction hashes. But a page that has forgotten a launch
+   in progress is precisely the moment somebody deploys a second token on top of their first.
+
+   So the progress comes out as text and goes back in as text. It carries the chain id and the
+   owner, and an import that disagrees with either is refused — the same refusal loadState()
+   makes for launch-state.json, for the same reason: a rehearsal's verified steps are not this
+   launch's, and the failure where the safety mechanism hides the problem is the worst one. */
+function exportProgress(){
+  return JSON.stringify({ what:"snooze-deploy-progress", version:1,
+                          chainId: L ? L.chainId : 0, owner: L ? L.owner : null,
+                          state: ST }, null, 2);
+}
+function importProgress(text){
+  var doc;
+  try{ doc = JSON.parse(String(text)); }
+  catch(e){ return { ok:false, why:"that is not JSON" }; }
+  if(!doc || typeof doc !== "object" || Array.isArray(doc))
+    return { ok:false, why:"that is not a progress record" };
+  if(doc.what !== "snooze-deploy-progress")
+    return { ok:false, why:"that is not a progress record from this page" };
+  if(L && doc.chainId !== L.chainId)
+    return { ok:false, why:"that progress is from chain " + doc.chainId + " and this page is on " +
+             "chain " + L.chainId + ". A rehearsal's steps are not this launch's." };
+  if(L && doc.owner && String(doc.owner).toLowerCase() !== String(L.owner).toLowerCase())
+    return { ok:false, why:"that progress belongs to " + doc.owner + ", and this launch's owner " +
+             "is " + L.owner + ". These are different launches." };
+  var s = doc.state;
+  if(!s || typeof s !== "object" || Array.isArray(s))
+    return { ok:false, why:"there is no state in that record" };
+  /* Every field is checked for SHAPE, because the one thing a paste box must never do is accept
+     a 39-character address. One character short is not an address, and it would be carried
+     straight into a constructor argument by the step that reads it. */
+  var ADDR = /^0x[0-9a-fA-F]{40}$/, W32 = /^0x[0-9a-fA-F]{64}$/;
+  var addrs = ["oracle", "deployer", "token", "curve", "predicted"];
+  for(var i = 0; i < addrs.length; i++)
+    if(s[addrs[i]] != null && s[addrs[i]] !== "" && !ADDR.test(s[addrs[i]]))
+      return { ok:false, why:addrs[i] + " is not a 20-byte address: " + s[addrs[i]] };
+  var words = ["salt", "initCodeHash"];
+  for(var j = 0; j < words.length; j++)
+    if(s[words[j]] != null && s[words[j]] !== "" && !W32.test(s[words[j]]))
+      return { ok:false, why:words[j] + " is not 32 bytes: " + s[words[j]] };
+  var obj = function(v){ return v && typeof v === "object" && !Array.isArray(v) ? v : {}; };
+  return { ok:true, state:{
+    oracle: s.oracle || null, deployer: s.deployer || null, token: s.token || null,
+    salt: s.salt || null, initCodeHash: s.initCodeHash || null, predicted: s.predicted || null,
+    curve: s.curve || null, verified: obj(s.verified), sent: obj(s.sent) } };
 }
 
 /* ------------------------------------------------------------------------------- the steps */
@@ -1257,6 +1339,58 @@ async function verify(step, card){
   var slot = $("out-" + step.id);
   if(slot && slot.parentNode) slot.parentNode.replaceChild(keep, slot);
 }
+
+/* The progress card. Two buttons and a box, and the box is deliberately the transport rather
+   than a download: an <a download> is the one thing that behaves differently between a file
+   origin and a loopback one, and this card exists because of a difference between those two
+   exact origins. Text you can select goes anywhere — a note, a message to yourself, another
+   machine. */
+function pgSay(text, bad){
+  var out = $("pgOut");
+  out.hidden = false;
+  out.textContent = text;
+  out.className = "kv " + (bad ? "badbox" : "okbox");
+}
+$("pgOrigin").textContent = location.origin === "null" || !location.origin
+  ? "file://" : location.origin;
+$("pgSave").addEventListener("click", function(){
+  var box = $("pgBox");
+  box.hidden = false;
+  box.value = exportProgress();
+  box.focus(); box.select();
+  /* Best effort. The clipboard API is unavailable on some origins and refuses outside a secure
+     context, which a plain loopback page may or may not be depending on the browser — so the
+     SELECTED BOX is the answer and the clipboard is a convenience on top of it. Never reported
+     as having worked unless the promise resolved. */
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(box.value).then(
+      function(){ pgSay("Copied. It is also selected in the box below — keep it somewhere " +
+                        "that is not this browser.", false); },
+      function(){ pgSay("Selected in the box below. Copy it yourself — this browser did not " +
+                        "grant clipboard access.", false); });
+  } else {
+    pgSay("Selected in the box below. Copy it and keep it somewhere that is not this browser.",
+          false);
+  }
+});
+$("pgLoad").addEventListener("click", function(){
+  var box = $("pgBox");
+  if(box.hidden || !box.value.trim()){
+    box.hidden = false; box.value = ""; box.focus();
+    pgSay("Paste a saved progress record into the box, then press Restore again.", false);
+    return;
+  }
+  var r = importProgress(box.value);
+  if(!r.ok){ pgSay("Not restored — " + r.why, true); return; }
+  ST = r.state;
+  save();
+  render();
+  /* render() rebuilt the card, so the message has to be written after it rather than before. */
+  pgSay("Restored. Every step below is now what that record said, and nothing was read from " +
+        "the chain to get here — press Verify on each completed step before you trust it.",
+        false);
+  $("pgBox").hidden = false;
+});
 
 $("wConnect").addEventListener("click", connect);
 $("wForget").addEventListener("click", forget);

@@ -267,7 +267,8 @@ const PAGECHECKS = (() => {
   if (!block || !TWIN) return null;
   const noStore = { getItem: () => null, setItem: () => {} };
   return new Function("window", "localStorage", "SNOOZE", "$", "A", "L", "W",
-    block + "\nreturn { STEPS: STEPS, ST: ST, oracleChecks: oracleChecks };")(
+    block + "\nreturn { STEPS: STEPS, ST: ST, oracleChecks: oracleChecks, " +
+            "exportProgress: exportProgress, importProgress: importProgress };")(
     { __SNOOZE: TWIN, localStorage: noStore }, noStore, PAGE,
     () => null, TWIN, PAGE_LAUNCH, { prov: null, addr: null, chain: null });
 })();
@@ -1088,6 +1089,81 @@ console.log("── the page's encoder against the scripts', on this launch's re
      /bond\(\) is permissionless/i.test(page) && /race/i.test(page));
   for (const item of AFTER_THE_SEQUENCE)
     ok(`the page also carries "${item.title}"`, page.includes(item.title));
+}
+
+/* ────────────────────────────── the page's progress, out of the browser and back in ──────── */
+// The signing page keeps its progress in localStorage, which is scoped to the ORIGIN it was
+// opened from — and test/run.mjs measures, in one browser profile, that file:// and a http://
+// origin serving the identical bytes have separate stores. So a person who opens the page one
+// way on Tuesday and the other way on Wednesday sees a launch that has not started. Nothing is
+// lost when that happens (the chain has the truth, record.mjs rebuilds the CLI's copy), but it
+// is exactly the moment somebody deploys a second token on top of their first.
+//
+// The way out is a paste box, and a paste box is a place where a 39-character address gets in.
+// So the validator is checked here rather than by looking at it.
+console.log("── the page's progress can leave the browser it is trapped in");
+{
+  const P = PAGECHECKS;
+  ok("the page exposes an export and an import that run outside a browser",
+     !!P && typeof P.exportProgress === "function" && typeof P.importProgress === "function");
+  if (P && P.importProgress) {
+    const owner = PAGE_LAUNCH.owner, chainId = PAGE_LAUNCH.chainId;
+    const rec = (state, over = {}) => JSON.stringify(
+      { what: "snooze-deploy-progress", version: 1, chainId, owner, state, ...over });
+    const full = { oracle: "0x" + "aa".repeat(20), deployer: "0x" + "bb".repeat(20),
+                   token: "0x" + "cc".repeat(20), salt: "0x" + "01".repeat(32),
+                   initCodeHash: "0x" + "02".repeat(32), predicted: "0x" + "dd".repeat(20),
+                   curve: "0x" + "dd".repeat(20),
+                   verified: { oracle: true, deployer: true, token: true },
+                   sent: { "oracle.deploy": "0x" + "ee".repeat(32) } };
+
+    const good = P.importProgress(rec(full));
+    ok("a record this page wrote comes back in", good.ok, good.why);
+    ok("and every field survives the round trip",
+       good.ok && JSON.stringify(good.state) === JSON.stringify(full),
+       good.ok ? JSON.stringify(good.state) : "");
+
+    // The refusals, each of which is a real thing somebody pastes.
+    const no = (label, text, wants) => {
+      const r = P.importProgress(text);
+      ok(label, !r.ok && (!wants || new RegExp(wants).test(r.why)),
+         r.ok ? "it was ACCEPTED" : r.why);
+    };
+    no("junk text is refused, not parsed into an empty launch", "hello", "not JSON");
+    no("and so is valid JSON that is not a progress record", '{"token":"0x00"}', "not a progress record");
+    no("and an array", "[]", "not a progress record");
+    // The one that matters most: a rehearsal's progress, on mainnet. loadState() refuses the
+    // same thing for launch-state.json and for the same reason — a testnet read marking a
+    // mainnet step verified is the failure where the safety mechanism hides the problem.
+    no("a rehearsal's progress is refused on this chain", rec(full, { chainId: 84532 }),
+       "chain 84532");
+    no("and somebody else's launch is refused by owner",
+       rec(full, { owner: "0x" + "11".repeat(20) }), "different launches");
+    // A paste box is where a truncated address gets in, and an address one character short is
+    // not an address — it is a different one, silently, after padStart.
+    no("a 39-character address is refused rather than padded",
+       rec({ ...full, token: "0x" + "c".repeat(39) }), "not a 20-byte address");
+    no("a 41-character one too", rec({ ...full, curve: "0x" + "d".repeat(41) }));
+    no("and a salt that is not 32 bytes", rec({ ...full, salt: "0x" + "01".repeat(31) }),
+       "not 32 bytes");
+    no("and an init-code hash that is not", rec({ ...full, initCodeHash: "0xdeadbeef" }));
+
+    // Empty is a legitimate record: it is what "I have not started" exports as.
+    const blank = P.importProgress(rec({ oracle: null, deployer: null, token: null, salt: null,
+                                         initCodeHash: null, predicted: null, curve: null,
+                                         verified: {}, sent: {} }));
+    ok("a record with nothing in it is accepted, because that is a real state", blank.ok, blank.why);
+    // And the two maps are normalised, so a record with an array where an object belongs cannot
+    // make ST.verified something the rest of the page indexes into and gets undefined from.
+    const odd = P.importProgress(rec({ ...full, verified: [], sent: "no" }));
+    ok("a verified map that is not a map becomes an empty one rather than an array",
+       odd.ok && !Array.isArray(odd.state.verified) &&
+       typeof odd.state.verified === "object" && Object.keys(odd.state.verified).length === 0 &&
+       typeof odd.state.sent === "object", odd.ok ? JSON.stringify(odd.state.verified) : odd.why);
+
+    const round = P.importProgress(P.exportProgress());
+    ok("and exportProgress produces something importProgress accepts", round.ok, round.why);
+  }
 }
 
 /* ──────────────────────────────── every address, before the wallet has spent anything ────── */
