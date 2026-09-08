@@ -212,6 +212,52 @@ console.log("── the block-keyed ramp");
   ok("an unopened block ramp reverts rather than pricing from block zero", !r.ok, r.raw);
 }
 
+console.log("── same block, and therefore no way to know what you will pay");
+{
+  // Base has one sequencer and a private mempool, so buyers in a 2-second window submit
+  // without seeing each other. The aggregate is unaffected — constant product is path
+  // independent for a given total and transaction count — but WHO PAYS WHAT is decided by an
+  // ordering nobody can observe. Under a per-buy ramp that means two people who pressed the
+  // button at the same instant pay different tax, and neither could have known.
+  const perBuy = await mk({ ...BASE, unit: UNIT.PerBuy, startBps: 100, stepBps: 100, capBps: 5000 });
+  const rates = [];
+  for (let i = 0; i < 4; i++) {
+    rates.push((await call(perBuy, "buyTaxBps(address)", [ALICE], { blockNumber: 50 })).words[0]);
+    await call(perBuy, "recordBuy(address,uint256)", [ALICE, ETH],
+               { from: ALICE, blockNumber: 50 });
+  }
+  ok("under a per-buy ramp, four buys in ONE block pay four different rates",
+     new Set(rates.map(String)).size === 4, rates.join(","));
+  ok("and the spread inside that single block is already 3 points",
+     rates[3] - rates[0] === 300n, rates.join(","));
+
+  const perVol = await mk({ ...BASE, unit: UNIT.PerVolume, stepUnit: ETH,
+                            startBps: 100, stepBps: 100, capBps: 5000 });
+  const vrates = [];
+  for (let i = 0; i < 4; i++) {
+    vrates.push((await call(perVol, "buyTaxBps(address)", [ALICE], { blockNumber: 50 })).words[0]);
+    await call(perVol, "recordBuy(address,uint256)", [ALICE, ETH],
+               { from: ALICE, blockNumber: 50 });
+  }
+  ok("a volume ramp has the same problem — ordering still decides the rate",
+     new Set(vrates.map(String)).size === 4, vrates.join(","));
+
+  // A block-keyed ramp is the only unit where simultaneity is not a lottery.
+  const perBlock = await mk({ ...BASE, unit: UNIT.PerBlock, startBlock: 50,
+                              startBps: 100, stepBps: 100, capBps: 5000 });
+  const brates = [];
+  for (let i = 0; i < 4; i++) {
+    brates.push((await call(perBlock, "buyTaxBps(address)", [ALICE], { blockNumber: 50 })).words[0]);
+    await call(perBlock, "recordBuy(address,uint256)", [ALICE, ETH],
+               { from: ALICE, blockNumber: 50 });
+  }
+  ok("under a per-block ramp everyone in the same block pays the same rate",
+     new Set(brates.map(String)).size === 1, brates.join(","));
+  eq("and it is the rate the schedule promised for that block", brates[0], 100n);
+  eq("the next block steps once, for everyone in it",
+     (await call(perBlock, "buyTaxBps(address)", [ALICE], { blockNumber: 51 })).words[0], 200n);
+}
+
 console.log("── the exemption list is the back door, so it must be closable");
 {
   const c = await mk(BASE);
