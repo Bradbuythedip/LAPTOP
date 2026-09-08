@@ -80,12 +80,12 @@ Published build `2026-09-08a`:
 
 ```
 sha256(web/index.html)   = bb2035b42c7d19f4c277ea8ae2b72c5cf23a8bf44ea4596adb8895b2dd4911f5
-sha256(web/buy.html)     = 01f26e979bbb3d98b5c727a5c116d345404fb237c062a3f76562264e61baa714
-sha256(web/checker.html) = 9f29c404eb6c8c9d5c1ab7f71b51dc4ef782c4cfd6928adae4290954a87155ee
-sha256(web/size.html)    = 82d07ae9ed77473b36a0fde82967cf6cd16ca7381b7fb4b3bfef309df02ab051
+sha256(web/buy.html)     = af3a9400230b04c05cf39551b350df3af7a0a8017a30ccde9fa00aa5492213fe
+sha256(web/checker.html) = 6bd11830f2b24414da1526e02f75401a2149a6a170a003539c771246d12b1735
+sha256(web/size.html)    = 44079d063a4fd69485d417e91def3dc1f14db9d23834b6049eb88f9896eee496
 sha256(web/route.html)   = 2391fb5a910a6969c2b2421a9a1340163c949e7f1efdd0736707f4fb6545990e
 sha256(web/order.html)   = 6bf2ed923a53495afa3847d641cb8fd37b3078c13145fd43deaf80f85cecb8eb
-sha256(web/slot.html)    = dcaec47b81df8d3ea364b2219e8c1de7dbf55a3df645007e9fbc39661a80afa6
+sha256(web/slot.html)    = ff02df3549c3bde329456ae8565452dcf2d70ec6f24fdf4ff6dd227b5c4bff75
 sha256(web/launch.html)  = 386009886adc54c2bce639ce68259b38005ebfebadad22153e131438e0da0caa
 sha256(web/snooze.html)  = 97eb7aa63998d04f811ca62c07736ae8adae747b8fda47fba3122f15dbdcc9b8
 ```

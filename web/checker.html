@@ -494,7 +494,7 @@ const SEL={
   balanceOf:"0x70a08231",
   name:"0x06fdde03", symbol:"0x95d89b41", decimals:"0x313ce567", totalSupply:"0x18160ddd",
 };
-const DEFAULT_RPC="https://mainnet.base.org";
+const DEFAULT_RPC="/api/rpc";
 const RELAY_URL="/api/rpc";
 const ZERO32="0x"+"0".repeat(64);
 
@@ -538,6 +538,13 @@ const RPC={
   relay:localStorage.getItem("laptop.relay")==="1",
   batchWorks:true,
   endpoint(){ return this.relay?RELAY_URL:this.url; },
+  /* The same-origin default 404s until the rewrite behind it is deployed, and a page that
+     only knows about that path is a page that is down. One fall-through, remembered. */
+  fell:false,
+  fallThrough(){
+    if(this.fell||this.relay||this.url!==DEFAULT_RPC||DEFAULT_RPC.startsWith("http")) return false;
+    this.fell=true; this.url="https://mainnet.base.org"; return true;
+  },
 };
 function classifyError(e){
   if(e&&e.name==="AbortError") return "timed out";
@@ -552,6 +559,8 @@ async function post(body,timeoutMs=9000){
       method:"POST",headers:{"content-type":"application/json"},
       body:JSON.stringify(body),signal:ctl.signal,cache:"no-store",referrerPolicy:"no-referrer",
     });
+    if(!r.ok && RPC.fallThrough())
+      return post(body,timeoutMs);
     if(!r.ok){
       if(r.status===429) return {ok:false,reason:"rate limited (429)"};
       return {ok:false,reason:"HTTP "+r.status};

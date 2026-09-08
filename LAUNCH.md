@@ -278,7 +278,39 @@ changed.
 
 ---
 
-## 5. The site
+## 5. The endpoints, which is the one thing you said you would provide
+
+Every page now reads Base through **`/api/rpc`**, a same-origin path, and falls through to
+`https://mainnet.base.org` once if that path is not deployed yet. So the site works today and
+starts using your endpoint the moment the rewrite exists — no code change, no redeploy of the
+pages.
+
+**Why a path and not the URL.** A keyed endpoint pasted into a static file is a bearer
+credential handed to everyone who views source. No obfuscation changes that, because the
+browser has to read it to use it. Referrer restriction cannot save it either: every fetch on
+this site sets `no-referrer`, so your provider sees nothing to check. **Origin allowlisting is
+what works**, and it only works if the key is server-side.
+
+What to do with the endpoints when you have them:
+
+1. Add a rewrite so `/api/rpc` reaches a function or service holding the key. `vercel.json` has
+   no `rewrites` block today; `relay/server.mjs` is the shape of the thing behind it, and its
+   allowlist is now exactly this site's read set — `eth_chainId`, `eth_blockNumber`,
+   `eth_call`, `eth_getCode`, `eth_getStorageAt`, `eth_getLogs`, `eth_getBalance`. It was
+   missing the last two, which meant switching it on used to break the chart and the wallet
+   balances.
+2. Allowlist your own origin at the provider.
+3. Leave the pages alone. If you ever want to point them somewhere else,
+   `node tools/endpoint.mjs <url-or-path>` sets all five in one go and
+   `node tools/stamp.mjs` republishes the hashes.
+
+**Why you need one at all**, since the public endpoint is free: it is not about volume. The one
+method the landing page depends on is `eth_getLogs`, and that is the method public endpoints
+refuse outright (403) or range-cap (413). This repo's own README has said so about the Python
+scripts since before the live chart existed; it was never carried across to the pages. Thirty-two
+`eth_call`s per venue scan are not the problem. One `eth_getLogs` is.
+
+## 6. The site
 
 - `web/index.html` holds `const POOL = ""` and `const TOKEN = ""`. Filling them in changes the
   file, which changes its hash, which `node tools/stamp.mjs` republishes in the README. The
@@ -293,7 +325,7 @@ changed.
 
 ---
 
-## 6. What can still go wrong afterwards
+## 7. What can still go wrong afterwards
 
 - **Liquidity migrates to a venue with neither rule.** `freeze()` means exactly one address is
   ever `isPool`. Anyone can make a pair, a v4 pool or a wrapper and trade there, untaxed and
