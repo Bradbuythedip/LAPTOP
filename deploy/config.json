@@ -1,0 +1,53 @@
+{
+  "_comment": [
+    "Every address the launch needs, in one place. Nothing here is a secret — these are all",
+    "public on chain the moment anything is deployed. The RPC key is deliberately NOT here:",
+    "it belongs behind /api/rpc as a server-side environment variable, because anything this",
+    "file contains ends up in the repo and anything the page contains ends up in view-source."
+  ],
+  "chainId": 8453,
+  "chain": "base",
+  "site": "snoozebear.xyz",
+
+  "owner": "0x4296e9A65582358221EEd0e9A2B4EC94ad4F5929",
+  "_owner": "The only address that may deploy, and where every fee goes. Immutable everywhere it appears.",
+
+  "fees": {
+    "curveFeeTo": "0x4296e9A65582358221EEd0e9A2B4EC94ad4F5929",
+    "snoozeDev": "0x4296e9A65582358221EEd0e9A2B4EC94ad4F5929",
+    "gateUnclaimedTo": "0x4296e9A65582358221EEd0e9A2B4EC94ad4F5929",
+    "_note": "snoozeDev only receives anything if devBps > 0, and above zero supplyOnlyFalls() returns false."
+  },
+
+  "token": {
+    "name": "Snooze Bear",
+    "symbol": "SNOOZE",
+    "decimals": 18,
+    "_devBps": "0 keeps 'supply only falls' exactly true. Up to 2000 is a share OF THE HAIRCUT, never of the trade."
+  },
+
+  "curve": {
+    "_virtualEth": "Sets what a comfortable buy is denominated in, NOT how deep the book is. 3e18 = a 0.1 ETH buy moves the price 3.3%.",
+    "virtualEth": "3000000000000000000",
+    "_bondTarget": "E0*(sqrt(m)-1). At E0=3 and m=10 that is 6.487 ETH of real buys.",
+    "bondTarget": "6486832980505137996",
+    "feeBps": 100,
+    "_feeBps": "1%, charged in ETH on the way in and the way out, and paid straight to curveFeeTo. Capped at 500 by the contract."
+  },
+
+  "gate": {
+    "_comment": "Hold SNOOZE to bid on LAPTOP during the early window. Zero on the SNOOZE curve itself, since there is nothing to hold yet.",
+    "gateToken": "",
+    "gateMin": "0",
+    "gateUntilHoursAfterLaunch": 24
+  },
+
+  "vanity": {
+    "_comment": "An address is hex, so only 0-9 and a-f exist in one. PUMP, DUMP, BULL, MOON, BEAR and ZZZ all contain letters the alphabet does not have and cannot be ground at any cost.",
+    "_reachable": "ba5ed (BASED), bada55 (BADASS), 1337 (LEET), 600d (GOOD), beabed (BEA-BED), 5eeded (SEEDED), acce55 (ACCESS), f00d, face, dead, cafe, beef",
+    "_ifYouWantAWordThatIsNotHex": "It goes in a Base name, not in the address. pump.snoozebear.eth is what a wallet shows people; the hex underneath it can be anything.",
+    "suffix": "ba5ed",
+    "_grind": "node tools/vanity-par.mjs beabed --deployer <SnoozeDeployer> --inithash <keccak of the real init code>",
+    "_warning": "The address depends on the exact bytecode AND the constructor arguments. Grind last, after nothing else will change."
+  }
+}

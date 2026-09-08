@@ -648,9 +648,15 @@ for (const f of pages) {
   const unexpected = methods.filter(m => !ALLOWED_RPC.includes(m));
   ok(`${f} asks only for the read methods it needs`, unexpected.length === 0,
      `unexpected: ${unexpected.join(", ")}`);
+  // This used to require the literal `p.ethereum`, which is one page's variable name and not
+  // the rule. A page reaching window.phantom.ethereum directly is doing exactly the right
+  // thing and was failing. The rule is: touch window.phantom, reach its .ethereum side.
   ok(`${f} reaches for Phantom's EVM provider, not its Solana one`,
-     !/window\.phantom/.test(raw) || /p\.ethereum/.test(raw),
+     !/window\.phantom/.test(raw) || /\.ethereum\b/.test(raw),
      "a page touching window.phantom must use its .ethereum side — Solana cannot see Base");
+  ok(`${f} never asks Phantom's Solana provider to connect`,
+     !/solana\s*\.\s*connect/i.test(raw),
+     "the Solana provider cannot see Base and prompting it is a dead end");
   ok(`${f} no longer claims it will never ask for a wallet`,
      !/never asks you to connect a wallet, and never will|does not ask for a wallet and never will/i.test(t),
      "a page still carries the old promise it can no longer keep");

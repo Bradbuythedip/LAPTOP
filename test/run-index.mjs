@@ -164,19 +164,43 @@ console.log("── the curve is the contract's arithmetic, not a drawing of it"
 
 console.log("── the page says what the mechanism is, in as few words as it takes");
 {
-  ok("it says anyone can launch, which is the whole pitch", /anyone can launch/i.test(body));
+  // This asserted "anyone can launch". The deployer is now locked to one address until the
+  // first token is out, so that sentence became false and the assertion was holding it up.
+  // What the page owes a reader is the true version, in the steps AND in the limits.
+  ok("it does not claim to be permissionless while the deployer is locked",
+     !/anyone can launch/i.test(body));
+  ok("it says $SNOOZE launches first", /\$SNOOZE launches first/i.test(body));
+  ok("and repeats it where the limits are listed",
+     /not permissionless yet/i.test(body) && /nobody else can launch/i.test(body));
+  ok("while being clear that buying is open to everyone", /Anyone can BUY/i.test(body));
   ok("it says the price is a curve rather than a pool", /a curve, not a pool/i.test(body));
+  ok("and does not describe itself as a launchpad", !/launchpad/i.test(body));
   ok("it says the curve can only pay out what came in",
      /only ever pay out the ETH that came in/i.test(body));
   ok("bonding is described with a number, not a vibe",
      /2\.16/.test(body) && /bonds/i.test(body));
   ok("Rule 1 is stated against the 24-hour average", /24-hour average/i.test(body));
-  ok("$SNOOZE is named as the launchpad and LAPTOP as a launch on it",
-     /\$SNOOZE is the launchpad/i.test(body) && /LAPTOP is the first launch/i.test(body));
-  ok("and why holding one gets you the other",
-     /Holding \$SNOOZE is how you get into LAPTOP early/i.test(body));
+  // "LAPTOP is the first launch on $SNOOZE" was never true — it was invented here and the
+  // assertion was holding it up. What the owner actually said is that holding one gets you the
+  // other, so that is what is asserted, and the invented version is asserted ABSENT.
+  ok("it does not claim LAPTOP launches on $SNOOZE",
+     !/first launch on it/i.test(body) && !/Launchpad on Base/i.test(body));
+  ok("the hero says what the pair is in one line",
+     /\$SNOOZE is the ticket\. LAPTOP is the show\./i.test(body));
+  ok("and the page shows the two rather than explaining them",
+     (await page.$$eval(".tok", els => els.length)) === 2);
+  ok("LAPTOP is described as separate and on its own",
+     /A separate token, on its own/i.test(body));
+  ok("and as not yet buyable", /You cannot buy it yet/i.test(body));
+  ok("the connection is named as one thing, not several",
+     /whatever \$SNOOZE you hold at one block/i.test(body));
+  ok("and it is a snapshot, not a lock", /Nothing is locked and nothing is taken/i.test(body));
+  ok("and the dynamic is stated, not just the rule",
+     /pays holders, not renters/i.test(body));
+  ok("including that renting the gate is the worst way to use it",
+     /worst way to use it/i.test(body));
   ok("the claim is self-service, because nothing can claim for you",
-     /claimed by you, from your own wallet/i.test(body));
+     /You claim it yourself, from your own wallet/i.test(body));
   // textContent on <body> sweeps up the inline <script> too, which is most of this file and
   // none of the page. innerText is what a reader actually sees.
   const seen = await page.evaluate(() => document.body.innerText.replace(/\s+/g, " ").trim());
@@ -202,8 +226,39 @@ console.log("── and what it does not do, which is the part a launch page lea
      /Most tokens never bond/i.test(body) && /normal outcome/i.test(body));
   ok("the absence of an audit is on the page, not only in the repo",
      /No audit, no testnet/i.test(body));
-  ok("it states plainly that nothing is deployed", /Nothing is deployed/i.test(body));
-  ok("and that anything shown today is not it", /is not it/i.test(body));
+  // Every address slot on the page says so for itself, which is stronger than one sentence
+  // somewhere saying it about all of them.
+  // Only the slots a visitor can see. The owner panel and the hidden contract row are not on
+  // screen, and asserting over them measured markup rather than what anybody reads.
+  const slots = await page.$$eval(".ca .v", els => els
+    .filter(e => e.getBoundingClientRect().height > 0)
+    .map(e => e.textContent.trim()));
+  ok("every address slot on screen says the same thing",
+     slots.length >= 2 && new Set(slots).size === 1 && /not deployed/i.test(slots[0]),
+     JSON.stringify(slots));
+  ok("and each token carries its own state badge",
+     (await page.$$eval(".tok .badge", els => els.map(e => e.textContent.trim())))
+       .every(t => /not (deployed|open)/i.test(t)));
+}
+
+console.log("── the first action on the page is the one the owner asked for");
+{
+  const order = await page.$$eval("h1, .card, section.card", els =>
+    els.map(e => (e.id || e.tagName + ":" + (e.textContent || "").trim().slice(0, 18))));
+  const buyAt = order.findIndex(x => x === "buy");
+  const liveAt = order.findIndex(x => x === "live");
+  ok("the Buy LAPTOP card exists", buyAt >= 0, JSON.stringify(order));
+  ok("and comes before everything else on the page", buyAt >= 0 && buyAt < liveAt,
+     JSON.stringify(order.slice(0, 5)));
+  const cta = await page.$eval(".heroCta a.cta", a => a.getAttribute("href") + "|" + a.textContent.trim());
+  ok("the hero's primary action is Buy LAPTOP", cta === "#buy|Buy LAPTOP", cta);
+  ok("the contract row is hidden while there is no contract",
+     await page.isHidden("#lapCaRow"));
+  ok("and the card says so rather than showing a blank", /not launched/i.test(body));
+  ok("with no button, because there is nothing for one to do yet",
+     await page.isHidden("#lapCta"));
+  const copy = await page.$$eval(".copy", els => els.length);
+  ok("there is a copy control ready for the address", copy === 1, String(copy));
 }
 
 console.log("── depth costs speed, with the numbers rather than the adjective");
@@ -278,6 +333,65 @@ console.log("── Base blue where it clears contrast, and nowhere else");
   ok("the chain chip fills with it and puts white on top",
      chip.bg === "rgb(0, 82, 255)" && chip.fg === "rgb(255, 255, 255)", JSON.stringify(chip));
   ok("and the page names the chain and its id", /Base/.test(body) && /8453/.test(body));
+}
+
+console.log("── the owner view is a convenience and says so");
+{
+  ok("it is hidden with no wallet connected", await page.isHidden("#ownerPanel"));
+  // Injecting an account the way Phantom would, to check the match is on the address and not
+  // on merely being connected.
+  // Driving the decision directly rather than through a reload: page.evaluate sets
+  // window.phantom and page.reload immediately wipes it, so the injected wallet was never
+  // there when the page looked for it and the panel stayed hidden for the right address.
+  const show = async who => {
+    await page.evaluate(a => window.__OWNER.view(a), who);
+    await page.waitForTimeout(50);
+  };
+  await show("0x00000000000000000000000000000000deadbeef");
+  ok("and stays hidden for a wallet that is not the owner",
+     await page.isHidden("#ownerPanel"));
+  await show("0x4296e9A65582358221EEd0e9A2B4EC94ad4F5929");
+  ok("it appears for the owner's address, whatever its casing",
+     await page.isVisible("#ownerPanel"));
+  const t = flat(await txt("#ownerPanel"));
+  ok("and says outright that it is a convenience, not a permission",
+     /convenience, not a permission/i.test(t), t.slice(0, 120));
+  ok("and names what the real gate is", /onlyOwner/.test(t));
+  ok("the fee destination shown is the owner",
+     (await txt("#oFees")).toLowerCase() === "0x4296e9a65582358221eed0e9a2b4ec94ad4f5929",
+     await txt("#oFees"));
+  await show(null);
+  ok("disconnecting hides it again", await page.isHidden("#ownerPanel"));
+  // And the load-time path, which is the one a real visitor takes: an already-connected wallet
+  // is read with eth_accounts and nothing is prompted.
+  const ctx2 = await browser.newContext({ viewport: { width: 375, height: 900 } });
+  await ctx2.addInitScript(a => {
+    window.phantom = { ethereum: {
+      request: ({ method }) => Promise.resolve(method === "eth_accounts" ? [a] : null),
+      on(){} } };
+  }, "0x4296e9A65582358221EEd0e9A2B4EC94ad4F5929");
+  const p2 = await ctx2.newPage();
+  const asked = [];
+  await p2.exposeFunction("__note", m => asked.push(m));
+  await p2.goto(SITE + "/", { waitUntil: "load" });
+  await p2.waitForTimeout(300);
+  ok("an already-connected owner sees it on load, with no prompt",
+     await p2.isVisible("#ownerPanel"));
+  await ctx2.close();
+}
+
+console.log("── disclosures look like disclosures");
+{
+  // Checked across the site, not only here: a <summary> styled as dim text is a control whose
+  // only signifier somebody removed.
+  for (const f of ["index.html", "checker.html", "buy.html", "size.html", "slot.html"]) {
+    const src = fs.readFileSync(path.join(ROOT, "web", f), "utf8");
+    if (!/<summary/.test(src)) { ok(`${f} has no disclosure to signpost`, true); continue; }
+    ok(`${f} gives its disclosures a caret`,
+       /summary::before\{content:""/.test(src.replace(/\s+/g, "")) ||
+       /summary::before/.test(src), "a summary with no marker");
+    ok(`${f} gives them a real tap target`, /summary\{[^}]*min-height:3\dpx/.test(src));
+  }
 }
 
 console.log("── the tools are places to go, not a row of buttons");

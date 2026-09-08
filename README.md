@@ -79,15 +79,15 @@ file and opening it locally removes the hosting party from the trust question en
 Published build `2026-09-08a`:
 
 ```
-sha256(web/index.html)   = bb2035b42c7d19f4c277ea8ae2b72c5cf23a8bf44ea4596adb8895b2dd4911f5
-sha256(web/buy.html)     = af3a9400230b04c05cf39551b350df3af7a0a8017a30ccde9fa00aa5492213fe
-sha256(web/checker.html) = 6bd11830f2b24414da1526e02f75401a2149a6a170a003539c771246d12b1735
-sha256(web/size.html)    = 44079d063a4fd69485d417e91def3dc1f14db9d23834b6049eb88f9896eee496
-sha256(web/route.html)   = 2391fb5a910a6969c2b2421a9a1340163c949e7f1efdd0736707f4fb6545990e
-sha256(web/order.html)   = 6bf2ed923a53495afa3847d641cb8fd37b3078c13145fd43deaf80f85cecb8eb
-sha256(web/slot.html)    = ff02df3549c3bde329456ae8565452dcf2d70ec6f24fdf4ff6dd227b5c4bff75
-sha256(web/launch.html)  = 386009886adc54c2bce639ce68259b38005ebfebadad22153e131438e0da0caa
-sha256(web/snooze.html)  = 97eb7aa63998d04f811ca62c07736ae8adae747b8fda47fba3122f15dbdcc9b8
+sha256(web/index.html)   = 029ecc1b96aeb98b9f38ca2290c86978d19ffd926b6c79f145971534ccdb5f67
+sha256(web/buy.html)     = 2e41166e2adee2b4d823e766a13ed39c3e8376fc1522ff85c12a7abe146c1726
+sha256(web/checker.html) = f353cc03fae59f4a05d99ada22b94028e3b2e5656dca858fab33a7b461b3555e
+sha256(web/size.html)    = bbdf523d9a92489bc0a13dbd7aaecd256e0c02f66de1dc1d6ad332a9060e1fb1
+sha256(web/route.html)   = 554f8d9ee85b0ed751d1aa05ac7de215d90fb2e7cde7f73a6e154aee34207910
+sha256(web/order.html)   = 56e8927d76863a91ab8b2faef7e9b83e9694a3e9098a84e11d57b8cb7932682c
+sha256(web/slot.html)    = 0c8fe6393dbf7f7e54c9e2cb7d9d000fa3f8b7e9c779b1c5c9514f79efd588cc
+sha256(web/launch.html)  = 214055efeb5843053e0c8ddadb38a0afe6e05b879c773b8b958f84cd63280843
+sha256(web/snooze.html)  = 853fd2c8e91db008592707307be8c0a45bc3229c3ed0d78efbf599168da6726a
 ```
 
 ### Tests
@@ -96,9 +96,9 @@ sha256(web/snooze.html)  = 97eb7aa63998d04f811ca62c07736ae8adae747b8fda47fba3122
 sh test/run-all.sh         # everything below, no network touched
 ```
 
-**1650 assertions across twenty-one suites.**
+**1741 assertions across twenty-two suites.**
 
-`test/run.mjs` — 342, drives the real page in Chromium against `test/mock-rpc.mjs`: Keccak vectors,
+`test/run.mjs` — 353, drives the real page in Chromium against `test/mock-rpc.mjs`: Keccak vectors,
 the four EIP-55 reference addresses, the v4 poolId derivation checked against a real Base pool
 id, ABI-string decoding (including a 10-character name, whose length word contains a hex
 letter, and truncated/absurd offsets), result-length discipline, and full flows for the happy
@@ -124,7 +124,7 @@ of the JavaScript, plus properties a size curve lives or dies on: output rises w
 effective price strictly worsens, a fee costs exactly its rate at the limit, deeper liquidity
 fills better, and no fill can exceed the output-side virtual reserve. Emits the fixture below.
 
-`test/run-index.mjs` — 142, drives the $SNOOZE landing page. Most of it is about one
+`test/run-index.mjs` — 174, drives the $SNOOZE landing page. Most of it is about one
 distinction: a plot of a FORMULA and a plot of a MARKET look identical from three feet away, so
 the suite asserts which one is on screen. With nothing deployed the chart shows Rule 1 itself —
 exact, checkable against `burnBps()` in the contract, labelled *this is arithmetic, not a
@@ -132,6 +132,12 @@ market* — and `window.__CHART.marketSeries` is empty. It only becomes a market
 chain read produced one, and a single deposit is never drawn as a line. The launch-day path is
 driven before launch day against a mock node, including one that refuses `eth_getLogs`, one that
 serves a short window, and one that is not there at all — none of which may produce a number.
+
+It also pins what the page must NOT say: an earlier version claimed "$SNOOZE is the launchpad,
+LAPTOP is the first launch on it", which was invented here and is wrong — they are separate
+tokens, and what is true is that holding one gets you into the other. The words "launchpad" and
+"first launch on it" are now asserted absent, because an assertion that only checks for the right
+sentence lets the wrong one sit beside it.
 
 The rest is the MVP's own rules. The depth-versus-speed table is checked against
 `bond_model.py`'s closed form rather than against the copy that quotes it. Every term with a
@@ -153,7 +159,7 @@ implementation written from the pool identity rather than the page's algebra, th
 splitting laws below, refusal of ceilings under the fee floor, and the promises the page
 declines to make.
 
-`test/run-route.mjs` — 39, asserts `web/route.html` originates no request on load, computes its
+`test/run-route.mjs` — 44, asserts `web/route.html` originates no request on load, computes its
 routing table locally, offers no deposit address, reaches only for Phantom's EVM provider, and
 gets the Solana-is-not-EVM distinction right.
 
@@ -185,7 +191,7 @@ distribution still cannot complete: `claim()` is an outbound transfer and the 20
 applies to it. Also carries the axiomatics — the decay condition, depth-versus-appreciation,
 and what a large supply does and does not buy.
 
-`test/run-curve.mjs` — 64, compiles `contracts/SnoozeCurve.sol` and executes it. The virtual
+`test/run-curve.mjs` — 68, compiles `contracts/SnoozeCurve.sol` and executes it. The virtual
 curve's ETH side starts imaginary, so most of this suite is one property attacked from several
 directions: **the curve can only ever pay out ETH that arrived.** That rests entirely on it never
 buying back more than it sold — tokens exist outside the curve, and on a Snooze launch the
@@ -216,6 +222,17 @@ does not work for you, a bigger number with a real proof does not work, there is
 `claimFor`, and after every attempt the gate still holds the whole allocation. The snapshot's
 honest weakness — a balance at a block can be borrowed for one block — is written into the
 contract rather than left for somebody to find.
+
+`test/run-owner.mjs` — 39, the first launch driven as the owner's wallet would drive it. Two
+claims, both about one address: **only** `0x4296…5929` can deploy the first token — not "should
+not", cannot, checked by a stranger trying — and **every fee lands there**, in the same
+transaction, with no call anywhere that could repoint it. It also refuses a vanity suffix an address cannot contain — PUMP, BEAR, MOON and ZZZ all need
+letters that are not hex digits, and finding that out at grind time means waiting on a search
+that can never finish. It drives the SNOOZE-to-bid gate too:
+a holder buys, somebody holding none reverts, a stranger may pay *for* a holder because the
+check is on who receives, and after the window anybody buys. The deployer's owner cannot be
+transferred or renounced, a salt cannot be redeployed over, and after `seal()` not even the
+owner can deploy again.
 
 `test/run-deployable.mjs` — 32, the go/no-go before a wallet is opened: every runtime under
 EIP-170 and every init code under EIP-3860 (the launchpad is the big one at 52.9% of the
@@ -336,9 +353,16 @@ pooled buy calls and the pool Rule 1 taxes, and nothing deployed is both. `LAUNC
 through the three shapes that follow from that, one of which is broken in a way that looks
 correct.
 
-## Snooze — the launchpad
+## Snooze — the launch machinery
 
-The launchpad is Snooze. Every token launched on it carries the two rules, and `$SNOOZE` is
+> **The relationship between $SNOOZE and LAPTOP is not settled, and this section describes the
+> contracts, not the product.** An earlier version of the site said "LAPTOP is the first launch
+> on $SNOOZE". That was invented here and it is wrong — the two are separate tokens on Base,
+> and what is actually known is that holding $SNOOZE is how you get into LAPTOP. The contracts
+> below deploy a token that carries the two rules; whether LAPTOP is one of them is an open
+> question, not a fact this repo should be asserting.
+
+Every token launched through `SnoozeLaunchpad` carries the two rules, and `$SNOOZE` is
 the first ticker on it.
 
 **`contracts/SnoozeLaunchpad.sol` exists for exactly one reason,** and it is not convenience.

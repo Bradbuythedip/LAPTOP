@@ -18,20 +18,49 @@ proved by a test, the test is named.
 
 ---
 
-## 0. What I need from you
+## 0. The shape of this launch, as you specified it
 
-These are the answers I cannot derive. Everything else follows from them.
+| | |
+| --- | --- |
+| Owner, and the only address that may deploy | `0x4296e9A65582358221EEd0e9A2B4EC94ad4F5929` |
+| Every fee | the same address, immutable everywhere it appears |
+| First token | **Snooze Bear**, ticker **SNOOZE** |
+| Second | **LAPTOP**, on its own curve, gated on holding SNOOZE at launch |
+| Chain | Base, 8453, and nothing else |
+| Site | snoozebear.xyz |
+| Vanity | `…ba5ed` — BASED. See 2c: PUMP, BEAR, MOON and ZZZ cannot exist in an address |
 
-| | Question | Why it blocks |
-| --- | --- | --- |
-| 1 | **Which ticker is launching — $SNOOZE or LAPTOP?** | The site currently carries both. The front page is the $SNOOZE launch; the LAPTOP tools are still on it. The token name goes into an immutable constructor. |
-| 2 | **Which venue shape** (§2.2: A, B or C)? | It decides whether the pooled preorder can exist at all. |
-| 3 | **Who builds the TWAP oracle** (§2.1)? | Without it Rule 1 never fires and $SNOOZE is an ordinary ERC-20 with a transfer cap. |
-| 4 | **`devBps`: zero, or up to 2000?** | Above zero, "supply only goes down" is false and the contract says so through `supplyOnlyFalls()`. Immutable. |
-| 5 | **How much ETH seeds the pool, at what price?** | Sets `minTokensPerEth`, which is immutable and decides whether a stranger can take the pool. |
-| 6 | **Where does the site deploy, and is the domain pointed at it?** | §5. |
+All of it is in `deploy/config.json`, which `test/run-owner.mjs` reads and checks against the
+compiled contracts. That file deliberately holds no RPC key.
+
+### What is still open
+
+1. **The TWAP oracle** (2.1). Not in this repo, and a reverting one is a permanent honeypot.
+2. **`devBps`: zero or up to 2000?** Above zero, "supply only falls" is false and the contract
+   says so through `supplyOnlyFalls()`. Immutable.
+3. **The seed price**, which sets `minTokensPerEth` — immutable, and the thing that stops a
+   stranger buying the pool out.
 
 ---
+
+## 0b. The RPC key, which is not a thing you can hide
+
+You sent a key and asked for it to be obfuscated. It cannot be. A key in a static file is read
+by the browser, so it is read by anyone: `curl snoozebear.xyz | grep -i alchemy` finds it,
+minified or not. Referrer restriction does not help either — every fetch on this site sets
+`no-referrer`, so your provider sees nothing to check.
+
+What does work:
+
+1. **Rotate the key you pasted.** Assume it is public.
+2. Put the new one behind **`/api/rpc`** as a server-side environment variable. Every page
+   already asks that path first and falls through to the public endpoint if it is not there, so
+   nothing breaks before you wire it and nothing needs redeploying after.
+3. **Allowlist snoozebear.xyz as an origin** at the provider. That is the restriction that
+   works on a browser request.
+
+`relay/server.mjs` is the shape of the thing behind the path, and its allowlist is now exactly
+this site's read set.
 
 ## 1. The design finding: one wallet is outside both rules
 
@@ -224,6 +253,33 @@ in at the moment of launch.
 
 **2. Deploy the venue** (Shape A) **or compute the pair address** (Shape B). For Shape B, derive
 the predicted address twice, independently, and only proceed if both agree.
+
+**2b. Deploy `SnoozeDeployer`** with your address as `owner`. Anyone may send this
+transaction — the owner is the constructor argument, not the sender — but only that owner can
+deploy anything from it afterwards, and the owner cannot be transferred or renounced.
+
+**2c. Grind the vanity salt, last.** `node tools/vanity-par.mjs beabed --deployer <the deployer>
+--inithash <keccak of the real init code>`. It has to be last because the address depends on the
+exact bytecode AND the constructor arguments: change the fee address, the supply, a comment that
+shifts a byte, and the address changes. Publish the salt with the address — it is not a secret,
+and publishing it is what lets a stranger recompute `keccak(0xff, deployer, salt, initHash)` and
+check that the address they were given is the one the code lands on.
+
+**Most words cannot be ground at any price.** An address is hex, so it contains only `0-9` and
+`a-f`. `PUMP` needs P, U and M; `BEAR` needs R; `MOON` needs M, O and N; `ZZZ` needs Z. None of
+those letters exist in an address and no amount of searching invents one — this is not a matter
+of difficulty, it is a matter of the alphabet.
+
+What is reachable, with roughly the same energy: `ba5ed` (BASED), `bada55` (BADASS), `1337`,
+`600d`, `beabed` (BEA-BED), `5eeded`, `acce55`, and the classics `f00d`, `face`, `dead`, `cafe`,
+`beef`. `ba5ed` is five characters — about a million salts, ten seconds — and is what
+`deploy/config.json` currently names. Changing it is one word in that file; the suite refuses a
+suffix that is not hex, so an impossible one fails the build rather than a grind that can never
+finish.
+
+**If you want a word the address cannot hold, it goes in a Base name.** `pump.snoozebear.eth`
+resolves to whatever hex you deploy to, and a name is what a wallet actually shows somebody —
+the hex underneath it is the part nobody reads aloud.
 
 **3. Deploy `SnoozeLaunchpad`.** No constructor arguments; `deploy/SnoozeLaunchpad.bin` is the
 bytecode. Expect `count() == 0` and `MAX_DEV_BPS() == 2000`. This address is the launchpad

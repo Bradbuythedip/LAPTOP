@@ -63,6 +63,27 @@ ok("names the preorder arrangement for what it is",
 ok("explains why a preorder cannot exist yet",
    (await txt("body")).includes("no pool to swap"));
 
+// The MVP is Base-only, so the page opens on the answer for somebody already there rather
+// than making everyone pick their way to it.
+console.log("── Base is the default, because Base is the whole system");
+{
+  const sel = await page.$eval("#chain", el => ({
+    value: el.value,
+    first: el.options[0].value,
+    labels: [...el.options].map(o => o.textContent.trim()),
+  }));
+  ok("the selector opens on Base", sel.value === "base", sel.value);
+  ok("and Base is the first option, not buried mid-list", sel.first === "base",
+     JSON.stringify(sel.labels));
+  ok("the option says you are already there", /already here/i.test(sel.labels[0]),
+     sel.labels[0]);
+  ok("the heading is about Base, not about picking a chain",
+     (await txt("h1")).includes("Base"), await txt("h1"));
+  const sub = await txt(".sub");
+  ok("and the page says outright that everything happens on Base",
+     /Everything happens on Base/i.test(sub), sub);
+}
+
 console.log("── routes");
 const routes = await page.evaluate(() => {
   const R = window.__ROUTE;

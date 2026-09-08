@@ -39,12 +39,17 @@ const FEETO = "0x00000000000000000000000000000000000000fe";
 const POOL  = "0x00000000000000000000000000000000000000b0";
 
 // A plain ERC-20 with no rules, so the curve is measured on its own before Snooze is added.
+const NO_ADDR = "0x" + "0".repeat(40);
 async function fixture({ vEth = 3n * E, supply = 1_000_000_000n * E, target = 6n * E,
-                         feeBps = 0 } = {}) {
+                         feeBps = 0, gateToken = NO_ADDR, gateMin = 0,
+                         gateUntil = 0 } = {}) {
   const evm = await createEVM();
   const tok = await deploy(all.PlainToken.evm.bytecode.object, w(supply * 2n), { evm });
+  // Gate off by default: a token, a minimum and a deadline of zero is "anybody may buy".
+  // Constructed with three arguments fewer, this used to revert with no explanation.
   const c = await deploy(all.SnoozeCurve.evm.bytecode.object,
-    [tok.address.toString(), vEth, supply, target, feeBps, FEETO].map(w).join(""), { evm });
+    [tok.address.toString(), vEth, supply, target, feeBps, FEETO,
+     gateToken, gateMin, gateUntil].map(w).join(""), { evm, timestamp: 1000 });
   await call({ evm, address: tok.address }, "transfer(address,uint256)",
              [c.address.toString(), supply]);
   await fund(evm, ALICE, 1000n * E);
@@ -230,10 +235,11 @@ console.log("── it refuses the configurations that would hurt somebody");
 {
   const evm = await createEVM();
   const tok = await deploy(all.PlainToken.evm.bytecode.object, w(1000n * E), { evm });
-  const mk = async (v, s, t, fee, to) => {
+  const mk = async (v, s, t, fee, to, gt = NO_ADDR, gm = 0, gu = 0) => {
     try {
       await deploy(all.SnoozeCurve.evm.bytecode.object,
-        [tok.address.toString(), v, s, t, fee, to].map(w).join(""), { evm });
+        [tok.address.toString(), v, s, t, fee, to, gt, gm, gu].map(w).join(""),
+        { evm, timestamp: 1000 });
       return null;
     } catch (e) { return String(e.message || e); }
   };
@@ -246,6 +252,15 @@ console.log("── it refuses the configurations that would hurt somebody");
   ok("5% exactly is allowed", (await mk(E, 1000, 10, 500, FEETO)) === null);
   ok("a fee with nowhere to go is refused",
      !!(await mk(E, 1000, 10, 100, "0x0000000000000000000000000000000000000000")));
+  // A gate is either both halves or neither. Half a gate looks on an explorer like a whole one.
+  ok("a gate token with no minimum is refused",
+     !!(await mk(E, 1000, 10, 0, FEETO, tok.address.toString(), 0, 99999)));
+  ok("a minimum with no gate token is refused",
+     !!(await mk(E, 1000, 10, 0, FEETO, NO_ADDR, 500, 99999)));
+  ok("a gate whose window has already closed is refused",
+     !!(await mk(E, 1000, 10, 0, FEETO, tok.address.toString(), 500, 500)));
+  ok("and a whole gate is allowed",
+     (await mk(E, 1000, 10, 0, FEETO, tok.address.toString(), 500, 99999)) === null);
 }
 
 console.log("── nothing here can be pointed anywhere later");
