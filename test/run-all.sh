@@ -13,6 +13,9 @@ echo
 echo "=== solidity: contracts/Snooze.sol (compiled and executed) ==="
 node test/run-snooze.mjs
 echo
+echo "=== solidity: Snooze + PooledLaunchBuy wired together ==="
+node test/run-wiring.mjs
+echo
 echo "=== python: laptop_base edge cases ==="
 python3 test/test_laptop_base.py
 echo

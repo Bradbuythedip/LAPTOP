@@ -128,6 +128,14 @@ contract Snooze {
 
     // ---------------------------------------------------------------- rule 1
 
+    /// @notice Whether Rule 1 is actually in force right now.
+    /// @dev burnBps() returns 0 both when the price is at or below its average and when the
+    ///      oracle is not ready. Those are completely different situations — one is the rule
+    ///      working, the other is the rule absent — and nothing else on chain tells them
+    ///      apart. A page that shows "0%" without reading this is showing a reassurance it
+    ///      has not earned.
+    function ruleActive() public view returns (bool) { return oracle.ready(); }
+
     /// @notice The headline dial: how much of a sale burns right now, in basis points.
     /// @dev (P - T)/P, zero when P <= T, capped. Reverts nothing — a page must be able to
     ///      read this without a transaction.

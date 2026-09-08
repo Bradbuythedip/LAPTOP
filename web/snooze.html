@@ -160,6 +160,33 @@ html::before{
   </div>
 
   <div class="correction">
+    <h3>The dial is also your instant loss if you just bought.</h3>
+    <p>Buy at a price 70% above the average and your immediate exit value is the average &mdash;
+    you are down 41% the moment the transaction confirms, and 41% is the number at the top of
+    this page. The pitch says Rule 1 stops buying the top being the dumbest trade on the chart.
+    It does the opposite: it makes the loss mechanical and immediate instead of probabilistic.
+    <b>The higher the dial, the worse a moment it is to buy</b>, not just to sell.</p>
+  </div>
+
+  <div class="correction">
+    <h3>"No lock" is not true.</h3>
+    <p>20% of what remains, every day, is geometric. A wallet holds 32.8% after five days,
+    10.7% after ten, 0.12% after a month, and never reaches zero. There is no lock-up period
+    because there is no end to it. That is a softer constraint than a cliff and it is not
+    "no lock".</p>
+  </div>
+
+  <div class="correction">
+    <h3>An unregistered venue is outside both rules.</h3>
+    <p>The haircut only fires on addresses the deployer registered as pools. Any other
+    venue &mdash; a pool nobody registered, an OTC counterparty, a wrapper contract &mdash;
+    takes tokens at no haircut. And registering is disabled by <span class="mono">freeze()</span>,
+    which is exactly what you should want the deployer to call. So either the deployer keeps
+    the power to change the rules, or new venues are permanently outside them. There is no
+    setting where both hold.</p>
+  </div>
+
+  <div class="correction">
     <h3>Day one has no Rule 1 at all.</h3>
     <p>A 24-hour average needs 24 hours. Until the oracle has a full window the burn reads
     zero, so "snipers get nothing" does not hold for the first day &mdash; the day snipers
@@ -212,11 +239,16 @@ html::before{
   a sale reaches them. $SNOOZE is that shape with the parameters published, the admin keys
   freezable, and the arithmetic quotable before you trade. That is a real difference. It is
   not a different mechanism.</p>
-  <p><b>What could still go wrong.</b> The oracle is a dependency: a manipulated or stale
-  price feed moves the haircut, and the contract caps it at 90% rather than trusting it. A
-  second pool the oracle does not read would price differently. Nothing here stops selling a
-  wallet's key, borrowing against the bag, or shorting elsewhere &mdash; the cap governs
-  tokens, not exposure.</p>
+  <p><b>What could still go wrong.</b> The oracle is a dependency and it fails <i>open</i>: if
+  the feed is not ready the haircut reads zero and Rule 1 is simply absent. Failing closed
+  would block every sell and make this a literal honeypot, so open is the right choice, but it
+  means a dead feed silently switches the rule off and a plain 0% cannot tell you which is
+  happening. Read <span class="mono">ruleActive()</span>, not just the dial.</p>
+  <p><b>The cap governs tokens, not exposure.</b> Nothing here stops selling a wallet's key,
+  borrowing against the bag, shorting elsewhere, or depositing into a wrapper that has no
+  rules and trading that instead. Over time liquidity migrates to whatever venue is
+  unencumbered, and the encumbered one becomes a reference price. That is the structural
+  ceiling on this design and no parameter fixes it.</p>
   <p> &middot; totalworlddomination.xyz &middot; Build <span class="mono" id="buildId">2026-09-08a</span> &middot; no analytics,
   no trackers, no cookies. This page does not ask you to sign anything and cannot send a
   transaction.</p>

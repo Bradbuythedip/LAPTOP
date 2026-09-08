@@ -264,6 +264,88 @@ console.log("── the rule is a promise until it is frozen");
   ok("and a stranger never could", !stranger.ok);
 }
 
+console.log("── the dial is ALSO the instant loss on buying the top");
+{
+  // The pitch says Rule 1 makes buying the top stop being the dumbest trade. Run it: buy at
+  // spot P while the average is T, and your immediate exit value is T-priced, so you are down
+  // (P-T)/P the moment the transaction confirms. That is the SAME number the dial shows. The
+  // rule does not de-risk buying the top — it makes the loss mechanical and immediate instead
+  // of probabilistic. Buying the top is worse under this rule, not better.
+  const x = await world({ spot: 170n * E / 100n, twap: E });
+  await give(x, A, 1000n * E);
+  const dial = (await call(x.tok, "burnBps()")).words[0];
+  const q = await call(x.tok, "quoteSell(uint256)", [200n * E]);
+  const kept = (q.words[0] * 10_000n) / (200n * E);
+  eq("the dial reads 41%", dial, 4117n);
+  eq("and a buyer who exits immediately keeps 58.83% — down by exactly the dial",
+     kept, 10_000n - 4117n);
+  ok("so the headline number is the buyer's instant loss, not their protection",
+     dial + kept === 10_000n);
+}
+
+console.log("── an unregistered pool escapes rule 1 entirely");
+{
+  // The haircut fires on isPool[to]. Anything not on that list is an ordinary transfer, which
+  // means a pool the admin never registered — or an OTC counterparty — takes tokens at no
+  // haircut at all. And setPool is disabled by freeze(), which trust requires. So the choice
+  // is: stay unfrozen and the admin can exempt anyone, or freeze and new venues are
+  // permanently outside the rule. There is no setting where both hold.
+  const x = await world({ spot: 2n * E, twap: E });
+  await give(x, A, 1000n * E);
+  const s0 = (await call(x.tok, "totalSupply()")).words[0];
+  await call(x.tok, "transfer(address,uint256)", [B, 200n * E], { from: A, timestamp: 8000 });
+  eq("selling to an unregistered address burns nothing",
+     (await call(x.tok, "totalSupply()")).words[0], s0);
+  eq("and delivers in full", await bal(x, B), 200n * E);
+
+  await call(x.tok, "freeze()", [], { from: DEPLOYER });
+  const late = await call(x.tok, "setPool(address,bool)", [B, 1], { from: DEPLOYER });
+  ok("and once frozen, that venue can never be brought under the rule", !late.ok);
+}
+
+console.log("── the oracle fails OPEN, which is a choice with a cost");
+{
+  // If the feed is not ready the haircut is zero, so Rule 1 is simply absent. That is the
+  // right call — failing closed would block every sell and make this a literal honeypot — but
+  // it means a broken or unupgradeable oracle silently switches the rule off forever, and
+  // nothing on chain distinguishes "no haircut because the price is low" from "no haircut
+  // because the feed died". ruleActive() is what a page must read to tell them apart.
+  const x = await world({ ready: false, spot: 5n * E, twap: E });
+  eq("a dead feed reads as zero haircut", (await call(x.tok, "burnBps()")).words[0], 0n);
+  await give(x, A, 1000n * E);
+  const s0 = (await call(x.tok, "totalSupply()")).words[0];
+  await call(x.tok, "transfer(address,uint256)", [POOL, 200n * E], { from: A, timestamp: 8500 });
+  eq("so sells go through untouched while it is down",
+     (await call(x.tok, "totalSupply()")).words[0], s0);
+  eq("which is indistinguishable from a calm market unless the page asks",
+     (await call(x.tok, "ruleActive()")).words[0], 0n);
+  const y = await world({ spot: E, twap: E });
+  eq("a live feed at parity also reads zero haircut...",
+     (await call(y.tok, "burnBps()")).words[0], 0n);
+  eq("...but reports the rule as in force", (await call(y.tok, "ruleActive()")).words[0], 1n);
+}
+
+console.log("── 'no lock' is false: a full exit is never possible");
+{
+  // 20% of what remains, every day, is geometric. The balance approaches zero and never
+  // reaches it. The pitch says "no lock, no tax, no staking" — the first of those is not true.
+  const remaining = d => Math.pow(0.8, d);
+  ok("after 30 days a wallet still holds 0.12%", remaining(30) > 0.001);
+  ok("after 90 days it still holds something", remaining(90) > 0);
+  // Mathematically it is asymptotic and never reaches zero. Numerically 0.8^d underflows a
+  // double past about d=3170, so the assertion is made at a horizon a double can still hold —
+  // the claim is about the geometry, not about IEEE 754.
+  ok("after a year it still holds 10^-36 of the bag, not zero", remaining(365) > 0);
+  ok("and the decay is geometric, so no finite horizon empties it",
+     remaining(1000) > 0 && remaining(1000) < remaining(365));
+  // On chain the floor division does eventually zero a small enough balance, but only once
+  // the balance is under 5 base units — which at 18 decimals is economically never.
+  const x = await world();
+  await give(x, A, 4n);
+  const r = await call(x.tok, "remainingToday(address)", [A]);
+  eq("a 4-unit balance allows 0 per day — dust locks completely", r.words[0], 0n);
+}
+
 console.log("── the dial and the trade cannot disagree");
 {
   // quoteSell is the same function the transfer path uses. If the page computed the haircut
