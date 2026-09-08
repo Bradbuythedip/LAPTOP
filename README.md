@@ -89,7 +89,7 @@ sha256(web/launch.html) = fbd6f5d57f8702cac4e9ec9b68c8a1d628a561f8733bacc74d57e6
 sh test/run-all.sh         # everything below, no network touched
 ```
 
-**981 assertions across twelve suites.**
+**1046 assertions across thirteen suites.**
 
 `test/run.mjs` — 225, drives the real page in Chromium against `test/mock-rpc.mjs`: Keccak vectors,
 the four EIP-55 reference addresses, the v4 poolId derivation checked against a real Base pool
@@ -149,6 +149,11 @@ sell-tax interaction, the seed-LP exemption and whether an exempt trade advances
 cap and its construction-time validation, the turn-off, rounding that conserves every wei, the
 freezable exemption list, and the three ramp units measured against each other for splitting
 evasion and same-block fairness.
+
+`test/run-pooled.mjs` — 65, compiles `contracts/PooledLaunchBuy.sol` and executes it against a
+hostile token (fee-on-transfer, returns-false, reentrant), a router that lies about its output
+or keeps the ETH, a depositor that refuses ETH and one that reenters on receive. It reads the
+ABI and fails if a sweep, rescue, withdraw or ownership function ever appears.
 
 `test/test_launch_model.py` — 79, the reference model's properties: the knee is not a slope,
 the size mix is normalised so no order can exceed the elicited total, destinations stay in
@@ -227,6 +232,52 @@ the Python is right, the same arrangement `size.html` has with `test_size_math.p
 
 The page is not linked from the buyer navigation — operator tool, reachable by URL. Still a
 static file on a public site, so not secret, just not advertised.
+
+## `contracts/PooledLaunchBuy.sol` — consolidate, buy once, distribute
+
+Customers deposit, the orders consolidate, one buy happens at launch, tokens are distributed
+pro-rata. That is the arrangement `slot.html` warns about — *somebody holds your money and
+promises* — so this is written to make the warning not apply: the funds sit in a contract
+nobody can divert, including whoever deployed it.
+
+- no sweep, rescue, withdraw, drain or redirectable fee address, and a test reads the ABI and
+  fails if one ever appears
+- `execute()` is permissionless, so the operator cannot hold the round hostage and it still
+  completes if they vanish
+- `refund()` is permissionless and unconditional after the deadline
+- router, token and both deadlines immutable, set at construction
+- the early-exit fee stays in the pool for the people who did **not** leave. It is not paid to
+  the operator: an exit fee that pays the operator gives the party holding the money a reason
+  to want people gone. Tested — the deployer's token balance is asserted to be exactly zero.
+
+**The limit that cannot be engineered away.** The deployer chooses the router and the token,
+and `execute()` hands the router the entire pooled balance. A deployer who points `router` at
+a contract they control takes every deposit and returns a `token` they also control. Nothing
+inside the contract fixes that. What it does instead is make both addresses immutable and
+public *before* anyone deposits, so the check is external and belongs to the depositor: read
+`router()` and `token()`, confirm they are the real ones, then send money.
+
+**Two fund-loss bugs, both caught before this was ever deployable.**
+
+The first I found by writing the test for a case I suspected: if every depositor exits early,
+`totalDeposited` is zero but the forfeited fees remain, and `execute()` would spend them and
+mint tokens nobody could ever claim — `claim()` divides by `totalDeposited` and `refund()` is
+closed once `executed` is set. `execute()` now refuses a round with no depositors.
+
+The second came from an adversarial review across six attacker lenses, and it was worse:
+`execute()` had no upper time bound, so it could be called long after `refundAfter` and
+convert everyone's refundable ETH into tokens. The unconditional-refund promise — the thing
+that makes the contract safe to deposit into at all — **was false**. The buy window now closes
+at `refundAfter`.
+
+The same review killed two more: `tokensReceived` took `min(actual, reported)`, so an
+under-reporting router stranded the difference forever; and `receive()` rejecting all ETH
+would have bricked execution against any real router that returns change.
+
+**Not audited, not on a testnet.** An in-process EVM has no PoolManager, no real router, no
+mempool, no gas market and no reorgs. Pooled-custody contracts are where unaudited code loses
+everything at once, and the critical bug above was invisible until six adversarial readers
+went at it.
 
 ## `contracts/LaunchTaxRamp.sol` — the tax, executed
 

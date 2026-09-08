@@ -7,6 +7,9 @@ cd "$(dirname "$0")/.."
 echo "=== solidity: contracts/LaunchTaxRamp.sol (compiled and executed) ==="
 node test/run-contract.mjs
 echo
+echo "=== solidity: contracts/PooledLaunchBuy.sol (compiled and executed) ==="
+node test/run-pooled.mjs
+echo
 echo "=== python: laptop_base edge cases ==="
 python3 test/test_laptop_base.py
 echo
