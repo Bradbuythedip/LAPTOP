@@ -1,7 +1,12 @@
 #!/bin/sh
 # Every test in the repo. No network is touched.
+# Needs `npm install` first — playwright drives the pages, solc and @ethereumjs/evm compile
+# and execute the contract. Both are pinned in package.json; nothing in web/ depends on them.
 set -e
 cd "$(dirname "$0")/.."
+echo "=== solidity: contracts/LaunchTaxRamp.sol (compiled and executed) ==="
+node test/run-contract.mjs
+echo
 echo "=== python: laptop_base edge cases ==="
 python3 test/test_laptop_base.py
 echo
