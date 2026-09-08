@@ -4,10 +4,14 @@ On-chain tooling built while tracing the `$LAPTOP` token before its Sept 9, 2026
 
 Two halves:
 
-- **`web/`** — two read-only tools for people who are about to buy, at
-  [totalworlddomination.xyz](https://totalworlddomination.xyz). One self-contained HTML file each,
-  no wallet, no transactions: `index.html` answers *is this the right contract*, `size.html`
-  answers *what does my size actually get me*.
+- **`web/`** — seven pages for people who are about to buy, at
+  [totalworlddomination.xyz](https://totalworlddomination.xyz). One self-contained HTML file
+  each. They connect to Phantom to read your Base balances and they never ask you to sign
+  anything: `index.html` answers *is this the right contract*, `size.html` *what does my size
+  get me*, `buy.html` *which venue fills best*, `order.html` *can I commit before launch*,
+  `slot.html` *is this preorder real*, `route.html` *what should I be holding*, and
+  `launch.html` — for whoever sets the parameters, not for buyers — *what does a fee design
+  actually earn*.
 - **`*.py`** — the tracing and execution tooling: find the pools, watch for the first real
   liquidity, execute a Uniswap v4 swap, execute a classic V2/V3/Aerodrome swap.
 
@@ -85,9 +89,9 @@ sha256(web/launch.html) = 2e48b7f42e6c4581e172b2fd8ff7c46a19a7c0130bd012b665a116
 sh test/run-all.sh         # everything below, no network touched
 ```
 
-**664 assertions across nine suites.**
+**738 assertions across ten suites.**
 
-`test/run.mjs` — 211, drives the real page in Chromium against `test/mock-rpc.mjs`: Keccak vectors,
+`test/run.mjs` — 225, drives the real page in Chromium against `test/mock-rpc.mjs`: Keccak vectors,
 the four EIP-55 reference addresses, the v4 poolId derivation checked against a real Base pool
 id, ABI-string decoding (including a 10-character name, whose length word contains a hex
 letter, and truncated/absurd offsets), result-length discipline, and full flows for the happy
@@ -96,7 +100,7 @@ JSON-RPC batches. It also holds the cross-page invariants: that every page says 
 you to sign and mentions no `eth_*` method outside the read set, that any page touching
 `window.phantom` uses its EVM side, that they all state the same build tag and that the README
 publishes that tag and the current hash of every page, and that `web/` serves nothing but the
-six pages and the artwork. Plus the Phantom provider matrix (no wallet, Solana-only, both
+seven pages and the artwork. Plus the Phantom provider matrix (no wallet, Solana-only, both
 sides, injected as `window.ethereum`, inside a multi-provider array, and a non-Phantom wallet)
 and balance formatting and read discipline. Needs `playwright`.
 
@@ -530,12 +534,12 @@ distinguish CORS from "host is down", so the tool does not claim to either; it s
 
 ## Branding: `web/bg.png`
 
-All six pages carry a full-bleed background image. It is the only piece of branding on them —
+All seven pages carry a full-bleed background image. It is the only piece of branding on them —
 no ticker chips, no watermark layer, and no token named anywhere but LAPTOP. A test asserts
 that across every page.
 
-**`web/bg.png` is not in the repo. Drop your artwork there and it appears on all six pages.**
-It is the only external asset either page loads, it is same-origin, and it is referenced from
+**`web/bg.png` is in the repo** (added in `bed883f`) and appears on all seven pages.
+It is the only external asset any page loads, it is same-origin, and it is referenced from
 exactly one decorative CSS rule and never from script. So if the file is missing, blocked by
 CSP, or the HTML is saved and opened offline, the pages lose a picture and nothing else — every
 verdict, number and failure state is untouched. A test asserts that no script references it.
