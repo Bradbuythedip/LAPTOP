@@ -284,6 +284,16 @@ const buy=(E,T,spend,fee)=>{const a=spend*(1-fee);const out=T*a/(E+a);return [E+
 const sell=(E,T,tok,fee)=>{const a=tok*(1-fee);const out=E*a/(T+a);return [E-out,T+tok,out];};
 
 function simulate(pop,s,seedE,poolFee,destination){
+  /* A non-finite input must never become a confident zero. NaN fails every comparison, so
+     without this it flows through as "nobody bought, take is 0" and then votes for the 0%
+     bucket in the world sweep — a broken world casting a ballot in the headline. */
+  const finite=[seedE,poolFee,s.start,s.step,s.cap,s.sell,s.stepUnit,s.offAfter,
+    pop.volume,pop.snipeShare,pop.snipeBuyKnee,pop.snipeSellKnee,pop.orgBuyKnee,
+    pop.orgSellKnee,pop.sharpness,pop.snipeAlpha,pop.orgAlpha];
+  if(!finite.every(Number.isFinite))
+    return {invalid:true,buyers:0,volume:0,treasury:0,depth:0,burned:0,priceMultiple:1,
+            avgTax:0,roundTrip:NaN,deterred:0};
+
   /* A buyer prices tax + pool fee + the impact of their own size against the depth on offer.
      Impact is the only channel through which seed and tax are substitutes; without it seed
      had no effect on the answer at all. Buy-side and sell-side are independent hurdles and
@@ -337,18 +347,22 @@ function simulate(pop,s,seedE,poolFee,destination){
           roundTrip:rt0,deterred};
 }
 
-const objective=(r,d)=>d==="treasury"?r.treasury:(d==="lp"?r.depth:r.burned);
+/* An invalid run scores NaN, not zero, so it can neither silently win nor silently lose. */
+const objective=(r,d)=>r.invalid?NaN:(d==="treasury"?r.treasury:(d==="lp"?r.depth:r.burned));
 
 /* The honest output is a band, not an argmax. Reporting the argmax of a model whose
    deterrence curve is a guess implies a precision that is not there. */
 function stableRegion(pop,s,seedE,poolFee,dest,tol){
   tol=tol===undefined?0.05:tol;
-  let best=0; const rows=[];
+  let best=0; const rows=[]; let broken=false;
   for(let t=0;t<=0.2501;t+=0.01){
     const r=simulate(pop,Object.assign({},s,{start:t}),seedE,poolFee,dest);
     const v=objective(r,dest); rows.push([t,v]);
+    if(Number.isNaN(v)) broken=true;
     if(v>best) best=v;
   }
+  /* Surfaced, not dropped. A band from a partly-broken sweep looks exactly like a good one. */
+  if(broken) return {lo:NaN,hi:NaN,best:NaN,rows,broken:true};
   if(best<=0) return {lo:0,hi:0,best:0,rows};
   const good=rows.filter(x=>x[1]>=best*(1-tol)).map(x=>x[0]);
   return {lo:Math.min.apply(null,good),hi:Math.max.apply(null,good),best,rows};
@@ -483,8 +497,11 @@ let sweepTimer=null;
 function renderSweep(){
   const p=pop(), s=sched(), sd=seed(), f=fee();
   const opts=worldSweep(p,s,sd,f,"treasury");
-  const buckets={};
-  for(const o of opts){ const k=Math.round(o*100); buckets[k]=(buckets[k]||0)+1; }
+  const buckets={}; let broken=0;
+  for(const o of opts){
+    if(Number.isNaN(o)){ broken++; continue; }
+    const k=Math.round(o*100); buckets[k]=(buckets[k]||0)+1;
+  }
   const keys=Object.keys(buckets).map(Number).sort((a,b)=>a-b);
   const max=Math.max.apply(null,keys.map(k=>buckets[k]));
   const h=$("hist"); h.innerHTML="";
@@ -499,6 +516,13 @@ function renderSweep(){
     cnt.textContent=buckets[k];
     line.appendChild(lab); line.appendChild(bar); line.appendChild(cnt);
     h.appendChild(line);
+  }
+  if(broken){
+    const w=document.createElement("div"); w.className="badbox";
+    w.textContent=broken+" of "+opts.length+" worlds could not be computed and are excluded "+
+      "from the bars above. They are reported rather than counted as zero, because a broken "+
+      "world silently voting for 0% would be indistinguishable from a real one.";
+    h.appendChild(w);
   }
   const spread=keys.length?(Math.max.apply(null,keys)-Math.min.apply(null,keys)):0;
   const v=$("verdict"); v.innerHTML="";

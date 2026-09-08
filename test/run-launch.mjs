@@ -232,6 +232,32 @@ console.log("── degenerate inputs do not produce confident nonsense");
   await page.waitForTimeout(200);
 }
 
+console.log("── a broken world is surfaced, never counted as zero");
+{
+  // An adversarial reviewer's finding, and it applies to this page too: NaN fails every
+  // comparison, so it is skipped by `v > best` and dropped by the filter. A non-finite input
+  // then reads as "nobody bought, take is 0" and votes for the 0% bucket in the histogram.
+  const r = await page.evaluate(() => {
+    const pop = {volume:100, nSnipe:40, nOrg:360, snipeShare:0.7, snipeAlpha:1.8, orgAlpha:2.2,
+                 snipeBuyKnee:0.06, snipeSellKnee:0.4, orgBuyKnee:0.09, orgSellKnee:0.07,
+                 sharpness:NaN};
+    const s = {unit:"volume", start:0, step:0.01, stepUnit:5, cap:0.1, sell:0.05,
+               offAfter:0, perBlock:8};
+    const sim = window.__LAUNCH.simulate(pop, s, 25, 0.01, "treasury");
+    const band = window.__LAUNCH.stableRegion(pop, s, 25, 0.01, "treasury");
+    const good = window.__LAUNCH.simulate(
+      Object.assign({}, pop, {sharpness:6}), s, 25, 0.01, "treasury");
+    return {invalid:sim.invalid, rt:sim.roundTrip, obj:window.__LAUNCH.objective(sim,"treasury"),
+            broken:band.broken===true, lo:band.lo, goodInvalid:good.invalid===true};
+  });
+  ok("a non-finite input is flagged invalid", r.invalid === true);
+  ok("its round trip is NaN, not a comfortable zero", Number.isNaN(r.rt));
+  ok("an invalid run scores NaN rather than zero", Number.isNaN(r.obj));
+  ok("a sweep containing one is marked broken", r.broken === true);
+  ok("and returns NaN rather than a band that looks trustworthy", Number.isNaN(r.lo));
+  ok("an ordinary run is not flagged", r.goodInvalid === false);
+}
+
 console.log("── layout and one token");
 const sw = await page.evaluate(() => document.documentElement.scrollWidth);
 ok("no horizontal scroll at 375px", sw <= 375, "scrollWidth=" + sw);

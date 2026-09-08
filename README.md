@@ -80,7 +80,7 @@ sha256(web/route.html) = e2cce3fafbac12ddeabb9870bacd0b2b64d779292eba03b944e6242
 sha256(web/buy.html)   = 558b6318841d0d51a27bf4fc1a5cfd924ed226cfdc237516ed6a44db0ff211c5
 sha256(web/order.html) = dbcef0b37a2e710ba4103b5f85a6df400125e869e52c029f14b17a167683e175
 sha256(web/slot.html)  = 57330d5e9e10a08ff6965f249926a1066c08a73b4110966eb46cd33c4b61af97
-sha256(web/launch.html) = 4fcfdf6f7a0b2d30330c60f56eb41d52c6e203ebd3be47a6a846e84428ff4fec
+sha256(web/launch.html) = fbd6f5d57f8702cac4e9ec9b68c8a1d628a561f8733bacc74d57e653a6b8af2b
 ```
 
 ### Tests
@@ -89,7 +89,7 @@ sha256(web/launch.html) = 4fcfdf6f7a0b2d30330c60f56eb41d52c6e203ebd3be47a6a846e8
 sh test/run-all.sh         # everything below, no network touched
 ```
 
-**964 assertions across twelve suites.**
+**981 assertions across twelve suites.**
 
 `test/run.mjs` — 225, drives the real page in Chromium against `test/mock-rpc.mjs`: Keccak vectors,
 the four EIP-55 reference addresses, the v4 poolId derivation checked against a real Base pool
@@ -136,7 +136,7 @@ gets the Solana-is-not-EVM distinction right.
 then drives the page against constant-product, concentrated, capped, dry, stable, foreign-token
 and no-code pool fixtures.
 
-`test/run-launch.mjs` — 148, checks `web/launch.html` against a fixture `launch_model.py`
+`test/run-launch.mjs` — 154, checks `web/launch.html` against a fixture `launch_model.py`
 emits: 18 cases across three ramp units, two seed depths and three starting rates, agreeing to
 1e-9 on buyer count, take, volume and round trip, with the 81-world histogram matching exactly.
 The rest guards the page's refusal to recommend — a page that quietly starts recommending again
@@ -150,7 +150,7 @@ cap and its construction-time validation, the turn-off, rounding that conserves 
 freezable exemption list, and the three ramp units measured against each other for splitting
 evasion and same-block fairness.
 
-`test/test_launch_model.py` — 68, the reference model's properties: the knee is not a slope,
+`test/test_launch_model.py` — 79, the reference model's properties: the knee is not a slope,
 the size mix is normalised so no order can exceed the elicited total, destinations stay in
 their own units, seed changes the answer at all (it did not before impact entered demand), the
 round trip is identical across every deterrence guess, and the optimum is bimodal with almost
@@ -197,6 +197,20 @@ worlds. A test changes a knee and asserts that section does not move.
 
 No unit is free. A per-buy ramp lands on the retail tail and barely prices the snipe, which is
 backwards from the usual intent.
+
+**Recycling does not change the rate.** The expectation was that routing the tax back into
+the book would weaken the zero-tax result, since deeper liquidity improves later fills and so
+changes later tax. Measured across all 81 worlds, treasury and recycling pick the *identical*
+starting rate in 81 of 81. Recycling changes who benefits, not which rate is best — which is
+also why the destinations are reported separately rather than compared.
+
+**A broken world must not vote.** NaN fails every comparison, so a non-finite input was
+skipped by the `>` that finds the best rate and dropped by the filter that builds the band —
+reading as "nobody bought, take is zero" and then casting a ballot for the 0% mode, the exact
+mode that carries the headline. Non-finite inputs are now flagged, score NaN rather than zero,
+and are reported as excluded instead of counted. Found by an adversarial reviewer, not by the
+suite, which is worth noting: the suite tested that degenerate inputs did not *crash*, not
+that they did not silently *vote*.
 
 **Two things that felt like findings and are not.** "Deeper seed beats a tax" wins in 47 of 81
 worlds and loses 26 — not robust. And an early draft's LP and burn "wealth" figures were
