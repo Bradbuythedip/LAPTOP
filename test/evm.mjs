@@ -9,14 +9,16 @@ import fs from "node:fs";
 import path from "node:path";
 import solc from "solc";
 import { createEVM } from "@ethereumjs/evm";
-import { createAddressFromString, hexToBytes, bytesToHex } from "@ethereumjs/util";
+import { createAddressFromString, hexToBytes, bytesToHex, createAccount } from "@ethereumjs/util";
 
-export function compile(file) {
-  const src = fs.readFileSync(file, "utf8");
-  const name = path.basename(file);
+export function compile(files) {
+  const list = Array.isArray(files) ? files : [files];
+  const sources = {};
+  for (const f of list) sources[path.basename(f)] = { content: fs.readFileSync(f, "utf8") };
+  const name = path.basename(list[0]);
   const out = JSON.parse(solc.compile(JSON.stringify({
     language: "Solidity",
-    sources: { [name]: { content: src } },
+    sources,
     settings: {
       optimizer: { enabled: true, runs: 200 },
       outputSelection: { "*": { "*": ["abi", "evm.bytecode.object"] } },
@@ -25,7 +27,9 @@ export function compile(file) {
   const errors = (out.errors || []).filter(e => e.severity === "error");
   if (errors.length) throw new Error(errors.map(e => e.formattedMessage).join("\n"));
   const warnings = (out.errors || []).filter(e => e.severity === "warning");
-  return { contracts: out.contracts[name], warnings };
+  const merged = {};
+  for (const f of Object.keys(out.contracts || {})) Object.assign(merged, out.contracts[f]);
+  return { contracts: out.contracts[name], all: merged, warnings };
 }
 
 /* ---- minimal ABI coding, so the harness does not depend on a library whose own bugs
@@ -56,11 +60,13 @@ export const decodeWords = hex => {
 const DEPLOYER = createAddressFromString("0x1000000000000000000000000000000000000001");
 
 export async function deploy(bytecodeHex, ctorArgsHex = "", opts = {}) {
-  const evm = await createEVM();
+  const evm = opts.evm || await createEVM();
   const r = await evm.runCall({
-    caller: DEPLOYER, to: undefined, gasLimit: 30_000_000n,
+    caller: opts.from ? createAddressFromString(opts.from) : DEPLOYER,
+    to: undefined, gasLimit: 30_000_000n,
     data: hexToBytes("0x" + bytecodeHex.replace(/^0x/, "") + ctorArgsHex.replace(/^0x/, "")),
-    block: { header: { number: BigInt(opts.blockNumber ?? 1) } },
+    block: { header: { number: BigInt(opts.blockNumber ?? 1),
+                       timestamp: BigInt(opts.timestamp ?? 1000) } },
   });
   if (r.execResult.exceptionError)
     throw new Error("deploy reverted: " + r.execResult.exceptionError.error);
@@ -74,10 +80,29 @@ export async function call(ctx, sig, args = [], opts = {}) {
     caller: opts.from ? createAddressFromString(opts.from) : DEPLOYER,
     to: ctx.address, gasLimit: 10_000_000n,
     data: hexToBytes(encodeCall(sig, args)),
-    block: { header: { number: BigInt(opts.blockNumber ?? 1) } },
+    value: BigInt(opts.value ?? 0),
+    block: { header: { number: BigInt(opts.blockNumber ?? 1),
+                       timestamp: BigInt(opts.timestamp ?? 1000) } },
   });
   const raw = bytesToHex(r.execResult.returnValue);
   if (r.execResult.exceptionError)
     return { ok: false, revert: r.execResult.exceptionError.error, raw, words: [] };
   return { ok: true, raw, words: decodeWords(raw) };
 }
+
+/// Give an address a balance, so a depositor can actually send ETH.
+export async function fund(evm, addr, wei) {
+  const a = createAddressFromString(addr);
+  const existing = await evm.stateManager.getAccount(a);
+  const acct = existing || createAccount({});
+  acct.balance = BigInt(wei);
+  await evm.stateManager.putAccount(a, acct);
+}
+
+export async function balance(evm, addr) {
+  const a = typeof addr === "string" ? createAddressFromString(addr) : addr;
+  const acct = await evm.stateManager.getAccount(a);
+  return acct ? acct.balance : 0n;
+}
+
+export { createAddressFromString };
