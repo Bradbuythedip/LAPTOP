@@ -86,6 +86,7 @@ sha256(web/route.html)   = 1918c234915042687b869c7c54d9f5b918f1f60dc6aa2ba448268
 sha256(web/order.html)   = 9807edc55cb674887550e239b77ad8f5f52d3327fe03a5e7c5aa576962348565
 sha256(web/slot.html)    = 4bf5b2ee22170f2cfe341714edfd76f02061b0b7cddca08156407b681051375e
 sha256(web/launch.html)  = e3745a95357710991b829529d767974c5388282c1f0899560afdcd366a5eb338
+sha256(web/snooze.html)  = ae59bc9fb2b428194e687a5eb0aa793ec1bf13120d164c3003030273bf716e72
 ```
 
 ### Tests
@@ -237,6 +238,55 @@ the Python is right, the same arrangement `size.html` has with `test_size_math.p
 
 The page is not linked from the buyer navigation — operator tool, reachable by URL. Still a
 static file on a public site, so not secret, just not advertised.
+
+## `$SNOOZE` — the mechanism, and where it does not do what it says
+
+*You snooze, you win.* Two rules, in `contracts/Snooze.sol`, compiled and executed by
+`test/run-snooze.mjs`:
+
+1. **You sell at yesterday's price.** If spot is above the 24-hour average, only `twap/spot`
+   of what you send reaches the pool and the rest burns. `burnBps = (spot − twap)/spot`. At
+   spot 70% over the average that is **41%** — the number on the dial.
+2. **Nobody can nuke it.** No wallet moves more than 20% of its balance per rolling day,
+   baselined on the balance at the *start* of the window. Charging 20% of the current balance
+   each time would allow 20%, then 20% of the remaining 80%, and so on.
+
+**Three of the pitch's claims are false as written, and the tests say so rather than the
+marketing.** Each is asserted in `run-snooze.mjs` and stated on the page itself.
+
+- **A dump is free.** `burnBps` is zero whenever spot ≤ twap, which is what a downtrend *is*.
+  Selling into a crash costs nothing. Rule 1 taxes selling into strength only, so "dumpers
+  fund the burn" is not true of the dumpers that matter. Rule 2 is the only brake on a dump.
+- **Sleeping on it does not bank the spike.** Tomorrow you are paid `min(spot, twap)` again.
+  If the price fell back overnight you get the fallen price. Waiting swaps a certain haircut
+  for an uncertain price — a real trade, but not the one the slogan describes.
+- **"A five-day drip" is a decay rate, not a deadline.** A wallet moving its full 20% daily
+  still holds 32.8% after five days and 10.7% after ten. Tokens are uncapped at rest and each
+  fresh wallet gets its own 20%, so a determined exit spreads and drips in parallel.
+
+And two more the tests pin: **day one has no Rule 1 at all**, because a 24-hour average needs
+24 hours — so "snipers get nothing" fails on exactly the day snipers care about, and the dial
+shows *warming up* rather than a reassuring 0%. And the two rules **compose**: a 30% sale
+reverts on Rule 2 before Rule 1 is ever computed, so the dial's percentage is not the whole
+cost of leaving.
+
+**The dev-pay contradiction is resolved by refusing it.** Supply-only-falls and
+dev-paid-from-the-burn cannot both hold, because burnt tokens are gone. `devBps` defaults to
+zero, is capped at 20% *of the haircut* (never of the trade), and is immutable. The contract
+answers the question itself: `supplyOnlyFalls()` returns false the moment any part of the
+haircut is paid out instead of destroyed, so the page cannot claim it by accident.
+
+**It is not a novel mechanism.** A transfer haircut plus a max-transaction limit is one of the
+most-deployed token shapes there is; it was everywhere in 2021. The reason it is out of favour
+is not missing tooling — it is that the same shape is what honeypots are built from, and every
+scanner flags it. What is different here is that the parameters are published, the admin keys
+are freezable, and `quoteSell()` is the same code the transfer path runs, so the dial and the
+trade cannot drift apart. That is a real difference and it is not a different mechanism.
+
+The daily cap also breaks things that are not attacks: exchange deposits, bridges, aggregator
+routes, lending markets and LP withdrawals routinely move more than 20% of a balance at once.
+They fail, and a failed sell looks exactly like a honeypot to someone who does not know the
+rule.
 
 ## `contracts/PooledLaunchBuy.sol` — consolidate, buy once, distribute
 

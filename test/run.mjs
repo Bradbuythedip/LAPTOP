@@ -394,7 +394,7 @@ const stackOf = await page.evaluate(() => {
 // chance for a reader to confuse two things, and both are out.
 console.log("── one token, and only one");
 const pages = ["index.html", "checker.html", "size.html", "route.html", "order.html",
-               "slot.html", "launch.html"];
+               "slot.html", "launch.html", "snooze.html"];
 for (const f of pages) {
   const t = fs.readFileSync(path.join(ROOT, "web", f), "utf8");
   ok(`${f} never mentions $TWD`, !/\$TWD|%24TWD/.test(t));
