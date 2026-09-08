@@ -7,7 +7,7 @@
 <meta name="color-scheme" content="dark">
 <link rel="icon" type="image/png" href="/snoozebase.png">
 <link rel="apple-touch-icon" href="/snoozebase.png">
-<title>$SNOOZE — you snooze, you win</title>
+<title>$SNOOZE</title>
 <meta name="description" content="Two rules, in code. Selling into a spike burns most of what you would have taken, and nobody moves more than a fifth of their bag a day.">
 <meta property="og:title" content="Snooze Bear — you snooze, you win">
 <meta property="og:description" content="Two rules, in code. Selling into a spike burns most of what you would have taken.">
@@ -72,6 +72,10 @@ h2{font-size:16px;margin:0 0 8px}
   border-radius:8px;padding:11px;font-size:12.5px;margin:8px 0}
 a{color:inherit} a.ext{text-decoration:underline;text-underline-offset:3px}
 .footer{color:var(--dim);font-size:12.5px;margin:22px 0 30px;line-height:1.65}
+/* A disclosure, marked as one. The old treatment was a full amber border, which on a page whose
+   accent is gold read as emphasis rather than as a caveat and competed with the logo for the
+   same attention. A left rule reads as an aside at any width. */
+.card.disc{border-color:var(--line);border-left:3px solid var(--warn);border-radius:4px 12px 12px 4px}
 .hr{height:1px;background:var(--line);margin:14px 0}
 a:focus-visible,button:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
 ::selection{background:rgba(240,192,64,.28);color:var(--fg)}
@@ -162,8 +166,14 @@ a.cta.sub2:hover{border-color:var(--gold);color:var(--goldHi)}
    to see at a glance which words have a definition without the page turning into a control
    panel. It is a <button> for the keyboard and the screen reader, and it is styled like text
    because that is what it is. */
-.d{all:unset;cursor:pointer;border-bottom:1.5px dotted var(--baseLt);color:inherit;
+/* A term with a definition attached, and it has to look like one. A bare dotted underline on a
+   dark ground reads as a leftover editor mark rather than an affordance — a reader took
+   "virtual" and "24-hour average" for broken tooltips. The raised glyph is what says the word
+   is a door; the underline alone was not saying it. */
+.d{all:unset;cursor:help;border-bottom:1px solid rgba(91,148,255,.55);color:inherit;
   font:inherit;-webkit-tap-highlight-color:transparent}
+.d::after{content:"?";font-size:.62em;font-weight:700;color:var(--baseLt);
+  vertical-align:super;margin-left:1.5px;line-height:0}
 .d:hover{border-bottom-color:var(--baseLt);background:var(--baseSoft)}
 .d:focus-visible{outline:2px solid var(--baseLt);outline-offset:2px;border-radius:2px}
 #defbox{position:fixed;left:12px;right:12px;bottom:12px;z-index:50;
@@ -179,6 +189,27 @@ a.cta.sub2:hover{border-color:var(--gold);color:var(--goldHi)}
 #defbox .x:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
 
 /* The chain chip. Base blue as a fill, which is the only place it clears contrast. */
+/* PERSISTENT CHROME. Once you scroll past the hero the page lost its name and its one safety
+   line at the same moment, which is exactly when a reader is deepest in the mechanism copy and
+   least sure what they are reading. Negative margins so the bar spans the full width while body
+   keeps its 16px gutter. */
+.top{position:sticky;top:0;z-index:40;display:flex;align-items:center;gap:9px;
+  margin:0 -16px 4px;padding:9px 16px;background:rgba(7,11,22,.93);
+  backdrop-filter:blur(8px);border-bottom:1px solid var(--line)}
+.top img{width:26px;height:26px;border-radius:50%;flex:none;
+  border:1px solid rgba(240,192,64,.45)}
+.top .nm{font-weight:700;font-size:14px;letter-spacing:-.01em;white-space:nowrap}
+.top .sp{flex:1}
+.top a.chk{font-size:12.5px;color:var(--dim);text-decoration:underline;
+  text-underline-offset:2px;white-space:nowrap}
+.top a.chk:hover{color:var(--goldHi)}
+@media (max-width:400px){ .top .nm{display:none} }
+
+/* The one line that says where the launch actually is, under the buttons rather than three
+   screens down. Built from the badges themselves at load, so it cannot drift from them. */
+.state{font-size:12.5px;color:var(--dim);margin:10px 0 0;line-height:1.5}
+.state b{color:var(--warn);font-weight:600}
+
 .chain{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;
   padding:4px 10px;border-radius:999px;background:var(--base);color:var(--onBase)}
 .chain .dot{width:7px;height:7px;border-radius:50%;background:var(--onBase);opacity:.85}
@@ -214,7 +245,7 @@ tbody tr:last-child td{border-bottom:0}
 ul{margin:0;padding-left:18px} li{margin-bottom:5px}
 /* A pay/get card. The old version was two pills with an arrow between them — the universal
    swap-widget shape, with nothing clickable — sitting under a heading about getting in early.
-   People tap that. It is now either a real route to a buy or an honest "not launched". */
+   People tap that. It is now either a real route to a buy or an honest "not deployed". */
 .swap{display:grid;gap:6px;margin:2px 0 0}
 .leg{display:flex;justify-content:space-between;align-items:baseline;gap:10px;
   padding:11px 13px;border-radius:11px;background:rgba(255,255,255,.03);
@@ -321,6 +352,14 @@ tbody tr:last-child td{border-bottom:0}
 </head>
 <body>
 
+<nav class="top">
+  <img src="/snoozebase.png" width="26" height="26" alt="" decoding="async">
+  <span class="nm">Snooze Bear</span>
+  <span class="chain"><span class="dot"></span>Base &middot; 8453</span>
+  <span class="sp"></span>
+  <a class="chk" href="/checker.html">Checker</a>
+</nav>
+
 <header class="hero">
   <div class="bearwrap">
     <img class="bear" src="/snooze-512.webp" width="512" height="512" alt=""
@@ -333,11 +372,11 @@ tbody tr:last-child td{border-bottom:0}
     <a class="cta" href="#buy">Buy LAPTOP</a>
     <a class="cta sub2" href="#how">How it works</a>
   </div>
-  <p style="margin:12px 0 0"><span class="chain"><span class="dot"></span>Base &middot; 8453</span></p>
+  <p class="state" id="heroState"></p>
 </header>
 
 <div class="card" id="buy">
-  <div class="hdr"><h2>Buy LAPTOP</h2><span class="badge warn" id="lapBadge">not launched</span></div>
+  <div class="hdr"><h2>Buy LAPTOP</h2><span class="badge warn" id="lapBadge">not deployed</span></div>
   <div class="swap">
     <div class="leg"><div class="k">you pay</div><div class="v">ETH</div></div>
     <div class="arrow" aria-hidden="true">&darr;</div>
@@ -354,8 +393,7 @@ tbody tr:last-child td{border-bottom:0}
   </div>
   <a class="cta" id="lapCta" href="#get">Get $SNOOZE first</a>
   <p class="tiny dim" style="margin:10px 0 0">Buying happens on the curve, from your wallet.
-  This page reads and never signs. Check any address against
-  <a class="ext" href="/checker.html">the checker</a> before you send.</p>
+  This page reads and never signs.</p>
 </div>
 
 <section class="card live" id="live">
@@ -428,9 +466,8 @@ tbody tr:last-child td{border-bottom:0}
   <b>whatever $SNOOZE you hold at one block, fixed in advance, is your place in LAPTOP.</b>
   You claim it yourself, from your own wallet. Nothing is locked and nothing is taken.</p>
   <p class="tiny dim" style="margin:10px 0 0">Buying $SNOOZE the hour before and selling the
-  hour after is the worst way to use it. Everyone doing that at once is what pushes the price
-  above its own average &mdash; which is exactly when selling burns most. It pays holders, not
-  renters.</p>
+  hour after is the worst way to use it: everyone doing that at once pushes the price above its
+  own average, which is exactly when selling burns most. It pays holders, not renters.</p>
 </div>
 
 <div class="card">
@@ -439,7 +476,7 @@ tbody tr:last-child td{border-bottom:0}
   <button class="d" data-t="Slippage" data-d="The gap between the price you see and the price you get. Bigger trades against a thinner book pay more of it.">slippage</button>
   and a proportionally bigger raise. The number of buys does not move:</p>
   <div class="scroll"><table>
-    <thead><tr><th>slippage per buy</th><th>buys to bond at 10&times;</th><th>at 3 virtual ETH</th><th>at 25</th></tr></thead>
+    <thead><tr><th>slippage per buy</th><th>buys to bond at 10&times;</th><th>at 10 virtual ETH</th><th>at 25</th></tr></thead>
     <tbody>
       <tr><td class="n">0.5%</td><td class="n">433</td><td class="n">433</td><td class="n">433</td></tr>
       <tr><td class="n">2%</td><td class="n">109</td><td class="n">109</td><td class="n">109</td></tr>
@@ -450,7 +487,7 @@ tbody tr:last-child td{border-bottom:0}
   Virtual ETH sets what a comfortable buy is <i>denominated</i> in. It does not buy depth.</p>
 </div>
 
-<div class="card no" style="border-color:var(--warn)">
+<div class="card no disc">
   <div class="hdr"><h2 style="color:var(--warn)">What this does not do</h2></div>
   <ul style="margin:0;padding-left:18px;font-size:13px;color:var(--dim);line-height:1.6">
     <li><b>Virtual liquidity is not liquidity.</b> Before bonding, the only ETH behind the
@@ -497,6 +534,8 @@ tbody tr:last-child td{border-bottom:0}
 
 <div class="footer">
   <div class="hr"></div>
+  <p style="color:var(--warn);margin:0 0 10px"><b>Never send to an address you found on a
+  page</b> &mdash; not this one either. <a class="ext" href="/checker.html">Check it</a>.</p>
   <p>snoozebear.xyz &middot; Build <span class="mono" id="buildId">2026-09-08a</span>
   &middot; no analytics, no trackers, no cookies. This page connects and reads, and it does not
   ask you to sign anything. The README publishes the sha256 of every page under this build tag.</p>
@@ -773,6 +812,33 @@ function showPool(){
   }
 }
 
+/* The hero's status line, assembled from the badges rather than written beside them. The
+   complaint it answers is real and it is about trust: the first button says "Buy LAPTOP" while
+   every badge three screens down says nothing is live, and for the half-second before you find
+   those badges the page reads as either broken or dishonest. Saying it under the button costs
+   one line. Reading it OUT of the badges is what stops it becoming a fourth thing that can go
+   stale — there is exactly one place the state is written. */
+(function state(){
+  const el = $("heroState"); if(!el) return;
+  const paint = () => {
+    const snooze = ($("poolBadge") || {}).textContent || "not deployed";
+    const laptop = (document.querySelector("#get .tok:last-child .badge") || {}).textContent
+                   || "not open";
+    el.innerHTML = "";
+    const add = (k, v) => {
+      el.appendChild(document.createTextNode((el.childNodes.length ? " \u00b7 " : "") + k + ": "));
+      const b = document.createElement("b"); b.textContent = v.trim(); el.appendChild(b);
+    };
+    add("$SNOOZE curve", snooze);
+    add("LAPTOP", laptop);
+  };
+  paint();
+  /* Repainted when a chain read changes a badge, for the same reason it is derived from them. */
+  const o = new MutationObserver(paint);
+  for (const id of ["poolBadge", "lapBadge"])
+    if ($(id)) o.observe($(id), { childList: true, characterData: true, subtree: true });
+})();
+
 window.__CHART = CHART;
 window.__SNOOZE = { burnAt, POOL, TOKEN };
 
@@ -826,7 +892,7 @@ const GATE_MIN_TEXT = "$SNOOZE";   // set to the real minimum once the curve is 
     cta.href = "https://basescan.org/address/" + LAPTOP_CURVE;
     cta.rel = "noopener noreferrer";
   }else{
-    badge.textContent = "not launched"; badge.className = "badge warn";
+    badge.textContent = "not deployed"; badge.className = "badge warn";
     row.hidden = true;
     if(SNOOZE_TOKEN){
       cta.textContent = "Get $SNOOZE first"; cta.href = "#get"; cta.hidden = false;
