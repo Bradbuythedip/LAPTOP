@@ -70,12 +70,12 @@ file and opening it locally removes the hosting party from the trust question en
 Published build `2026-09-08a`:
 
 ```
-sha256(web/index.html) = 91d8995f71f0d62d1f91f5726f9a91015eed56ef71a410879323639b9f7adf5e
-sha256(web/size.html)  = a5c8c512cbeced5ee7a0317982bde0889cc150a4a032f7532daceaf36286d304
-sha256(web/route.html) = c1ac4bb53c79171d23ffef3e70f782f4c4911b3d8a7c5aa7dcb06f2641d3a40e
-sha256(web/buy.html)   = 6319505ecf3f39c20f2ab05b24e199caad390474632858c151636c9cbe55b38c
-sha256(web/order.html) = 7443e8b6264943016e6a675e26b0c0a1ca6028c81da1cd2fd92bcf250e6d26f6
-sha256(web/slot.html)  = 1eadddc6128b12c08701f3e0153af4b1be62bb08e5f246737640a13dc08f7201
+sha256(web/index.html) = 1f5aa45278541f20f77aad70d6e926dce1cd21aa85590d1f2fe6bbd54700705c
+sha256(web/size.html)  = 9e0a6f6e7ab2c0012f814802d7c554227e5dc4fec59728be1be9e656d4ec4329
+sha256(web/route.html) = e2cce3fafbac12ddeabb9870bacd0b2b64d779292eba03b944e62424b6d477a7
+sha256(web/buy.html)   = 558b6318841d0d51a27bf4fc1a5cfd924ed226cfdc237516ed6a44db0ff211c5
+sha256(web/order.html) = dbcef0b37a2e710ba4103b5f85a6df400125e869e52c029f14b17a167683e175
+sha256(web/slot.html)  = 57330d5e9e10a08ff6965f249926a1066c08a73b4110966eb46cd33c4b61af97
 ```
 
 ### Tests
