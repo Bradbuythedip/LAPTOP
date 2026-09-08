@@ -254,7 +254,16 @@ console.log("── the first action on the page is the one the owner asked for"
   ok("the hero's primary action is Buy LAPTOP", cta === "#buy|Buy LAPTOP", cta);
   ok("the contract row is hidden while there is no contract",
      await page.isHidden("#lapCaRow"));
-  ok("and the card says so rather than showing a blank", /not launched/i.test(body));
+  // One word for one state. The page used to carry three — "not launched" in the buy card,
+  // "not deployed" on the token, "not open" on LAPTOP — for two facts, and a reader has to
+  // decide whether they mean different things. Two of them did not. ("not open" survives
+  // because it IS a different fact: LAPTOP can exist with the window still shut.)
+  ok("and the card says so rather than showing a blank", /not deployed/i.test(body));
+  const words = await page.$$eval("#buy .badge, .tok .badge", els =>
+    [...new Set(els.map(e => e.textContent.trim().toLowerCase()))]);
+  ok("and every 'nothing is on chain yet' badge uses the same words",
+     words.filter(w => !/^not open$/.test(w)).every(w => w === "not deployed"),
+     words.join(" / "));
   ok("with no button, because there is nothing for one to do yet",
      await page.isHidden("#lapCta"));
   const copy = await page.$$eval(".copy", els => els.length);
