@@ -590,13 +590,17 @@ console.log("── one build tag, and the README agrees with it");
 console.log("── the README's test inventory adds up");
 {
   const readme = fs.readFileSync(path.join(ROOT, "README.md"), "utf8");
+  // Reference models live at the root beside the thing they are a reference for, so the scan
+  // is test/ plus the named ones. launch_model.py is exercised by test/test_launch_model.py;
+  // bond_model.py checks itself and is run directly by run-all.sh, so it is a suite.
   const onDisk = fs.readdirSync(path.join(ROOT, "test"))
     .filter(f => /^run(-[\w.-]+)?\.mjs$/.test(f) || /^test_.*\.py$/.test(f))
-    .map(f => "test/" + f);
+    .map(f => "test/" + f)
+    .concat(fs.existsSync(path.join(ROOT, "bond_model.py")) ? ["bond_model.py"] : []);
   ok("there are suites on disk to check", onDisk.length > 10, String(onDisk.length));
 
   const listed = new Map();
-  for (const m of readme.matchAll(/`(test\/[\w.-]+)` \u2014 (\d+),/g))
+  for (const m of readme.matchAll(/`([\w./-]+\.(?:mjs|py))` \u2014 (\d+),/g))
     listed.set(m[1], Number(m[2]));
   for (const f of onDisk)
     ok(`the README lists ${f} with a count`, listed.has(f),

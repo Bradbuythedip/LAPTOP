@@ -96,9 +96,9 @@ sha256(web/snooze.html)  = af52292a0f32cf44e32e2b609fcc677430dc2d08b29f2effc11a3
 sh test/run-all.sh         # everything below, no network touched
 ```
 
-**1434 assertions across eighteen suites.**
+**1518 assertions across twenty suites.**
 
-`test/run.mjs` — 336, drives the real page in Chromium against `test/mock-rpc.mjs`: Keccak vectors,
+`test/run.mjs` — 340, drives the real page in Chromium against `test/mock-rpc.mjs`: Keccak vectors,
 the four EIP-55 reference addresses, the v4 poolId derivation checked against a real Base pool
 id, ABI-string decoding (including a 10-character name, whose length word contains a hex
 letter, and truncated/absurd offsets), result-length discipline, and full flows for the happy
@@ -177,6 +177,21 @@ both rules, that the oracle fails open, and that "no lock" is false.
 distribution still cannot complete: `claim()` is an outbound transfer and the 20%/day cap
 applies to it. Also carries the axiomatics — the decay condition, depth-versus-appreciation,
 and what a large supply does and does not buy.
+
+`test/run-curve.mjs` — 64, compiles `contracts/SnoozeCurve.sol` and executes it. The virtual
+curve's ETH side starts imaginary, so most of this suite is one property attacked from several
+directions: **the curve can only ever pay out ETH that arrived.** That rests entirely on it never
+buying back more than it sold — tokens exist outside the curve, and on a Snooze launch the
+launcher holds the whole supply from block one — so the sell path refuses above `sold` and the
+test drives that attack. It also checks the closed forms against `bond_model.py`'s (three
+implementations, one answer), that the leftover at graduation is exactly `curveSupply/m`, that
+the pool opens AT the curve's closing price rather than below it, and that a token which burns
+part of a sale on its way in is priced on what arrived rather than on what was sent.
+
+`bond_model.py` — 16, the curve's arithmetic derived and checked against a simulated walk up it:
+the price multiple `((E0+R)/E0)²`, the real ETH to reach a multiple `E0(√m−1)`, the fraction sold
+`1−1/√m`, and the graduation leftover `1/m`. It also prints the table that answers the depth
+question, because depth and speed turn out to be one dial and not two.
 
 `test/run-deployable.mjs` — 32, the go/no-go before a wallet is opened: every runtime under
 EIP-170 and every init code under EIP-3860 (the launchpad is the big one at 52.9% of the

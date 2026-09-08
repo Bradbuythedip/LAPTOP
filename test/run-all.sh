@@ -35,11 +35,13 @@ suite "solidity: contracts/PooledLaunchBuy.sol (compiled and executed)" test/run
 suite "solidity: contracts/Snooze.sol (compiled and executed)" test/run-snooze.mjs node
 suite "solidity: Snooze + PooledLaunchBuy wired together" test/run-wiring.mjs node
 suite "solidity: contracts/SnoozeLaunchpad.sol (compiled and executed)" test/run-launchpad.mjs node
+suite "solidity: contracts/SnoozeCurve.sol (virtual liquidity, compiled and executed)" test/run-curve.mjs node
 suite "solidity: is any of it deployable? (EIP-170/3860, real ctor args)" test/run-deployable.mjs node
 suite "python: laptop_base edge cases" test/test_laptop_base.py python3
 suite "python: patched script integration" test/test_scripts.py python3
 suite "python: size-curve reference math" test/test_size_math.py python3
 suite "python: launch-fee reference model" test/test_launch_model.py python3
+suite "python: bonding-curve reference maths" bond_model.py python3
 suite "browser: web/index.html (the \$SNOOZE landing page)" test/run-index.mjs node
 suite "browser: web/checker.html" test/run.mjs node
 suite "browser: web/size.html" test/run-size.mjs node
@@ -63,6 +65,8 @@ awk -v readme=README.md '
       # run-wiring.mjs is named twice: once in the inventory with its count, and once in the
       # prose about the wiring bug. Matching on the name alone read the prose line second and
       # recorded the suite as zero.
+      # The pattern accepts any script path, not only test/: bond_model.py is a reference
+      # implementation that lives at the root beside launch_model.py and self-checks.
       for (s in count)
         if (index(line, "`" s "` ") == 1 && !(s in listed)) {
           rest = substr(line, length(s) + 3)

@@ -26,6 +26,11 @@ const ROOT_BLOCK = `:root{
   --card:#0e1424;                    /* opaque, for inputs and selects */
   --cardBg:rgba(255,255,255,.045);
   --gold:#f0c040; --goldHi:#ffd970; --goldSoft:rgba(240,192,64,.14);
+  /* Base blue. #0052FF is the real brand colour and it is 2.91:1 on this ground — under the
+     4.5 for text and under the 3 for a border. So it is a FILL, where white on it is 5.75:1,
+     and --baseLt is the lifted tint that is allowed to speak: 5.68:1. Using the brand blue as
+     text would be the one place on this site where the brand beat the reader. */
+  --base:#0052ff; --baseLt:#5b94ff; --baseSoft:rgba(0,82,255,.16); --onBase:#ffffff;
   --onGold:#140f02;                  /* text ON a gold fill. White on gold is 1.8:1 — unusable */
   --ok:#4fd18a; --okbg:rgba(79,209,138,.13);
   --bad:#ff8178; --badbg:rgba(255,129,120,.13);

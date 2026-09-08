@@ -112,3 +112,40 @@ contract ReentrantDepositor {
         }
     }
 }
+
+/// A plain ERC-20 with allowances, which the curve needs because its sell path pulls rather
+/// than being pushed to. `burnBps` simulates a token that destroys part of a transfer on its
+/// way IN to a registered venue — which is exactly what Snooze Rule 1 does, and the reason the
+/// curve prices on the balance it actually gained rather than on the amount it was told.
+contract PlainToken {
+    string public constant name = "Plain";
+    uint8 public constant decimals = 18;
+    uint256 public totalSupply;
+    mapping(address => uint256) public balanceOf;
+    mapping(address => mapping(address => uint256)) public allowance;
+    uint256 public burnBps;
+    address public burnInto;        // transfers TO this address lose burnBps on arrival
+
+    constructor(uint256 supply) { totalSupply = supply; balanceOf[msg.sender] = supply; }
+
+    function setBurn(address into, uint256 bps) external { burnInto = into; burnBps = bps; }
+
+    function approve(address s, uint256 v) external returns (bool) {
+        allowance[msg.sender][s] = v; return true;
+    }
+    function _move(address f, address t, uint256 v) internal {
+        require(balanceOf[f] >= v, "balance");
+        uint256 burn = (t == burnInto && burnBps > 0) ? (v * burnBps) / 10_000 : 0;
+        balanceOf[f] -= v;
+        balanceOf[t] += v - burn;
+        if (burn > 0) totalSupply -= burn;
+    }
+    function transfer(address t, uint256 v) external returns (bool) {
+        _move(msg.sender, t, v); return true;
+    }
+    function transferFrom(address f, address t, uint256 v) external returns (bool) {
+        uint256 a = allowance[f][msg.sender];
+        if (a != type(uint256).max) { require(a >= v, "allowance"); allowance[f][msg.sender] = a - v; }
+        _move(f, t, v); return true;
+    }
+}
