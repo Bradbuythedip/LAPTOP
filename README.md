@@ -239,6 +239,48 @@ the Python is right, the same arrangement `size.html` has with `test_size_math.p
 The page is not linked from the buyer navigation — operator tool, reachable by URL. Still a
 static file on a public site, so not secret, just not advertised.
 
+## Snooze — the launchpad
+
+The launchpad is Snooze. Every token launched on it carries the two rules, and `$SNOOZE` is
+the first ticker on it.
+
+**`contracts/SnoozeLaunchpad.sol` exists for exactly one reason,** and it is not convenience.
+`test/run-wiring.mjs` showed that a launcher who wires `Snooze` to `PooledLaunchBuy` by hand
+produces a distribution that **cannot complete**: `claim()` is an outbound transfer, so the
+20%/day cap applies, and anyone owed more than 20% of the bag is refused forever. Both
+contracts pass their own suites throughout. The launcher finds out on distribution day, with
+the money already in.
+
+`launch()` grants the exemption in the same transaction that deploys both contracts, before a
+single deposit can arrive. The bug is not documented, it is unmakeable.
+
+**Zero discretion after launch.** The launchpad holds the token's admin rights for the length
+of one transaction and gives them up inside it: register the venue, exempt the distributor,
+hand the supply to the launcher, freeze. After `launch()` returns there is no address — not
+the launcher, not the launchpad, not its deployer — that can change a pool, an exemption or a
+rule. Asserted from both sides: every admin call from every party reverts, and the launchpad's
+ABI contains no admin surface at all, with `launch` as its only state-changing function.
+
+The trade is stated rather than hidden: a venue created after the freeze is permanently
+outside the rules, because the only alternative is keeping a key that can rewrite them.
+
+**What it refuses, before the money is in.** Zero supply, a dev cut above 20% of the haircut,
+a refund window that closes before it opens or is shorter than a day, an exit fee that
+confiscates the deposit, a missing oracle. `validate()` is `pure`, so a page can check a
+proposed launch without sending anything.
+
+**`earlyStaysBetter()`** puts the decay condition on chain:
+`spot(n+1)·(10000−τ(n)) > spot(n)·(10000−τ(n+1))`. A tax that decays faster than the price
+climbs makes later buyers cheaper all-in, so waiting becomes dominant — and because the tax
+only decays *on buys*, the relief needs the buys that waiting prevents. It deadlocks. A
+launcher and a page now check that with the same arithmetic instead of a spreadsheet.
+
+**The bug was so easy to make that I made it again writing the fix.** The `Snooze` constructor
+mints to the launchpad, and the launchpad is subject to Rule 2 like everything else — so
+handing the supply on is an outbound transfer of 100% of a balance and reverts at 20%. The
+contract whose entire purpose is preventing that bug hit it on its own first transaction. It
+now exempts itself, and the exemption dies with the freeze three lines later.
+
 ## `$SNOOZE` — the mechanism, and where it does not do what it says
 
 *You snooze, you win.* Two rules, in `contracts/Snooze.sol`, compiled and executed by

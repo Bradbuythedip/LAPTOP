@@ -75,11 +75,17 @@ export async function deploy(bytecodeHex, ctorArgsHex = "", opts = {}) {
 
 /// Run a call. Returns {ok, words, raw, revert} — a revert is a result, not a throw, so a
 /// test can assert that something reverts without wrapping every call in try/catch.
+/// `opts.raw` supplies pre-encoded argument words for signatures the minimal encoder cannot
+/// build — a struct tuple, say. The selector still comes from `sig`, so a typo in the
+/// signature still fails loudly rather than calling the fallback.
 export async function call(ctx, sig, args = [], opts = {}) {
+  const data = opts.raw !== undefined
+    ? selector(sig) + opts.raw.replace(/^0x/, "")
+    : encodeCall(sig, args);
   const r = await ctx.evm.runCall({
     caller: opts.from ? createAddressFromString(opts.from) : DEPLOYER,
     to: ctx.address, gasLimit: 10_000_000n,
-    data: hexToBytes(encodeCall(sig, args)),
+    data: hexToBytes(data),
     value: BigInt(opts.value ?? 0),
     block: { header: { number: BigInt(opts.blockNumber ?? 1),
                        timestamp: BigInt(opts.timestamp ?? 1000) } },

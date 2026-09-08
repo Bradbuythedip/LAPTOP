@@ -17,9 +17,14 @@ interface ISnoozeMin { function transfer(address,uint256) external returns (bool
 /// holds. A real pool would price along a curve; this one is linear, because the wiring test
 /// is about whether the two contracts compose, not about price discovery.
 contract SnoozeRouter {
-    ISnoozeMin public immutable token;
+    // Settable, not immutable: in the launchpad test the router address must be known BEFORE
+    // the token exists, because launch() registers the venue in the same transaction that
+    // deploys the token. On a real chain the pool address is deterministic and known ahead
+    // for the same reason; here the mock just gets told afterwards.
+    ISnoozeMin public token;
     uint256 public rate = 1_000_000;      // token base units per wei
     constructor(ISnoozeMin t) { token = t; }
+    function setToken(ISnoozeMin t) external { token = t; }
     function setRate(uint256 r) external { rate = r; }
     function swapExactETHForTokens(address, uint256 minOut, address to)
         external payable returns (uint256)
