@@ -43,8 +43,10 @@
   },
 
   "vanity": {
-    "_comment": "BEAR and ZZZ are impossible: R and Z are not hex digits. beabed reads BEA-BED and is.",
-    "suffix": "beabed",
+    "_comment": "An address is hex, so only 0-9 and a-f exist in one. PUMP, DUMP, BULL, MOON, BEAR and ZZZ all contain letters the alphabet does not have and cannot be ground at any cost.",
+    "_reachable": "ba5ed (BASED), bada55 (BADASS), 1337 (LEET), 600d (GOOD), beabed (BEA-BED), 5eeded (SEEDED), acce55 (ACCESS), f00d, face, dead, cafe, beef",
+    "_ifYouWantAWordThatIsNotHex": "It goes in a Base name, not in the address. pump.snoozebear.eth is what a wallet shows people; the hex underneath it can be anything.",
+    "suffix": "ba5ed",
     "_grind": "node tools/vanity-par.mjs beabed --deployer <SnoozeDeployer> --inithash <keccak of the real init code>",
     "_warning": "The address depends on the exact bytecode AND the constructor arguments. Grind last, after nothing else will change."
   }

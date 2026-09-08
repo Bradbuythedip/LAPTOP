@@ -48,6 +48,24 @@ ok("everything compiles with no warnings", warnings.length === 0,
      /string public constant name = "Snooze Bear"/.test(src));
 }
 
+// An impossible vanity suffix costs nothing to write down and everything to discover at grind
+// time, when the contracts are frozen and you are waiting on a search that can never finish.
+// PUMP, DUMP, BULL, MOON, BEAR and ZZZ are all in that category. Cheaper to fail here.
+console.log("── the vanity suffix is one an address can actually contain");
+{
+  const HEX = new Set("0123456789abcdef");
+  const suf = (CFG.vanity && CFG.vanity.suffix || "").toLowerCase();
+  ok("config.json names a suffix", suf.length > 0, JSON.stringify(suf));
+  const bad = [...new Set([...suf].filter(c => !HEX.has(c)))];
+  ok(`"${suf}" contains only hex digits`, bad.length === 0,
+     `${bad.join(", ")} ${bad.length > 1 ? "are" : "is"} not in an address`);
+  ok("and it is short enough to grind before the sun burns out",
+     suf.length <= 8, `${suf.length} chars is about ${(16 ** suf.length).toExponential(1)} salts`);
+  // The guard, guarded: if this ever stops rejecting the impossible it is measuring nothing.
+  for (const w of ["pump", "bear", "zzz", "moon"])
+    ok(`the check still rejects "${w}"`, [...w].some(c => !HEX.has(c)));
+}
+
 console.log("── only the owner can deploy the first token");
 const evm = await createEVM();
 await fund(evm, OWNER, 100n * E);

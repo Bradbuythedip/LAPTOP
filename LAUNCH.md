@@ -28,7 +28,7 @@ proved by a test, the test is named.
 | Second | **LAPTOP**, on its own curve, gated on holding SNOOZE at launch |
 | Chain | Base, 8453, and nothing else |
 | Site | snoozebear.xyz |
-| Vanity | `…beabed` — see 2.3, and note that BEAR and ZZZ are impossible |
+| Vanity | `…ba5ed` — BASED. See 2c: PUMP, BEAR, MOON and ZZZ cannot exist in an address |
 
 All of it is in `deploy/config.json`, which `test/run-owner.mjs` reads and checks against the
 compiled contracts. That file deliberately holds no RPC key.
@@ -265,9 +265,21 @@ shifts a byte, and the address changes. Publish the salt with the address — it
 and publishing it is what lets a stranger recompute `keccak(0xff, deployer, salt, initHash)` and
 check that the address they were given is the one the code lands on.
 
-`BEAR` and `ZZZ` cannot be ground. An address is hex: `R` and `Z` are not hex digits, and no
-amount of searching produces a character the alphabet does not have. `beabed` reads BEA-BED, is
-six hex characters, and takes about 16.8 million salts — a couple of minutes across your cores.
+**Most words cannot be ground at any price.** An address is hex, so it contains only `0-9` and
+`a-f`. `PUMP` needs P, U and M; `BEAR` needs R; `MOON` needs M, O and N; `ZZZ` needs Z. None of
+those letters exist in an address and no amount of searching invents one — this is not a matter
+of difficulty, it is a matter of the alphabet.
+
+What is reachable, with roughly the same energy: `ba5ed` (BASED), `bada55` (BADASS), `1337`,
+`600d`, `beabed` (BEA-BED), `5eeded`, `acce55`, and the classics `f00d`, `face`, `dead`, `cafe`,
+`beef`. `ba5ed` is five characters — about a million salts, ten seconds — and is what
+`deploy/config.json` currently names. Changing it is one word in that file; the suite refuses a
+suffix that is not hex, so an impossible one fails the build rather than a grind that can never
+finish.
+
+**If you want a word the address cannot hold, it goes in a Base name.** `pump.snoozebear.eth`
+resolves to whatever hex you deploy to, and a name is what a wallet actually shows somebody —
+the hex underneath it is the part nobody reads aloud.
 
 **3. Deploy `SnoozeLaunchpad`.** No constructor arguments; `deploy/SnoozeLaunchpad.bin` is the
 bytecode. Expect `count() == 0` and `MAX_DEV_BPS() == 2000`. This address is the launchpad

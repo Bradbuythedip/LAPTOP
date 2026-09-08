@@ -96,7 +96,7 @@ sha256(web/snooze.html)  = 853fd2c8e91db008592707307be8c0a45bc3229c3ed0d78efbf59
 sh test/run-all.sh         # everything below, no network touched
 ```
 
-**1727 assertions across twenty-two suites.**
+**1734 assertions across twenty-two suites.**
 
 `test/run.mjs` — 353, drives the real page in Chromium against `test/mock-rpc.mjs`: Keccak vectors,
 the four EIP-55 reference addresses, the v4 poolId derivation checked against a real Base pool
@@ -217,10 +217,12 @@ does not work for you, a bigger number with a real proof does not work, there is
 honest weakness — a balance at a block can be borrowed for one block — is written into the
 contract rather than left for somebody to find.
 
-`test/run-owner.mjs` — 32, the first launch driven as the owner's wallet would drive it. Two
+`test/run-owner.mjs` — 39, the first launch driven as the owner's wallet would drive it. Two
 claims, both about one address: **only** `0x4296…5929` can deploy the first token — not "should
 not", cannot, checked by a stranger trying — and **every fee lands there**, in the same
-transaction, with no call anywhere that could repoint it. It also drives the SNOOZE-to-bid gate:
+transaction, with no call anywhere that could repoint it. It also refuses a vanity suffix an address cannot contain — PUMP, BEAR, MOON and ZZZ all need
+letters that are not hex digits, and finding that out at grind time means waiting on a search
+that can never finish. It drives the SNOOZE-to-bid gate too:
 a holder buys, somebody holding none reverts, a stranger may pay *for* a holder because the
 check is on who receives, and after the window anybody buys. The deployer's owner cannot be
 transferred or renounced, a salt cannot be redeployed over, and after `seal()` not even the
