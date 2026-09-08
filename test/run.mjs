@@ -1,4 +1,6 @@
-// Test suite for web/index.html. Drives the real page in Chromium against test/mock-rpc.mjs.
+// Test suite for web/checker.html — the contract checker. It used to live at web/index.html
+// and at the site root; the buy screen is the landing page now and the checker moved to
+// /checker.html. Drives the real page in Chromium against test/mock-rpc.mjs.
 //   node test/run.mjs
 import { chromium } from "playwright";
 import http from "node:http";
@@ -56,7 +58,7 @@ const ctx = await browser.newContext({ viewport: { width: 375, height: 780 } });
 const page = await ctx.newPage();
 const pageErrors = [];
 page.on("pageerror", e => pageErrors.push(e.message));
-await page.goto(SITE + "/", { waitUntil: "domcontentloaded" });
+await page.goto(SITE + "/checker.html", { waitUntil: "domcontentloaded" });
 
 /* ---------------- 1. crypto + parsing (pure, no network) ---------------- */
 const T = await page.evaluate(() => {
@@ -305,7 +307,8 @@ await useScenario("happy");
 await type("0xB095274743941e953c746F9C228DA9c18Bb6ec29");
 const ctaMatch = await page.$$eval("#verdictArea a.cta", as => as.map(a => a.getAttribute("href")));
 ok("a match offers a primary action", ctaMatch.length >= 1, JSON.stringify(ctaMatch));
-ok("it leads to the venue comparison", ctaMatch.includes("/buy.html"), JSON.stringify(ctaMatch));
+ok("it leads to the venue comparison, which is now the front page",
+   ctaMatch.includes("/"), JSON.stringify(ctaMatch));
 ok("and to the size curve", ctaMatch.includes("/size.html"), JSON.stringify(ctaMatch));
 await type("0x0000000000000000000000000000000000001234");
 const ctaMiss = await page.$$eval("#verdictArea a.cta", as => as.length);
@@ -390,8 +393,8 @@ const stackOf = await page.evaluate(() => {
 // The site is about one token. Anything else named on it is either cross-promotion or a
 // chance for a reader to confuse two things, and both are out.
 console.log("── one token, and only one");
-const pages = ["index.html", "size.html", "route.html", "buy.html", "order.html", "slot.html",
-               "launch.html"];
+const pages = ["index.html", "checker.html", "size.html", "route.html", "order.html",
+               "slot.html", "launch.html"];
 for (const f of pages) {
   const t = fs.readFileSync(path.join(ROOT, "web", f), "utf8");
   ok(`${f} never mentions $TWD`, !/\$TWD|%24TWD/.test(t));
@@ -548,8 +551,8 @@ ok("and no other token is named in the verdict",
    !/POT ?PAL/i.test(await txt("#verdictArea")));
 
 console.log("── static checks");
-const src = fs.readFileSync(path.join(ROOT, "web", "index.html"), "utf8");
-const html = fs.readFileSync(path.join(ROOT, "web", "index.html"), "utf8");
+const src = fs.readFileSync(path.join(ROOT, "web", "checker.html"), "utf8");
+const html = fs.readFileSync(path.join(ROOT, "web", "checker.html"), "utf8");
 ok("no third-party origins (C7)", !/https?:\/\/(?!basescan\.org|laptoptoken\.com|mainnet\.base\.org)[a-z0-9.-]+\//i.test(
    html.replace(/basescan\.org[^"'\s]*/g, "")), "found an external origin");
 // C2 was "no wallet code at all". The page connects now, so the line moved rather than

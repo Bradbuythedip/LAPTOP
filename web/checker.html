@@ -1,0 +1,1328 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="referrer" content="no-referrer">
+<meta name="color-scheme" content="light">
+<title>LAPTOP contract checker</title>
+<style>
+:root{
+  /* Light, cool, Ethereum-ish: lavender-white ground, slate text, the ETH blue-violet as the
+     one accent. Every colour here was picked against the composited ground (art + scrim +
+     card), not against a swatch — the suite recomputes the WCAG ratios and fails on a
+     regression, which is the only reason these are the exact values they are. */
+  --bg:#f4f5fb; --fg:#1f2033; --dim:#565a72; --line:#dde0f0; --card:#ffffff; --cardBg:rgba(255,255,255,.92);
+  --eth:#4a63d8; --ethSoft:rgba(74,99,216,.09);
+  --ok:#0c6b3a; --okbg:rgba(12,107,58,.10); --bad:#b3251c; --badbg:rgba(179,37,28,.09);
+  --warn:#7f5600; --warnbg:rgba(127,86,0,.10); --unk:#4b5069; --unkbg:rgba(74,99,216,.07);
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{
+  background:var(--bg); color:var(--fg);
+  font:15px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  -webkit-text-size-adjust:100%; overflow-x:hidden;
+  padding:0 14px env(safe-area-inset-bottom) 14px; max-width:640px; margin:0 auto;
+}
+h1{font-size:17px;margin:16px 0 2px;letter-spacing:-.01em}
+.sub{color:var(--dim);font-size:12.5px;margin:0 0 14px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px;margin:10px 0}
+.mono{font-family:var(--mono);font-size:12.5px;word-break:break-all;line-height:1.45}
+.dim{color:var(--dim)}
+.small{font-size:12px}
+.tiny{font-size:11.5px}
+label{display:block;font-size:12.5px;color:var(--dim);margin-bottom:5px}
+
+/* ---- input ---- */
+.inwrap{position:relative}
+#addr{
+  width:100%;font-family:var(--mono);font-size:16px;padding:13px 40px 13px 12px;
+  border:1.5px solid var(--line);border-radius:9px;background:var(--card);color:var(--fg);
+}
+#addr:focus{outline:none;border-color:var(--fg)}
+#clear{
+  position:absolute;right:4px;top:50%;transform:translateY(-50%);
+  width:36px;height:36px;border:0;background:none;color:var(--dim);
+  font-size:19px;cursor:pointer;display:none;border-radius:8px;
+}
+#clear:hover{background:var(--unkbg)}
+.btnrow{display:flex;gap:8px;margin-top:8px;flex-wrap:wrap}
+button.act{
+  font:inherit;font-size:13.5px;padding:9px 13px;min-height:40px;
+  border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--fg);cursor:pointer;
+}
+button.act:hover{border-color:var(--fg)}
+button.act:disabled{opacity:.45;cursor:default}
+#inerr{color:var(--bad);font-size:12.5px;margin-top:7px;display:none}
+.badbox{background:var(--badbg);border:1px solid var(--bad);color:var(--bad);
+  border-radius:8px;padding:11px;font-size:12.5px;margin:8px 0}
+
+/* ---- wallet ---- */
+.wtab{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:10px}
+.wtab td{padding:5px 0;border-bottom:1px solid var(--line);vertical-align:top}
+.wtab td:first-child{color:var(--dim);width:34%}
+.wtab td:last-child{font-family:var(--mono);word-break:break-all}
+.wnote{font-size:12px;color:var(--warn);margin-top:8px}
+#wErr{margin-top:9px;color:var(--bad)}
+
+/* ---- verdict ---- */
+#verdictArea{display:none;margin:12px 0}
+.verdict{border-radius:10px;padding:14px;border:1.5px solid}
+.verdict .vtext{font-size:19px;font-weight:650;letter-spacing:-.02em;line-height:1.25}
+.v-ok{background:var(--okbg);border-color:var(--ok)} .v-ok .vtext{color:var(--ok)}
+.v-bad{background:var(--badbg);border-color:var(--bad)} .v-bad .vtext{color:var(--bad)}
+.v-warn{background:var(--warnbg);border-color:var(--warn)} .v-warn .vtext{color:var(--warn)}
+.v-unk{background:var(--unkbg);border-color:var(--line)} .v-unk .vtext{color:var(--unk)}
+.htext{font-size:15px;font-weight:600;letter-spacing:-.01em}
+.v-ok .htext{color:var(--ok)} .v-bad .htext{color:var(--bad)}
+.v-warn .htext{color:var(--warn)} .v-unk .htext{color:var(--unk)}
+.vnote{font-size:12.5px;margin-top:8px;line-height:1.45}
+.diff{margin-top:10px}
+.diff div{margin:3px 0}
+.diff b{background:var(--badbg);color:var(--bad);font-weight:700;border-radius:2px}
+#stale{display:none;font-size:12px;color:var(--warn);margin-top:6px}
+
+/* ---- badges / rows ---- */
+.badge{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;padding:3px 8px;
+  border-radius:999px;border:1px solid var(--line);background:var(--unkbg);color:var(--dim);white-space:nowrap}
+.badge.good{background:var(--okbg);border-color:var(--ok);color:var(--ok)}
+.badge.bad{background:var(--badbg);border-color:var(--bad);color:var(--bad)}
+.badge.warn{background:var(--warnbg);border-color:var(--warn);color:var(--warn)}
+.hdr{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px}
+.hdr h2{font-size:13.5px;margin:0;font-weight:600}
+.row{border-top:1px solid var(--line);padding:9px 0}
+.row:first-of-type{border-top:0}
+.rowhead{display:flex;justify-content:space-between;align-items:center;gap:8px;cursor:pointer;min-height:32px}
+.rowhead .k{font-size:13px}
+.rowbody{display:none;margin-top:7px;padding:8px;background:var(--unkbg);border-radius:7px}
+.row.open .rowbody{display:block}
+.chev{color:var(--dim);font-size:11px;transition:transform .12s}
+.row.open .chev{transform:rotate(90deg)}
+.spin{display:inline-block;width:11px;height:11px;border:2px solid var(--line);
+  border-top-color:var(--dim);border-radius:50%;animation:sp .7s linear infinite}
+@keyframes sp{to{transform:rotate(360deg)}}
+a{color:inherit}
+a.ext{font-family:var(--mono);font-size:12px;text-decoration:underline;text-underline-offset:2px}
+.kv{display:flex;justify-content:space-between;gap:10px;font-size:12.5px;padding:2px 0}
+.kv span:last-child{font-family:var(--mono);text-align:right;word-break:break-all}
+details{margin-top:8px}
+summary{cursor:pointer;font-size:12.5px;color:var(--dim);min-height:32px;display:flex;align-items:center}
+table{width:100%;border-collapse:collapse;font-size:12px;margin-top:6px}
+th,td{text-align:left;padding:5px 6px;border-bottom:1px solid var(--line)}
+th{color:var(--dim);font-weight:500}
+td.c{font-family:var(--mono)}
+.scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
+.warnbox{background:var(--warnbg);border:1px solid var(--warn);color:var(--warn);
+  border-radius:8px;padding:10px;font-size:12.5px;margin:8px 0}
+.footer{color:var(--dim);font-size:11.5px;margin:22px 0 30px;line-height:1.55}
+.hr{height:1px;background:var(--line);margin:14px 0}
+
+/* ---- background art ---- */
+/* bg.png is the ONLY external asset in either page. It is same-origin and purely
+   decorative: if it is missing, blocked, or the file is saved and opened offline, the
+   page loses a picture and nothing else. Every number stays readable. */
+body::before{
+  content:"";position:fixed;inset:0;z-index:-3;pointer-events:none;
+  background:url("/bg.png") center center / cover no-repeat;
+  opacity:.26;
+}
+
+/* Cards sit on a near-opaque ground so the art shows through the page without ever
+   competing with a verdict someone is reading in a hurry. */
+.card{background:var(--cardBg)}
+/* Depth. This sits on its own layer at full strength — putting it on the art layer would
+   inherit that layer's opacity and do almost nothing. Lit from the centre, near-black by
+   the edges, so text always has a dark ground under it. */
+html::before{
+  content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;
+  background:radial-gradient(ellipse 120% 90% at 50% 38%,
+    rgba(244,245,251,.30) 0%, rgba(245,246,252,.62) 48%, rgba(248,249,253,.90) 82%, rgba(250,251,254,.96) 100%);
+}
+/* One primary action per page, used only where acting is safe. */
+a.cta{display:flex;align-items:center;justify-content:center;gap:8px;
+  min-height:52px;padding:14px 18px;margin-top:12px;border-radius:11px;
+  background:var(--eth);color:#fff;font-weight:650;font-size:15px;
+  text-decoration:none;border:1px solid var(--eth)}
+a.cta:hover{filter:brightness(1.08)}
+a.cta.sub2{background:transparent;color:var(--fg);border-color:var(--line);font-weight:500;
+  min-height:44px;font-size:13.5px}
+
+/* ---- readability ----
+   The old scale bottomed out at 11.5px, which is under what most people can read on a phone
+   at arm's length, and every page here exists to be read in a hurry. Everything steps up,
+   line-height opens, tap targets reach 44px, and the scale grows again once there is room.
+   Inputs are 16px because anything smaller makes iOS zoom the page on focus. No colour
+   changes: the ratios the suite measures are untouched. */
+body{font-size:16px;line-height:1.6;max-width:680px;padding-left:16px;padding-right:16px}
+h1{font-size:21px;margin:20px 0 3px}
+.sub{font-size:13.5px;margin:0 0 16px;line-height:1.55}
+.card{padding:14px;margin:12px 0;border-radius:12px}
+.mono{font-size:13px;line-height:1.5}
+.small{font-size:13px} .tiny{font-size:12.5px;line-height:1.55}
+label{font-size:13px;margin-bottom:6px}
+table{font-size:12.5px} th,td{padding:7px 5px}
+.hdr h2{font-size:14.5px}
+.badge{font-size:12px;padding:4px 9px}
+.footer{font-size:12.5px;line-height:1.65}
+button.act{font-size:14px;min-height:44px;padding:10px 15px}
+input,select{font-size:16px}
+.wtab{font-size:13px} .wtab td{padding:7px 0}
+.rowhead .k{font-size:13.5px} .kv{font-size:13px}
+summary{font-size:13px}
+@media (min-width:600px){
+  body{font-size:16.5px;padding-left:22px;padding-right:22px}
+  h1{font-size:23px}
+  .card{padding:17px}
+  .sub{font-size:14px}
+  .small{font-size:13.5px} .tiny{font-size:13px}
+  table,.wtab{font-size:13.5px}
+}
+
+/* ---- Phantom ----
+   Phantom's own colour and mark, so the button looks like the thing it opens. The ghost is
+   drawn here by hand rather than fetched, because the page loads no external asset — it is an
+   approximation of Phantom's mark, not their official file. Swap in the real one from
+   phantom.com/brand before launch if exactness matters. */
+button.act.phantom{background:#ab9ff2;border-color:#ab9ff2;color:#1c1c2e;font-weight:600;
+  display:inline-flex;align-items:center;justify-content:center;gap:9px}
+button.act.phantom:hover{background:#bcb0ff;border-color:#bcb0ff}
+button.act.phantom .ghost{width:20px;height:20px;flex:none;display:block}
+</style>
+</head>
+<body>
+
+<h1>LAPTOP contract checker</h1>
+<p class="sub">Checks whether an address is the one published for LAPTOP on Base.
+Read-only. &middot; <a href="/">where to buy &rarr;</a> &middot;
+<a href="/size.html">size curve</a> &middot; <a href="/order.html">standing order</a> &middot;
+<a href="/slot.html">getting a slot</a> &middot; <a href="/route.html">get ready</a></p>
+
+<div class="card" id="walletCard">
+  <div class="hdr">
+    <h2>Your wallet</h2>
+    <span class="badge" id="wBadge">not connected</span>
+  </div>
+  <p class="tiny dim">This page checks an address against the published reference. Connecting
+  lets it read your address and your Base balances. It does not ask you to sign anything and
+  cannot send a transaction.</p>
+  <div class="btnrow">
+    <button class="act phantom" id="wConnect"><svg class="ghost" viewBox="0 0 128 128"
+      aria-hidden="true" focusable="false"><path fill="#fff" d="M64 10C34.2 10 10 34.2 10 64v42c0
+      6.6 8 9.9 12.6 5.2l9.5-9.5a6.5 6.5 0 0 1 9.2 0l9.1 9.1a6.5 6.5 0 0 0 9.2 0l9.1-9.1a6.5 6.5 0
+      0 1 9.2 0l9.5 9.5c4.6 4.7 12.6 1.4 12.6-5.2V64c0-29.8-24.2-54-54-54z"/><ellipse cx="47"
+      cy="58" rx="8.5" ry="13" fill="#4a3d8f"/><ellipse cx="81" cy="58" rx="8.5" ry="13"
+      fill="#4a3d8f"/></svg>Connect Phantom</button>
+    <button class="act" id="wDisconnect" style="display:none">Forget</button>
+  </div>
+  <div id="wOut" style="display:none"></div>
+  <div id="wErr" class="tiny" style="display:none"></div>
+</div>
+
+<!-- FR1 / DP1 : reference provenance, always visible -->
+<div class="card">
+  <div class="hdr">
+    <h2>Testing against</h2>
+    <span id="chainBadge" class="badge">chain not checked</span>
+  </div>
+  <div class="mono" id="refAddr"></div>
+  <div class="tiny dim" id="refProv" style="margin-top:6px"></div>
+  <div id="overrideBanner" class="warnbox" style="display:none">
+    Using <b>your</b> reference address, not the published one. Verdicts say
+    “MATCHES YOUR REFERENCE”.
+  </div>
+  <details id="refDetails">
+    <summary>Change the reference address</summary>
+    <label for="refIn" style="margin-top:6px">Reference address to test against</label>
+    <input id="refIn" class="mono" style="width:100%;padding:10px;border:1.5px solid var(--line);
+      border-radius:8px;background:var(--card);color:var(--fg);font-size:16px">
+    <div id="refErr" style="color:var(--bad);font-size:12.5px;margin-top:6px;display:none"></div>
+    <div class="btnrow">
+      <button class="act" id="refApply">Use this reference</button>
+      <button class="act" id="refReset">Restore published</button>
+    </div>
+    <p class="tiny dim" style="margin:8px 0 0">
+      This exists so the tool does not depend on trusting its own constant. If this page were
+      cloned with a swapped address, overriding is how you defeat it.
+    </p>
+  </details>
+</div>
+
+<!-- FR2 / DP2 : offline comparator -->
+<div class="card">
+  <label for="addr">The address you were given</label>
+  <div class="inwrap">
+    <input id="addr" placeholder="0x…" spellcheck="false" autocapitalize="off"
+      autocorrect="off" autocomplete="off" inputmode="text">
+    <button id="clear" title="Clear" aria-label="Clear">✕</button>
+  </div>
+  <div id="inerr"></div>
+  <div class="btnrow">
+    <button class="act" id="recheck" disabled>Re-read chain</button>
+  </div>
+  <div id="stale">Showing results for a previous address.</div>
+</div>
+
+<div id="verdictArea"></div>
+
+<!-- FR5 / DP5 -->
+<div class="card" id="evidenceCard" style="display:none">
+  <div class="hdr">
+    <h2>What is actually at that address</h2>
+    <span class="badge" id="evBadge">—</span>
+  </div>
+  <div id="evidence"></div>
+  <p class="tiny dim" style="margin:10px 0 0">
+    Name, symbol, decimals and supply are <b>cosmetic</b>. A copycat can set them to anything.
+    They are shown so you can see how convincing the fake is, not to grade it.
+  </p>
+</div>
+
+<!-- FR6 / FR7 / FR8 -->
+<div class="card" id="liqCard">
+  <div class="hdr">
+    <h2>Can the published LAPTOP be traded yet?</h2>
+    <span class="badge" id="liqBadge">not checked</span>
+  </div>
+  <div id="liquidity" class="small dim">Waiting for a chain read.</div>
+  <div id="ledger"></div>
+  <div class="btnrow">
+    <button class="act" id="refreshLiq">Read venues</button>
+  </div>
+  <div class="tiny dim" id="liqStamp" style="margin-top:8px"></div>
+</div>
+
+<!-- FR4 / DP4.4 : transport -->
+<div class="card">
+  <div class="hdr"><h2>Connection</h2><span class="badge" id="txBadge">direct</span></div>
+  <div class="kv"><span>Reading from</span><span id="rpcShow"></span></div>
+  <details>
+    <summary>Change endpoint</summary>
+    <label for="rpcIn" style="margin-top:6px">Base JSON-RPC endpoint</label>
+    <input id="rpcIn" class="mono" style="width:100%;padding:10px;border:1.5px solid var(--line);
+      border-radius:8px;background:var(--card);color:var(--fg);font-size:16px">
+    <div class="btnrow">
+      <button class="act" id="rpcApply">Use this endpoint</button>
+      <button class="act" id="rpcReset">Restore default</button>
+    </div>
+    <div id="relayWrap" style="display:none;margin-top:10px">
+      <div class="warnbox">
+        This endpoint could not be reached from your browser. That is usually CORS —
+        the browser cannot tell CORS and “host is down” apart, so this may also be a network
+        problem.
+      </div>
+      <label style="display:flex;gap:8px;align-items:flex-start;font-size:12.5px;color:var(--fg)">
+        <input type="checkbox" id="relayToggle" style="margin-top:3px;width:18px;height:18px">
+        <span>Use the totalworlddomination.xyz relay instead.
+          <b>The relay sees every address you check.</b> Direct reads do not leave your browser.</span>
+      </label>
+    </div>
+  </details>
+</div>
+
+<!-- FR9 / DP9 -->
+<div class="card">
+  <div class="hdr"><h2>Constants this tool trusts</h2></div>
+  <p class="tiny dim" style="margin:0 0 4px">
+    Every address below is hardcoded. Any of them could be wrong. Check them yourself.
+  </p>
+  <div class="scroll"><table id="constants"></table></div>
+  <details>
+    <summary>Show the derivations</summary>
+    <div id="derivations" class="tiny mono" style="margin-top:6px"></div>
+  </details>
+</div>
+
+<div class="footer">
+  <div class="hr"></div>
+  <p><b>What this tool does not tell you.</b> A match means the address is the one published at
+  laptoptoken.com. It says nothing about whether that token is worth anything, whether the team
+  is honest, or whether you should buy it. Those are different questions and this tool has no
+  opinion on them.</p>
+  <p><b>If this page were cloned.</b> A copy of this page at a different address could show you a
+  different reference and be confidently wrong. Check the URL is
+  <span class="mono">totalworlddomination.xyz</span>, compare the reference address shown above
+  against laptoptoken.com yourself, and use “Change the reference address” if they disagree.
+  Saving this file and opening it locally removes the hosting party from the question entirely.</p>
+  <p> &middot; totalworlddomination.xyz &middot; Build <span class="mono" id="buildId">2026-09-08a</span> · no analytics, no trackers, no cookies,
+  no third-party requests. The address you paste is never sent anywhere unless you turn on the relay.</p>
+</div>
+
+<script>
+"use strict";
+/* ============================ keccak-256 ============================ */
+const RC=[1n,0x8082n,0x800000000000808an,0x8000000080008000n,0x808bn,0x80000001n,
+0x8000000080008081n,0x8000000000008009n,0x8an,0x88n,0x80008009n,0x8000000an,
+0x8000808bn,0x800000000000008bn,0x8000000000008089n,0x8000000000008003n,
+0x8000000000008002n,0x8000000000000080n,0x800an,0x800000008000000an,
+0x8000000080008081n,0x8000000000008080n,0x80000001n,0x8000000080008008n];
+const RO=[[0,36,3,41,18],[1,44,10,45,2],[62,6,43,15,61],[28,55,25,21,56],[27,20,39,8,14]];
+const M64=(1n<<64n)-1n;
+const rol=(x,n)=>{n=BigInt(n)%64n;return n===0n?x:(((x<<n)|(x>>(64n-n)))&M64);};
+function keccakF(A){
+  for(let r=0;r<24;r++){
+    const C=[0,1,2,3,4].map(x=>A[x][0]^A[x][1]^A[x][2]^A[x][3]^A[x][4]);
+    const D=[0,1,2,3,4].map(x=>C[(x+4)%5]^rol(C[(x+1)%5],1));
+    for(let x=0;x<5;x++)for(let y=0;y<5;y++)A[x][y]^=D[x];
+    const B=[[0n,0n,0n,0n,0n],[0n,0n,0n,0n,0n],[0n,0n,0n,0n,0n],[0n,0n,0n,0n,0n],[0n,0n,0n,0n,0n]];
+    for(let x=0;x<5;x++)for(let y=0;y<5;y++)B[y][(2*x+3*y)%5]=rol(A[x][y],RO[x][y]);
+    for(let x=0;x<5;x++)for(let y=0;y<5;y++)A[x][y]=B[x][y]^((~B[(x+1)%5][y]&M64)&B[(x+2)%5][y]);
+    A[0][0]^=RC[r];
+  }
+  return A;
+}
+function keccak256(bytes){
+  const rate=136; const p=Array.from(bytes); p.push(0x01);
+  while(p.length%rate!==0)p.push(0x00);
+  p[p.length-1]^=0x80;
+  let A=[[0n,0n,0n,0n,0n],[0n,0n,0n,0n,0n],[0n,0n,0n,0n,0n],[0n,0n,0n,0n,0n],[0n,0n,0n,0n,0n]];
+  for(let off=0;off<p.length;off+=rate){
+    for(let i=0;i<rate/8;i++){
+      let w=0n;
+      for(let b=7;b>=0;b--)w=(w<<8n)|BigInt(p[off+i*8+b]);
+      A[i%5][(i/5)|0]^=w;
+    }
+    A=keccakF(A);
+  }
+  const out=[];
+  for(let i=0;i<4;i++){let w=A[i%5][(i/5)|0];for(let b=0;b<8;b++){out.push(Number(w&0xffn));w>>=8n;}}
+  return Uint8Array.from(out.slice(0,32));
+}
+const hex=b=>Array.from(b,x=>x.toString(16).padStart(2,"0")).join("");
+const utf8=s=>Uint8Array.from(new TextEncoder().encode(s));
+const keccakHex=s=>hex(keccak256(utf8(s)));
+const hexToBytes=h=>{h=h.replace(/^0x/,"");const o=[];for(let i=0;i<h.length;i+=2)o.push(parseInt(h.substr(i,2),16));return Uint8Array.from(o);};
+
+/* ============================ addresses ============================ */
+// Strip zero-width, bidi and whitespace before anything else: a pasted address can carry
+// invisible characters that make two different strings look identical.
+const INVISIBLE=/[ ᠎​-‏‪-‮⁠-⁤⁪-⁯﻿\s]/g;
+function normalizeInput(raw){ return (raw||"").replace(INVISIBLE,""); }
+function toChecksum(addr){
+  const a=addr.replace(/^0x/,"").toLowerCase();
+  const h=keccakHex(a);
+  let out="0x";
+  for(let i=0;i<40;i++) out+= parseInt(h[i],16)>=8 ? a[i].toUpperCase() : a[i];
+  return out;
+}
+// Returns {ok, kind, value, checksum}
+//   kind: 'empty' | 'notaddr' | 'badchecksum' | 'ok'
+function parseAddress(raw){
+  const s=normalizeInput(raw);
+  if(!s) return {ok:false,kind:"empty"};
+  if(!/^0x[0-9a-fA-F]{40}$/.test(s)) return {ok:false,kind:"notaddr",value:s};
+  const lower="0x"+s.slice(2).toLowerCase();
+  const mixed=/[a-f]/.test(s.slice(2))&&/[A-F]/.test(s.slice(2));
+  const cs=toChecksum(lower);
+  if(mixed && s!==cs) return {ok:false,kind:"badchecksum",value:lower,checksum:cs};
+  return {ok:true,kind:"ok",value:lower,checksum:cs};
+}
+
+/* ============================ constants ============================ */
+// status: 'verified'  = confirmed against protocol source during development
+//         'unverified'= could not be confirmed; treat as possibly wrong
+const C={
+  CHAIN_ID:8453,
+  LAPTOP:{a:"0xb095274743941e953c746f9c228da9c18bb6ec29",n:"LAPTOP (published)",s:"unverified",
+          why:"as published at laptoptoken.com; transcribed by hand, not fetched live"},
+  POOL_MANAGER:{a:"0x498581ff718922c3f8e6a244956af099b2652b2b",n:"Uniswap v4 PoolManager",s:"verified"},
+  V2_FACTORY:{a:"0x8909dc15e40173ff4699343b6eb8132c65e18ec6",n:"Uniswap V2 factory",s:"verified"},
+  V3_FACTORY:{a:"0x33128a8fc17869897dce68ed026d694621f6fdfd",n:"Uniswap V3 factory",s:"verified"},
+  AERO_FACTORY:{a:"0x420dd381b31aef6683db6b902084cb0ffece40da",n:"Aerodrome PoolFactory (v2)",s:"verified"},
+  AERO_REGISTRY:{a:"0x5c3f18f06cc09ca1910767a34a20f771039e37c0",n:"Aerodrome FactoryRegistry",s:"verified"},
+  WETH:{a:"0x4200000000000000000000000000000000000006",n:"WETH (OP Stack predeploy)",s:"verified"},
+  USDC:{a:"0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",n:"USDC (native, Circle)",s:"verified"},
+  USDBC:{a:"0xd9aaec86b65d86f6a7b5b1b0c42ffa531710b6ca",n:"USDbC (bridged)",s:"verified"},
+};
+// Quote assets. USDbC is here because the published LAPTOP pools observed so far are
+// USDC-quoted, and omitting the bridged variant is a known false-negative.
+const QUOTES=[{k:"WETH",...C.WETH},{k:"USDC",...C.USDC},{k:"USDbC",...C.USDBC}];
+// Base has three fee tiers no other chain has: 200, 300, 400.
+const V3_FEES=[100,200,300,400,500,3000,10000];
+const CL_SPACINGS=[1,50,100,200,2000];
+const SEL={
+  getPairV2:"0xe6a43905",       // getPair(address,address)
+  getPoolV3:"0x1698ee82",       // getPool(address,address,uint24)
+  getPoolAero:"0x79bc57d5",     // getPool(address,address,bool)
+  getPoolCL:"0x28af8d0b",       // getPool(address,address,int24)
+  feeTick:"0x22afcccb",         // feeAmountTickSpacing(uint24)
+  poolFactories:"0x06121cd5",   // poolFactories()
+  extsload2:"0x35fd631a",       // extsload(bytes32,uint256)
+  balanceOf:"0x70a08231",
+  name:"0x06fdde03", symbol:"0x95d89b41", decimals:"0x313ce567", totalSupply:"0x18160ddd",
+};
+const DEFAULT_RPC="https://mainnet.base.org";
+const RELAY_URL="/api/rpc";
+const ZERO32="0x"+"0".repeat(64);
+
+/* ============================ abi helpers ============================ */
+const padAddr=a=>a.replace(/^0x/,"").toLowerCase().padStart(64,"0");
+const padUint=n=>BigInt(n).toString(16).padStart(64,"0");
+const padInt=n=>{ // two's complement for int24
+  let v=BigInt(n); if(v<0n) v=(1n<<256n)+v; return v.toString(16).padStart(64,"0");
+};
+const wordAt=(data,i)=>{const h=data.replace(/^0x/,"");return h.substr(i*64,64);};
+const addrFromWord=w=>"0x"+w.slice(24);
+const bigFromWord=w=>w?BigInt("0x"+w):0n;
+
+// Decode an ABI string OR bytes32 name/symbol. Returns null when undecodable.
+function decodeText(data){
+  if(!data||data==="0x") return null;
+  const h=data.replace(/^0x/,"");
+  if(h.length===64){ // bytes32 form
+    const b=hexToBytes(h).filter(x=>x!==0);
+    try{ const s=new TextDecoder().decode(Uint8Array.from(b)); return /^[\x20-\x7e]*$/.test(s)?s:null; }catch(e){ return null; }
+  }
+  if(h.length<128) return null;
+  try{
+    const off=Number(BigInt("0x"+h.substr(0,64)));
+    // Bounds-check before slicing: substr past the end returns "" rather than throwing,
+    // so an absurd or truncated offset would decode to an empty string and be rendered
+    // as a successfully-read name. That is a guess wearing an answer's clothes.
+    if(!Number.isSafeInteger(off)||off*2+64>h.length) return null;
+    const len=Number(BigInt("0x"+h.substr(off*2,64)));
+    if(len>512) return null;
+    if(off*2+64+len*2>h.length) return null;
+    const raw=hexToBytes(h.substr(off*2+64,len*2));
+    return new TextDecoder().decode(raw);
+  }catch(e){ return null; }
+}
+
+/* ============================ transport (DP4) ============================ */
+// Every read returns {ok:true,data} or {ok:false,reason} — never a guess, never a pass.
+const RPC={
+  url:localStorage.getItem("laptop.rpc")||DEFAULT_RPC,
+  relay:localStorage.getItem("laptop.relay")==="1",
+  batchWorks:true,
+  endpoint(){ return this.relay?RELAY_URL:this.url; },
+};
+function classifyError(e){
+  if(e&&e.name==="AbortError") return "timed out";
+  if(e instanceof TypeError) return "blocked or unreachable (CORS or network — the browser cannot tell these apart)";
+  return (e&&e.message)?String(e.message).slice(0,120):"unknown error";
+}
+async function post(body,timeoutMs=9000){
+  const ctl=new AbortController();
+  const t=setTimeout(()=>ctl.abort(),timeoutMs);
+  try{
+    const r=await fetch(RPC.endpoint(),{
+      method:"POST",headers:{"content-type":"application/json"},
+      body:JSON.stringify(body),signal:ctl.signal,cache:"no-store",referrerPolicy:"no-referrer",
+    });
+    if(!r.ok){
+      if(r.status===429) return {ok:false,reason:"rate limited (429)"};
+      return {ok:false,reason:"HTTP "+r.status};
+    }
+    const txt=await r.text();
+    let j; try{ j=JSON.parse(txt); }catch(e){ return {ok:false,reason:"endpoint did not return JSON"}; }
+    return {ok:true,body:j};
+  }catch(e){ return {ok:false,reason:classifyError(e)}; }
+  finally{ clearTimeout(t); }
+}
+async function rpcOne(method,params){
+  const r=await post({jsonrpc:"2.0",id:1,method,params});
+  if(!r.ok) return r;
+  const j=r.body;
+  if(j&&j.error) return {ok:false,reason:"node error: "+(j.error.message||"").slice(0,90)};
+  if(!j||j.result===undefined) return {ok:false,reason:"malformed response"};
+  return {ok:true,data:j.result};
+}
+// Batch: one HTTP request for N calls. No extra trusted contract, no ABI array encoding.
+// Falls back to bounded-concurrency sequential if the endpoint rejects batches.
+async function rpcBatch(calls){
+  if(!calls.length) return [];
+  if(RPC.batchWorks){
+    const r=await post(calls.map((c,i)=>({jsonrpc:"2.0",id:i,method:c.method,params:c.params})),20000);
+    if(r.ok&&Array.isArray(r.body)&&r.body.length===calls.length){
+      const out=new Array(calls.length);
+      for(const item of r.body){
+        const i=typeof item.id==="number"?item.id:0;
+        if(item.error) out[i]={ok:false,reason:"node error: "+(item.error.message||"").slice(0,90)};
+        else if(item.result===undefined) out[i]={ok:false,reason:"malformed response"};
+        else out[i]={ok:true,data:item.result};
+      }
+      for(let i=0;i<out.length;i++) if(!out[i]) out[i]={ok:false,reason:"missing from batch response"};
+      return out;
+    }
+    // Batch unsupported or malformed — remember and fall through.
+    if(r.ok) RPC.batchWorks=false;
+    else if(/HTTP|JSON/.test(r.reason||"")) RPC.batchWorks=false;
+    else return calls.map(()=>({ok:false,reason:r.reason}));
+  }
+  const out=new Array(calls.length); let idx=0;
+  const worker=async()=>{ while(idx<calls.length){ const i=idx++; out[i]=await rpcOne(calls[i].method,calls[i].params); } };
+  await Promise.all([worker(),worker(),worker(),worker()]);
+  return out;
+}
+const ethCall=(to,data)=>({method:"eth_call",params:[{to,data},"latest"]});
+
+// DP4.2 — result-length discipline. This lives here and nowhere else.
+//   32 zero bytes  -> the contract answered "none"
+//   "0x"           -> no code / nothing returned  => could not check
+//   short / revert -> could not check
+function readAddressWord(res){
+  if(!res.ok) return {state:"unknown",why:res.reason};
+  const d=res.data;
+  if(d===undefined||d===null) return {state:"unknown",why:"no data"};
+  if(d==="0x"||d==="0x0") return {state:"unknown",why:"empty return (no code at target, or reverted)"};
+  const h=d.replace(/^0x/,"");
+  if(h.length<64) return {state:"unknown",why:"short return ("+h.length/2+" bytes)"};
+  const w=wordAt(d,0);
+  if(/^0{64}$/.test(w)) return {state:"none"};
+  return {state:"found",addr:addrFromWord(w)};
+}
+
+/* ============================ v4 pool math ============================ */
+function poolId(c0,c1,fee,spacing,hooks){
+  const enc=padAddr(c0)+padAddr(c1)+padUint(fee)+padInt(spacing)+padAddr(hooks);
+  return "0x"+hex(keccak256(hexToBytes(enc)));
+}
+function poolStateSlot(pid){
+  const base=BigInt("0x"+hex(keccak256(hexToBytes(pid.replace(/^0x/,"")+padUint(6)))));
+  return base;
+}
+const slotHex=v=>"0x"+(v&((1n<<256n)-1n)).toString(16).padStart(64,"0");
+
+/* ============================ state ============================ */
+const S={
+  ref:localStorage.getItem("laptop.ref")||C.LAPTOP.a,
+  overridden:localStorage.getItem("laptop.ref")!==null,
+  chain:null, chainState:"unknown",
+  addr:null, reqId:0,
+  liq:null, liqAt:null,
+};
+const $=id=>document.getElementById(id);
+const el=(t,c,txt)=>{const e=document.createElement(t);if(c)e.className=c;if(txt!==undefined)e.textContent=txt;return e;};
+const scan=a=>"https://basescan.org/address/"+a;
+const short=a=>a.slice(0,6)+"…"+a.slice(-4);
+
+/* ============================ FR1 render ============================ */
+function renderRef(){
+  $("refAddr").textContent=toChecksum(S.ref);
+  $("refProv").textContent=S.overridden
+    ? "your reference — not the published address"
+    : "as published at laptoptoken.com · transcribed by hand · not fetched live";
+  $("overrideBanner").style.display=S.overridden?"block":"none";
+  $("refIn").value=toChecksum(S.ref);
+}
+
+/* ============================ FR2 : offline verdict ============================ */
+// Runs on every keystroke. No network. Cannot be affected by a hostile endpoint.
+function renderVerdict(){
+  const raw=$("addr").value;
+  const p=parseAddress(raw);
+  $("clear").style.display=raw?"block":"none";
+  const errEl=$("inerr");
+  const area=$("verdictArea");
+
+  if(p.kind==="empty"){
+    errEl.style.display="none"; area.style.display="none";
+    $("evidenceCard").style.display="none"; S.addr=null; $("recheck").disabled=true;
+    $("stale").style.display="none";
+    return null;
+  }
+  if(p.kind==="notaddr"){
+    errEl.textContent="Not a 20-byte address. It should be 0x followed by 40 hex characters ("
+      +p.value.replace(/^0x/,"").length+" so far).";
+    errEl.style.display="block"; area.style.display="none";
+    $("evidenceCard").style.display="none"; S.addr=null; $("recheck").disabled=true;
+    return null;
+  }
+  if(p.kind==="badchecksum"){
+    errEl.innerHTML="Checksum doesn’t match — this is usually a typo. Expected <span class='mono'>"
+      +p.checksum+"</span>";
+    errEl.style.display="block"; area.style.display="none";
+    $("evidenceCard").style.display="none"; S.addr=null; $("recheck").disabled=true;
+    return null;
+  }
+  errEl.style.display="none";
+  const match=p.value===S.ref.toLowerCase();
+  area.style.display="block";
+  area.innerHTML="";
+  const box=el("div","verdict "+(match?"v-ok":"v-bad"));
+  // C6: these four strings are literals. No template ever produces a fifth.
+  const text=match
+    ? (S.overridden?"MATCHES YOUR REFERENCE":"MATCHES PUBLISHED CONTRACT")
+    : "DOES NOT MATCH";
+  box.appendChild(el("div","vtext",text));
+  const note=el("div","vnote");
+  if(match){
+    note.innerHTML="This address is the one shown above. That is an <b>identity</b> check and "
+      +"nothing more — it does not say the token is safe, sound, or worth buying.";
+    // The buy path appears only on a match. Offering it next to DOES NOT MATCH would be
+    // handing someone a shortcut to the wrong token.
+    const cta=el("a","cta","Find the best price →");
+    cta.href="/";
+    note.appendChild(cta);
+    const sz=el("a","cta sub2","See what your size actually gets you");
+    sz.href="/size.html";
+    note.appendChild(sz);
+    const st=el("a","cta sub2","Set a ceiling and walk away");
+    st.href="/order.html";
+    note.appendChild(st);
+    const sl=el("a","cta sub2","Getting a slot before launch");
+    sl.href="/slot.html";
+    note.appendChild(sl);
+  }else{
+    note.innerHTML="This is <b>not</b> the address shown above.";
+    const d=el("div","diff");
+    d.appendChild(diffLine("you pasted", p.checksum, toChecksum(S.ref)));
+    d.appendChild(diffLine("reference ", toChecksum(S.ref), p.checksum));
+    note.appendChild(d);
+  }
+  box.appendChild(note);
+  area.appendChild(box);
+  S.addr=p.value; $("recheck").disabled=false;
+  return p.value;
+}
+function diffLine(label,a,b){
+  const line=el("div"); line.appendChild(el("span","tiny dim",label+" "));
+  const span=el("span","mono");
+  for(let i=0;i<a.length;i++){
+    if(a[i]!==b[i]){ const bl=el("b",null,a[i]); span.appendChild(bl); }
+    else span.appendChild(document.createTextNode(a[i]));
+  }
+  line.appendChild(span);
+  return line;
+}
+
+/* ============================ FR3 : chain gate ============================ */
+async function checkChain(){
+  const b=$("chainBadge");
+  b.className="badge"; b.textContent="checking chain…";
+  const r=await rpcOne("eth_chainId",[]);
+  if(!r.ok){ S.chainState="unknown"; S.chain=null;
+    b.className="badge bad"; b.textContent="chain unknown"; b.title=r.reason;
+    maybeOfferRelay(r.reason); return false; }
+  let id; try{ id=Number(BigInt(r.data)); }catch(e){ id=NaN; }
+  S.chain=id;
+  if(id===C.CHAIN_ID){ S.chainState="ok"; b.className="badge good"; b.textContent="Base · 8453 ✓"; return true; }
+  S.chainState="wrong"; b.className="badge bad"; b.textContent="chain "+id+" — not Base";
+  return false;
+}
+function maybeOfferRelay(reason){
+  if(!/CORS|unreachable|timed out/.test(reason||"")) return;
+  $("relayWrap").style.display="block";
+  // Open the disclosure it lives in. A recovery path folded inside a panel the user has no
+  // reason to open is not a recovery path - and this is the one state where they cannot
+  // read anything at all until they act.
+  const d=$("relayWrap").closest("details");
+  if(d) d.open=true;
+}
+
+/* ============================ FR5 : evidence ============================ */
+function rowEl(key,statusText,cls,detailNode){
+  const row=el("div","row");
+  const head=el("div","rowhead");
+  head.appendChild(el("div","k",key));
+  const right=el("div");
+  right.style.display="flex"; right.style.alignItems="center"; right.style.gap="7px";
+  const badge=el("span","badge"+(cls?" "+cls:""),statusText);
+  right.appendChild(badge);
+  if(detailNode) right.appendChild(el("span","chev","▶"));
+  head.appendChild(right);
+  row.appendChild(head);
+  if(detailNode){
+    const body=el("div","rowbody"); body.appendChild(detailNode);
+    row.appendChild(body);
+    head.addEventListener("click",()=>row.classList.toggle("open"));
+  }
+  return row;
+}
+function detail(lines){
+  const d=el("div");
+  for(const [k,v] of lines){
+    const kv=el("div","kv"); kv.appendChild(el("span","dim",k)); kv.appendChild(el("span",null,v));
+    d.appendChild(kv);
+  }
+  return d;
+}
+async function readAddressEvidence(addr,reqId){
+  const card=$("evidenceCard"), box=$("evidence"), badge=$("evBadge");
+  card.style.display="block"; box.innerHTML="";
+  badge.className="badge"; badge.textContent="reading…";
+  const pending=el("div");
+  for(const k of ["Contract code","Name","Symbol","Decimals","Total supply","Existed 24h ago"]){
+    const r=rowEl(k,"…","",null);
+    r.querySelector(".badge").innerHTML='<span class="spin"></span>';
+    pending.appendChild(r);
+  }
+  box.appendChild(pending);
+
+  if(S.chainState!=="ok"){
+    box.innerHTML="";
+    box.appendChild(el("div","warnbox",
+      S.chainState==="wrong"
+        ? "Not shown: the endpoint reports chain "+S.chain+", not Base 8453. Results from another chain would be about different code at the same address."
+        : "Not shown: the chain could not be confirmed. Everything below would be unanchored."));
+    badge.className="badge bad"; badge.textContent="suppressed";
+    return;
+  }
+
+  const blkRes=await rpcOne("eth_blockNumber",[]);
+  const nowBlk=blkRes.ok?BigInt(blkRes.data):null;
+  const dayAgo=nowBlk!==null?slotHexNum(nowBlk-43200n):null; // Base ≈ 2s blocks
+
+  const calls=[
+    {method:"eth_getCode",params:[addr,"latest"]},
+    ethCall(addr,SEL.name), ethCall(addr,SEL.symbol),
+    ethCall(addr,SEL.decimals), ethCall(addr,SEL.totalSupply),
+  ];
+  if(dayAgo) calls.push({method:"eth_getCode",params:[addr,dayAgo]});
+  const res=await rpcBatch(calls);
+  if(reqId!==S.reqId) return;
+
+  box.innerHTML="";
+  // code
+  const codeRes=res[0];
+  let hasCode=false;
+  if(!codeRes.ok){
+    box.appendChild(rowEl("Contract code","could not check","bad",detail([["reason",codeRes.reason]])));
+  }else{
+    const code=codeRes.data||"0x";
+    hasCode=code!=="0x"&&code!=="0x0";
+    if(!hasCode){
+      box.appendChild(rowEl("Contract code","no code","warn",detail([
+        ["eth_getCode","0x"],
+        ["means","an EOA, or nothing deployed here yet"],
+      ])));
+    }else{
+      const bytes=(code.length-2)/2;
+      const ch="0x"+hex(keccak256(hexToBytes(code)));
+      box.appendChild(rowEl("Contract code",bytes+" bytes","good",detail([
+        ["size",bytes+" bytes"],["keccak(code)",ch],
+        ["note","codehash is harder to fake than name or symbol; compare two suspect addresses with it"],
+      ])));
+    }
+  }
+  // Decimals is read first so the supply can be shown in whole tokens. A raw 27-digit
+  // integer is unreadable, and "is this the announced 1,000,000,000?" is the actual question.
+  let decimalsVal=null;
+  if(res[3].ok&&res[3].data&&res[3].data!=="0x"){
+    try{ const d=Number(bigFromWord(wordAt(res[3].data,0))); if(d>=0&&d<=36) decimalsVal=d; }catch(e){}
+  }
+  const fmtSupply=r=>{
+    if(!r||r==="0x") return null;
+    const raw=bigFromWord(wordAt(r,0));
+    if(decimalsVal===null) return raw.toString()+" (raw — decimals unknown)";
+    const whole=raw/(10n**BigInt(decimalsVal));
+    return whole.toString().replace(/\B(?=(\d{3})+(?!\d))/g,",");
+  };
+  const cos=[["Name",res[1],decodeText],["Symbol",res[2],decodeText],
+             ["Decimals",res[3],r=>r&&r!=="0x"?String(Number(bigFromWord(wordAt(r,0)))):null],
+             ["Total supply",res[4],fmtSupply]];
+  for(const [label,r,dec] of cos){
+    if(!r.ok){ box.appendChild(rowEl(label,"could not check","bad",detail([["reason",r.reason]]))); continue; }
+    if(!hasCode){ box.appendChild(rowEl(label,"n/a","",detail([["reason","no contract at this address"]]))); continue; }
+    let v=null; try{ v=dec(r.data); }catch(e){ v=null; }
+    if(v===null||v===""){ box.appendChild(rowEl(label,"no answer","warn",detail([
+      ["raw",(r.data||"0x").slice(0,80)],["means","the contract did not return a readable value for this call"]]))); }
+    else{
+      const lines=[["value",v]];
+      if(label==="Total supply"&&r.data&&r.data!=="0x"){
+        lines.push(["raw",bigFromWord(wordAt(r.data,0)).toString()]);
+        if(decimalsVal!==null) lines.push(["decimals used",String(decimalsVal)]);
+      }
+      lines.push(["caution","cosmetic — a copycat can set this to anything"]);
+      box.appendChild(rowEl(label,v.length>18?v.slice(0,18)+"…":v,"",detail(lines)));
+    }
+  }
+  // existence a day ago
+  if(!dayAgo){
+    box.appendChild(rowEl("Existed 24h ago","could not check","bad",
+      detail([["reason","current block number unavailable"]])));
+  }else{
+    const r=res[5];
+    if(!r.ok){
+      const archival=/missing trie|state.*not available|header not found|archive/i.test(r.reason||"");
+      box.appendChild(rowEl("Existed 24h ago","could not check","bad",detail([
+        ["reason",r.reason],
+        ["likely",archival?"this endpoint is not an archive node — it cannot answer about old blocks":"—"],
+        ["block",dayAgo],
+      ])));
+    }else{
+      const had=r.data&&r.data!=="0x"&&r.data!=="0x0";
+      box.appendChild(rowEl("Existed 24h ago",had?"yes":"no",had?"":"warn",detail([
+        ["block queried",dayAgo],
+        ["approximation","≈43,200 blocks at ~2s each; not an exact date anchor"],
+        ["means",had?"code was already here 24h ago":"this address had no code 24h ago — consistent with a launch-day deployment"],
+      ])));
+    }
+  }
+  const failures=res.filter(r=>!r.ok).length;
+  badge.className="badge"+(failures?" warn":"");
+  badge.textContent=failures?failures+" of "+res.length+" reads failed":"read at latest block";
+
+  const link=el("div"); link.style.marginTop="10px";
+  const a=el("a","ext","verify on basescan.org ↗"); a.href=scan(toChecksum(addr));
+  a.target="_blank"; a.rel="noopener noreferrer";
+  link.appendChild(a); box.appendChild(link);
+}
+const slotHexNum=n=>"0x"+n.toString(16);
+
+/* ============================ FR6/7/8 : venues ============================ */
+function buildVenuePlan(){
+  const L=S.ref, plan=[];
+  plan.push({kind:"gate",label:"LAPTOP held by v4 PoolManager",
+    call:ethCall(C.POOL_MANAGER.a,SEL.balanceOf+padAddr(C.POOL_MANAGER.a===L?L:L))});
+  // NOTE: balanceOf is called ON the token, asking for the PoolManager's balance.
+  plan[0].call=ethCall(L,SEL.balanceOf+padAddr(C.POOL_MANAGER.a));
+  for(const q of QUOTES){
+    plan.push({kind:"v2",venue:"Uniswap V2",quote:q.k,
+      call:ethCall(C.V2_FACTORY.a,SEL.getPairV2+padAddr(L)+padAddr(q.a))});
+  }
+  for(const q of QUOTES) for(const f of V3_FEES){
+    plan.push({kind:"v3",venue:"Uniswap V3 "+(f/10000)+"%",quote:q.k,fee:f,
+      call:ethCall(C.V3_FACTORY.a,SEL.getPoolV3+padAddr(L)+padAddr(q.a)+padUint(f))});
+  }
+  for(const q of QUOTES) for(const st of [false,true]){
+    plan.push({kind:"aero",venue:"Aerodrome "+(st?"stable":"volatile"),quote:q.k,
+      call:ethCall(C.AERO_FACTORY.a,SEL.getPoolAero+padAddr(L)+padAddr(q.a)+padUint(st?1:0))});
+  }
+  plan.push({kind:"registry",label:"Aerodrome factory registry",
+    call:ethCall(C.AERO_REGISTRY.a,SEL.poolFactories)});
+  return plan;
+}
+async function readVenues(){
+  const box=$("liquidity"), badge=$("liqBadge"), ledger=$("ledger");
+  ledger.innerHTML=""; badge.className="badge"; badge.textContent="reading…";
+  box.innerHTML='<span class="spin"></span> <span class="dim">reading venues…</span>';
+
+  if(S.chainState!=="ok"){
+    box.innerHTML="";
+    box.appendChild(el("div","warnbox",S.chainState==="wrong"
+      ? "Not shown: endpoint reports chain "+S.chain+", not Base 8453."
+      : "Not shown: the chain could not be confirmed."));
+    badge.className="badge bad"; badge.textContent="suppressed"; return;
+  }
+  const plan=buildVenuePlan();
+  const res=await rpcBatch(plan.map(p=>p.call));
+
+  const cells=[], failed=[], found=[];
+  let gate=null, registryFactories=null;
+  plan.forEach((p,i)=>{
+    const r=res[i];
+    if(p.kind==="gate"){
+      if(!r.ok){ gate={state:"unknown",why:r.reason}; }
+      else{
+        const w=r.data&&r.data!=="0x"?wordAt(r.data,0):null;
+        gate=w===null?{state:"unknown",why:"empty return"}:{state:"ok",v:bigFromWord(w)};
+      }
+      return;
+    }
+    if(p.kind==="registry"){
+      if(!r.ok||!r.data||r.data==="0x"){ registryFactories={state:"unknown",why:r.ok?"empty return":r.reason}; return; }
+      try{
+        const h=r.data.replace(/^0x/,"");
+        const off=Number(BigInt("0x"+h.substr(0,64)));
+        const n=Number(BigInt("0x"+h.substr(off*2,64)));
+        const list=[];
+        for(let k=0;k<Math.min(n,20);k++) list.push(addrFromWord(h.substr(off*2+64+k*64,64)));
+        registryFactories={state:"ok",list};
+      }catch(e){ registryFactories={state:"unknown",why:"could not decode"}; }
+      return;
+    }
+    const v=readAddressWord(r);
+    const cell={venue:p.venue,quote:p.quote,...v};
+    cells.push(cell);
+    if(v.state==="unknown") failed.push(cell);
+    if(v.state==="found") found.push(cell);
+  });
+
+  // ---- render ----
+  box.innerHTML="";
+  const total=cells.length, checked=total-failed.length;
+
+  if(found.length===0){
+    const b=el("div","verdict "+(failed.length?"v-warn":"v-unk"));
+    b.appendChild(el("div","htext",failed.length?"NO POOL FOUND — INCOMPLETE":"NO POOL FOUND"));
+    const n=el("div","vnote");
+    n.innerHTML="No tradable pool for the published LAPTOP in <b>"+checked+" of "+total+
+      "</b> venue/quote combinations checked. This is not the same as “no liquidity anywhere”.";
+    b.appendChild(n); box.appendChild(b);
+    badge.className="badge"+(failed.length?" warn":""); badge.textContent=found.length+" pools";
+  }else{
+    const b=el("div","verdict v-warn");
+    b.appendChild(el("div","htext",found.length+" POOL"+(found.length>1?"S":"")+" FOUND"));
+    b.appendChild(el("div","vnote","A pool existing does not mean it holds anything tradable. "
+      +"Each is listed below; check reserves before believing any of them."));
+    box.appendChild(b);
+    const t=el("table");
+    t.innerHTML="<tr><th>Venue</th><th>Quote</th><th>Pool</th><th></th></tr>";
+    for(const f of found){
+      const tr=el("tr");
+      tr.appendChild(el("td",null,f.venue));
+      tr.appendChild(el("td",null,f.quote));
+      const td=el("td","c");
+      const a=el("a","ext",short(f.addr)); a.href=scan(f.addr); a.target="_blank"; a.rel="noopener noreferrer";
+      td.appendChild(a); tr.appendChild(td);
+      // Hand the pool straight to the size curve. Making the user copy a 42-character
+      // address by hand, on a phone, is both friction and a fresh chance to paste the
+      // wrong thing - which is the exact failure this whole tool exists to prevent.
+      const td2=el("td");
+      const sz=el("a","ext","size ↗"); sz.href="/size.html?pool="+f.addr;
+      td2.appendChild(sz); tr.appendChild(td2);
+      t.appendChild(tr);
+    }
+    const w=el("div","scroll"); w.appendChild(t); box.appendChild(w);
+    badge.className="badge warn"; badge.textContent=found.length+" pools";
+  }
+
+  // v4 gate — the single number that says whether any LAPTOP is in v4 at all
+  const g=el("div"); g.style.marginTop="10px";
+  if(!gate||gate.state!=="ok"){
+    g.appendChild(rowEl("Uniswap v4","could not check","bad",
+      detail([["reason",(gate&&gate.why)||"no result"],
+              ["why it matters","without this, nothing can be said about v4 either way"]])));
+  }else if(gate.v===0n){
+    g.appendChild(rowEl("Uniswap v4","no LAPTOP deposited","good",detail([
+      ["PoolManager balance","0"],
+      ["means","no v4 pool can be tradable — proved with one call, no pool enumeration needed"],
+    ])));
+  }else{
+    g.appendChild(rowEl("Uniswap v4",gate.v.toString()+" units held","warn",detail([
+      ["PoolManager balance",gate.v.toString()],
+      ["means","LAPTOP is inside v4. Individual pools cannot be enumerated without logs "
+        +"(a v4 pool with a custom hook has an unbounded key space), so this tool cannot list them."],
+    ])));
+  }
+  box.appendChild(g);
+
+  // ---- FR8 ledger ----
+  const led=el("details"); led.appendChild(el("summary",null,
+    "Coverage — checked "+checked+" of "+total+(failed.length?", "+failed.length+" failed":"")));
+  const inner=el("div");
+  inner.appendChild(el("p","tiny dim","Every negative above is scoped to exactly this list."));
+  const t2=el("table"); t2.innerHTML="<tr><th>Venue</th><th>Quote</th><th>Result</th></tr>";
+  for(const c of cells){
+    const tr=el("tr");
+    tr.appendChild(el("td",null,c.venue));
+    tr.appendChild(el("td",null,c.quote));
+    tr.appendChild(el("td",null,c.state==="found"?"pool":c.state==="none"?"none":"could not check"));
+    t2.appendChild(tr);
+  }
+  const w2=el("div","scroll"); w2.appendChild(t2); inner.appendChild(w2);
+
+  const gaps=el("div"); gaps.style.marginTop="10px";
+  gaps.appendChild(el("div","tiny dim","Known gaps in this list:"));
+  const ul=el("ul"); ul.style.cssText="margin:5px 0 0;padding-left:18px;font-size:12px;line-height:1.55";
+  const gapItems=[
+    "Uniswap v4 pools are not enumerated. A pool with a custom hook has an unbounded key space; only the PoolManager balance above is decisive.",
+    "Aerodrome Slipstream (concentrated liquidity) uses a different factory and ABI. Its factory address was not verifiable during development, so it is discovered at runtime below rather than hardcoded.",
+    "Base V2-style forks other than Uniswap (BaseSwap, SushiSwap, PancakeSwap and others) are not checked.",
+    "Quote assets checked are WETH, USDC and USDbC only. A pool quoted in any other asset is not visible here.",
+  ];
+  for(const s of gapItems){ const li=el("li",null,s); ul.appendChild(li); }
+  gaps.appendChild(ul); inner.appendChild(gaps);
+
+  if(registryFactories&&registryFactories.state==="ok"){
+    const known=[C.AERO_FACTORY.a];
+    const unknown=registryFactories.list.filter(a=>!known.includes(a.toLowerCase()));
+    const d=el("div"); d.style.marginTop="10px";
+    d.appendChild(el("div","tiny dim","Aerodrome registry reports "+registryFactories.list.length
+      +" approved factories; "+unknown.length+" are not readable by this tool:"));
+    for(const a of unknown){
+      const line=el("div","tiny mono"); line.style.marginTop="3px";
+      const lk=el("a","ext",a); lk.href=scan(a); lk.target="_blank"; lk.rel="noopener noreferrer";
+      line.appendChild(lk); d.appendChild(line);
+    }
+    inner.appendChild(d);
+  }else if(registryFactories){
+    inner.appendChild(el("div","tiny dim","Aerodrome factory registry: could not check ("
+      +(registryFactories.why||"")+") — so this tool cannot say whether a venue it does not know about exists."));
+  }
+  led.appendChild(inner);
+  ledger.appendChild(led);
+
+  if(failed.length){
+    const rb=el("button","act","Retry "+failed.length+" failed check"+(failed.length>1?"s":""));
+    rb.addEventListener("click",readVenues);
+    const wrap=el("div","btnrow"); wrap.appendChild(rb); ledger.appendChild(wrap);
+  }
+  S.liqAt=new Date();
+  $("liqStamp").textContent="read "+S.liqAt.toLocaleTimeString()
+    +" · a pool can be funded seconds after this reading";
+}
+
+/* ============================ constants panel ============================ */
+function renderConstants(){
+  const t=$("constants");
+  t.innerHTML="<tr><th>What</th><th>Address</th><th></th></tr>";
+  const items=[C.LAPTOP,C.POOL_MANAGER,C.V2_FACTORY,C.V3_FACTORY,C.AERO_FACTORY,
+               C.AERO_REGISTRY,C.WETH,C.USDC,C.USDBC];
+  for(const it of items){
+    const tr=el("tr");
+    tr.appendChild(el("td",null,it.n));
+    const td=el("td","c");
+    const a=el("a","ext",short(toChecksum(it.a))); a.href=scan(toChecksum(it.a));
+    a.target="_blank"; a.rel="noopener noreferrer"; td.appendChild(a);
+    tr.appendChild(td);
+    const st=el("td");
+    const b=el("span","badge"+(it.s==="verified"?" good":" warn"),it.s);
+    if(it.why) b.title=it.why;
+    st.appendChild(b); tr.appendChild(st);
+    t.appendChild(tr);
+  }
+  const d=$("derivations");
+  const samplePid=poolId(C.USDC.a,C.LAPTOP.a,250000,200,"0x"+"0".repeat(40));
+  d.innerHTML="";
+  const add=(k,v)=>{const p=el("div");p.style.marginBottom="6px";
+    p.appendChild(el("div","dim",k));p.appendChild(el("div",null,v));d.appendChild(p);};
+  add("chain id required","8453 (compared against eth_chainId)");
+  add("v4 poolId","keccak256(abi.encode(currency0, currency1, fee, tickSpacing, hooks))");
+  add("example (USDC/LAPTOP, fee 250000, spacing 200, no hook)",samplePid);
+  add("v4 liquidity slot","keccak256(poolId ‖ uint256(6)) + 3   ·   read with extsload");
+  add("selectors used",Object.entries(SEL).map(([k,v])=>k+" "+v).join("  ·  "));
+  add("transport","JSON-RPC batch — one HTTP request for all reads. "
+    +"No aggregator contract, so there is no extra address to trust.");
+}
+
+/* ============================ wiring ============================ */
+let debounce=null;
+function onInput(){
+  $("stale").style.display="none";
+  const before=S.addr;
+  const now=renderVerdict();
+  if(now!==before){
+    $("evidenceCard").style.display="none";
+    S.reqId++;
+  }
+  clearTimeout(debounce);
+  if(now) debounce=setTimeout(()=>runChainReads(now),400);
+}
+async function runChainReads(addr){
+  const id=++S.reqId;
+  if(S.chainState==="unknown"||S.chain===null) await checkChain();
+  if(id!==S.reqId) return;
+  await readAddressEvidence(addr,id);
+}
+$("addr").addEventListener("input",onInput);
+$("clear").addEventListener("click",()=>{ $("addr").value=""; onInput(); $("addr").focus(); });
+$("recheck").addEventListener("click",()=>{ if(S.addr){ S.chainState="unknown"; runChainReads(S.addr); }});
+$("refreshLiq").addEventListener("click",async()=>{
+  if(S.chainState==="unknown"||S.chain===null) await checkChain();
+  readVenues();
+});
+$("refApply").addEventListener("click",()=>{
+  const p=parseAddress($("refIn").value);
+  const e=$("refErr");
+  if(!p.ok){ e.textContent = p.kind==="badchecksum"
+      ? "Checksum doesn’t match — expected "+p.checksum
+      : "Not a 20-byte address."; e.style.display="block"; return; }
+  e.style.display="none";
+  S.ref=p.value; S.overridden=(p.value!==C.LAPTOP.a);
+  if(S.overridden) localStorage.setItem("laptop.ref",p.value); else localStorage.removeItem("laptop.ref");
+  renderRef(); renderVerdict(); renderConstants();
+  S.liqAt=null; $("liquidity").textContent="Reference changed — read venues again.";
+  $("ledger").innerHTML=""; $("liqBadge").className="badge"; $("liqBadge").textContent="not checked";
+});
+$("refReset").addEventListener("click",()=>{
+  localStorage.removeItem("laptop.ref"); S.ref=C.LAPTOP.a; S.overridden=false;
+  $("refErr").style.display="none"; renderRef(); renderVerdict(); renderConstants();
+});
+$("rpcApply").addEventListener("click",async()=>{
+  const v=$("rpcIn").value.trim();
+  if(!/^https:\/\//.test(v)){ alert("Endpoint must be an https:// URL."); return; }
+  RPC.url=v; RPC.batchWorks=true; localStorage.setItem("laptop.rpc",v);
+  $("rpcShow").textContent=v; S.chainState="unknown";
+  await checkChain(); if(S.addr) runChainReads(S.addr);
+});
+$("rpcReset").addEventListener("click",async()=>{
+  localStorage.removeItem("laptop.rpc"); RPC.url=DEFAULT_RPC; RPC.batchWorks=true;
+  $("rpcIn").value=DEFAULT_RPC; $("rpcShow").textContent=DEFAULT_RPC;
+  S.chainState="unknown"; await checkChain(); if(S.addr) runChainReads(S.addr);
+});
+$("relayToggle").addEventListener("change",async e=>{
+  RPC.relay=e.target.checked;
+  localStorage.setItem("laptop.relay",RPC.relay?"1":"0");
+  $("txBadge").textContent=RPC.relay?"relay":"direct";
+  $("txBadge").className="badge"+(RPC.relay?" warn":"");
+  RPC.batchWorks=true; S.chainState="unknown";
+  await checkChain(); if(S.addr) runChainReads(S.addr);
+});
+
+/* ======================= Phantom, on Base =======================
+   LAPTOP is on Base — chain 8453, which is EVM. Phantom ships two wallets in
+   one extension: window.phantom.solana and window.phantom.ethereum. They hold
+   different keys and see different chains, and the Solana one cannot see Base
+   at all. Reaching for the wrong provider is the failure a customer actually
+   hits, so it is named rather than reported as "no wallet found".
+
+   This connects and reads. It never asks for a signature and sends no
+   transaction: no transaction-sending or message-signing method appears
+   anywhere in this file, and a test asserts exactly that by parsing every
+   method name the page mentions. Reading a balance is the whole of what a
+   connection buys you here, so it is the whole of what is requested. */
+const W_BASE_HEX="0x2105", W_BASE_ID=8453;
+const W_USDC="0x833589fcd6edb6e08f4c7c32d4f71b54bda02913";
+let W_PROV=null, W_ADDR=null, W_CHAIN=null, W_BAL={eth:null,usdc:null};
+
+function wPhantomEvm(){
+  const p=window.phantom;
+  if(p&&p.ethereum) return p.ethereum;
+  const e=window.ethereum;
+  if(e&&e.isPhantom) return e;
+  if(e&&Array.isArray(e.providers)) return e.providers.find(x=>x&&x.isPhantom)||null;
+  return null;
+}
+function wPhantomSolanaOnly(){
+  const p=window.phantom;
+  return !!(p&&p.solana&&!p.ethereum)&&!wPhantomEvm();
+}
+function wMsg(e){ return (e&&(e.message||e.reason))||"no reason given"; }
+function wShort(a){ return a.slice(0,6)+"…"+a.slice(-4); }
+
+/* Integer formatting, so a balance is never rounded into something the wallet
+   itself would disagree with. */
+function wUnits(v,dec,places){
+  const neg=v<0n; if(neg) v=-v;
+  const d=10n**BigInt(dec);
+  const frac=(v%d).toString().padStart(dec,"0").slice(0,places).replace(/0+$/,"");
+  return (neg?"-":"")+(v/d).toString()+(frac?"."+frac:"");
+}
+
+function wSet(badge,cls,txt){
+  const b=$("wBadge");
+  if(b){ b.className="badge"+(cls?" "+cls:""); b.textContent=badge; }
+  const e=$("wErr");
+  if(e){ e.style.display=txt?"block":"none"; e.textContent=txt||""; }
+}
+function wFail(txt){ wSet("not connected","bad",txt); return false; }
+
+/* A read that fails is never a zero. 32 bytes is an answer; anything shorter, a
+   revert, or a throw is "could not read" — the same discipline this page applies
+   to its own RPC, applied to the wallet's node too. */
+async function wRead32(prov,to,data){
+  let r;
+  try{ r=await prov.request({method:"eth_call",params:[{to,data},"latest"]}); }
+  catch(e){ return null; }
+  if(typeof r!=="string"||!/^0x[0-9a-fA-F]{64}$/.test(r)) return null;
+  return BigInt(r);
+}
+
+async function wBalances(prov,addr){
+  const out={eth:null,usdc:null};
+  try{
+    const r=await prov.request({method:"eth_getBalance",params:[addr,"latest"]});
+    if(typeof r==="string"&&/^0x[0-9a-fA-F]{1,64}$/.test(r)) out.eth=BigInt(r);
+  }catch(e){}
+  out.usdc=await wRead32(prov,W_USDC,
+    "0x70a08231"+addr.slice(2).toLowerCase().padStart(64,"0"));
+  return out;
+}
+
+function wRender(){
+  const out=$("wOut");
+  if(!out) return;
+  if(!W_ADDR){ out.style.display="none"; out.innerHTML=""; return; }
+  const onBase=W_CHAIN===W_BASE_ID;
+  const rows=[
+    ["Address",W_ADDR],
+    ["Chain", onBase?"Base (8453)"
+      :(W_CHAIN===null?"could not read":"chain "+W_CHAIN+" — not Base")],
+    ["ETH", W_BAL.eth===null?"could not read":wUnits(W_BAL.eth,18,6)],
+    ["USDC", W_BAL.usdc===null?"could not read":wUnits(W_BAL.usdc,6,2)],
+  ];
+  const t=document.createElement("table"); t.className="wtab";
+  for(const [k,v] of rows){
+    const tr=document.createElement("tr");
+    const a=document.createElement("td"); a.textContent=k;
+    const b=document.createElement("td"); b.textContent=v;
+    if(v==="could not read") b.style.color="var(--dim)";
+    tr.appendChild(a); tr.appendChild(b); t.appendChild(tr);
+  }
+  out.innerHTML=""; out.appendChild(t);
+  if(!onBase){
+    const n=document.createElement("div"); n.className="wnote";
+    n.textContent="This wallet is not on Base. Switch networks in Phantom before buying "+
+      "anything, or you are reading the wrong chain.";
+    out.appendChild(n);
+  }
+  out.style.display="block";
+  const d=$("wDisconnect"); if(d) d.style.display="";
+}
+
+async function wConnect(){
+  wSet("connecting…","");
+  const prov=wPhantomEvm();
+  if(!prov){
+    if(wPhantomSolanaOnly())
+      return wFail("Phantom is here, but only its Solana side is switched on. LAPTOP is on "+
+        "Base, which is EVM — Phantom's Solana keys cannot hold it or see it. Turn on "+
+        "Ethereum in Phantom → Settings → Active Networks, then reload this page.");
+    if(window.ethereum)
+      return wFail("A wallet is installed, but it is not Phantom. This button only talks to "+
+        "Phantom; use that wallet's own interface instead.");
+    return wFail("Phantom was not detected. Install it, or open this page inside Phantom's "+
+      "in-app browser.");
+  }
+  let accts;
+  try{ accts=await prov.request({method:"eth_requestAccounts"}); }
+  catch(e){
+    return wFail(e&&e.code===4001
+      ? "You declined the connection in Phantom. Nothing was shared and nothing was sent."
+      : "Phantom refused the connection: "+wMsg(e));
+  }
+  if(!Array.isArray(accts)||!accts.length||typeof accts[0]!=="string")
+    return wFail("Phantom connected but returned no account.");
+  W_PROV=prov; W_ADDR=accts[0];
+
+  W_CHAIN=null;
+  try{
+    const c=await prov.request({method:"eth_chainId"});
+    if(typeof c==="string"&&/^0x[0-9a-fA-F]+$/.test(c)) W_CHAIN=Number(BigInt(c));
+  }catch(e){}
+  if(W_CHAIN!==null&&W_CHAIN!==W_BASE_ID){
+    try{
+      await prov.request({method:"wallet_switchEthereumChain",params:[{chainId:W_BASE_HEX}]});
+      W_CHAIN=W_BASE_ID;
+    }catch(e){ /* declined, or Base not added — reported in the table, never forced */ }
+  }
+  W_BAL=await wBalances(prov,W_ADDR);
+  wSet(wShort(W_ADDR),W_CHAIN===W_BASE_ID?"good":"warn","");
+  wRender();
+  return true;
+}
+
+function wForget(){
+  /* Phantom exposes no revoke a page can call, so this drops only what this page
+     holds. The connection itself is revoked in Phantom, and the message says so. */
+  W_PROV=null; W_ADDR=null; W_CHAIN=null; W_BAL={eth:null,usdc:null};
+  wSet("not connected","","Forgotten here. To revoke the connection itself, use "+
+    "Phantom → Settings → Connected apps.");
+  wRender();
+  const d=$("wDisconnect"); if(d) d.style.display="none";
+}
+
+function wInit(){
+  const c=$("wConnect"); if(c) c.addEventListener("click",wConnect);
+  const d=$("wDisconnect"); if(d) d.addEventListener("click",wForget);
+  const p=wPhantomEvm();
+  if(p&&p.on){
+    p.on("accountsChanged",a=>{
+      if(!a||!a.length) wForget();
+      else { W_ADDR=a[0]; wSet(wShort(W_ADDR),W_CHAIN===W_BASE_ID?"good":"warn",""); wRender(); }
+    });
+    p.on("chainChanged",()=>{ if(W_ADDR) wConnect(); });
+  }
+}
+
+/* ============================ boot ============================ */
+wInit();
+renderRef(); renderConstants();
+$("rpcIn").value=RPC.url; $("rpcShow").textContent=RPC.url;
+$("relayToggle").checked=RPC.relay;
+$("txBadge").textContent=RPC.relay?"relay":"direct";
+if(RPC.relay) $("txBadge").className="badge warn";
+checkChain();
+
+// Exposed for the test suite only. No behaviour depends on this.
+window.__LAPTOP={keccakHex,keccak256,hex,hexToBytes,toChecksum,parseAddress,normalizeInput,
+  poolId,poolStateSlot,slotHex,decodeText,readAddressWord,padAddr,padUint,padInt,
+  buildVenuePlan,C,SEL,QUOTES,V3_FEES,S,RPC};
+window.__WALLET={wPhantomEvm,wPhantomSolanaOnly,wUnits,wRead32,wBalances,connect:wConnect,
+  forget:wForget,BASE_ID:W_BASE_ID,USDC:W_USDC,get addr(){return W_ADDR;},get chain(){return W_CHAIN;}};
+</script>
+</body>
+</html>

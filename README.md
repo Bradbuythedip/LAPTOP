@@ -7,11 +7,16 @@ Two halves:
 - **`web/`** — seven pages for people who are about to buy, at
   [totalworlddomination.xyz](https://totalworlddomination.xyz). One self-contained HTML file
   each. They connect to Phantom to read your Base balances and they never ask you to sign
-  anything: `index.html` answers *is this the right contract*, `size.html` *what does my size
-  get me*, `buy.html` *which venue fills best*, `order.html` *can I commit before launch*,
-  `slot.html` *is this preorder real*, `route.html` *what should I be holding*, and
-  `launch.html` — for whoever sets the parameters, not for buyers — *what does a fee design
-  actually earn*.
+  anything. **`index.html` is the buy screen** — *which venue fills best* — and it is the
+  landing page. Then `checker.html` answers *is this the right contract*, `size.html` *what
+  does my size get me*, `order.html` *can I commit before launch*, `slot.html` *is this
+  preorder real*, `route.html` *what should I be holding*, and `launch.html` — for whoever
+  sets the parameters, not for buyers — *what does a fee design actually earn*.
+
+  The buy screen was moved to the front on request. It used to be the contract checker, and
+  that is a real trade: the checker is the anti-scam tool and it is now one click away rather
+  than the first thing a visitor sees. Every page still links to it, and the verdict's primary
+  action still points at the buy screen, so the two are one hop apart in both directions.
 - **`*.py`** — the tracing and execution tooling: find the pools, watch for the first real
   liquidity, execute a Uniswap v4 swap, execute a classic V2/V3/Aerodrome swap.
 
@@ -20,7 +25,7 @@ Two halves:
 
 ---
 
-## `web/` — the contract checker
+## `web/checker.html` — the contract checker
 
 The problem it solves: within an hour of the launch being reported, at least 14 copycat tokens
 using the LAPTOP name appeared across four chains and traded $6.9M between them. One was deployed
@@ -68,19 +73,19 @@ careful about everything it cannot answer.
 python3 -m http.server -d web 8000     # then open http://localhost:8000
 ```
 
-Or just open `web/index.html` from disk — it has no build step and no dependencies. Saving the
+Or just open any of them from disk — it has no build step and no dependencies. Saving the
 file and opening it locally removes the hosting party from the trust question entirely.
 
 Published build `2026-09-08a`:
 
 ```
-sha256(web/index.html) = 1f5aa45278541f20f77aad70d6e926dce1cd21aa85590d1f2fe6bbd54700705c
-sha256(web/size.html)  = 9e0a6f6e7ab2c0012f814802d7c554227e5dc4fec59728be1be9e656d4ec4329
-sha256(web/route.html) = e2cce3fafbac12ddeabb9870bacd0b2b64d779292eba03b944e62424b6d477a7
-sha256(web/buy.html)   = 558b6318841d0d51a27bf4fc1a5cfd924ed226cfdc237516ed6a44db0ff211c5
-sha256(web/order.html) = dbcef0b37a2e710ba4103b5f85a6df400125e869e52c029f14b17a167683e175
-sha256(web/slot.html)  = 57330d5e9e10a08ff6965f249926a1066c08a73b4110966eb46cd33c4b61af97
-sha256(web/launch.html) = fbd6f5d57f8702cac4e9ec9b68c8a1d628a561f8733bacc74d57e653a6b8af2b
+sha256(web/index.html)   = eaa83de5cd038c0f495da3076f08eb2457b75cc5722f748dacc841a8f84162c0
+sha256(web/checker.html) = 810d7f4ccca41bd4c39ff7fa7e0c2c6cc4bca78027a3a1bcfaa0579816ce6ef1
+sha256(web/size.html)    = d6dcaa05e37b62eb47b7d7c09e8c1714189c0ac1fe7de6801152ba68f787090b
+sha256(web/route.html)   = 1918c234915042687b869c7c54d9f5b918f1f60dc6aa2ba448268f19ca9cd7a1
+sha256(web/order.html)   = 9807edc55cb674887550e239b77ad8f5f52d3327fe03a5e7c5aa576962348565
+sha256(web/slot.html)    = 4bf5b2ee22170f2cfe341714edfd76f02061b0b7cddca08156407b681051375e
+sha256(web/launch.html)  = e3745a95357710991b829529d767974c5388282c1f0899560afdcd366a5eb338
 ```
 
 ### Tests
@@ -435,7 +440,7 @@ little for, not as a discount.
 
 ### What it refuses to do
 
-No wallet, no signing, no network request of any kind — same rule as `buy.html`, for the same
+No wallet, no signing, no network request of any kind — same rule as the buy screen, for the same
 reason: this domain cannot defend against being cloned, and a clone that can ask for a wallet
 drains people rather than merely misleading them. It hands off to CoW Swap and 1inch with the
 LAPTOP address printed for character-by-character comparison, and **every deep link is marked
@@ -451,7 +456,7 @@ order filled, click to claim" is a message to expect and ignore. And the likelie
 launch-day order dies is not price at all: **fillers route through liquidity they have indexed,
 and a pool minutes old may not be in that set.**
 
-## `web/buy.html` — where to buy
+## `web/index.html` — where to buy, and the landing page
 
 The go-to question on launch day is not "can I swap here", it is **"which venue actually gives
 me the most LAPTOP for the size I intend"** — and nobody answers that for a new pool. Every
