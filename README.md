@@ -83,7 +83,7 @@ sha256(web/index.html)   = db884de9945316e6458d6b9af3c112c1c04c2a487998c594cfc58
 sha256(web/buy.html)     = 2e41166e2adee2b4d823e766a13ed39c3e8376fc1522ff85c12a7abe146c1726
 sha256(web/checker.html) = f353cc03fae59f4a05d99ada22b94028e3b2e5656dca858fab33a7b461b3555e
 sha256(web/size.html)    = bbdf523d9a92489bc0a13dbd7aaecd256e0c02f66de1dc1d6ad332a9060e1fb1
-sha256(web/route.html)   = f9b02a6499d628cb315e02a4c941c0f75c934e6a4ab9197b3643c3235301bbf8
+sha256(web/route.html)   = 554f8d9ee85b0ed751d1aa05ac7de215d90fb2e7cde7f73a6e154aee34207910
 sha256(web/order.html)   = 56e8927d76863a91ab8b2faef7e9b83e9694a3e9098a84e11d57b8cb7932682c
 sha256(web/slot.html)    = 0c8fe6393dbf7f7e54c9e2cb7d9d000fa3f8b7e9c779b1c5c9514f79efd588cc
 sha256(web/launch.html)  = 214055efeb5843053e0c8ddadb38a0afe6e05b879c773b8b958f84cd63280843
@@ -96,7 +96,7 @@ sha256(web/snooze.html)  = 853fd2c8e91db008592707307be8c0a45bc3229c3ed0d78efbf59
 sh test/run-all.sh         # everything below, no network touched
 ```
 
-**1722 assertions across twenty-two suites.**
+**1727 assertions across twenty-two suites.**
 
 `test/run.mjs` — 353, drives the real page in Chromium against `test/mock-rpc.mjs`: Keccak vectors,
 the four EIP-55 reference addresses, the v4 poolId derivation checked against a real Base pool
@@ -153,7 +153,7 @@ implementation written from the pool identity rather than the page's algebra, th
 splitting laws below, refusal of ceilings under the fee floor, and the promises the page
 declines to make.
 
-`test/run-route.mjs` — 39, asserts `web/route.html` originates no request on load, computes its
+`test/run-route.mjs` — 44, asserts `web/route.html` originates no request on load, computes its
 routing table locally, offers no deposit address, reaches only for Phantom's EVM provider, and
 gets the Solana-is-not-EVM distinction right.
 
