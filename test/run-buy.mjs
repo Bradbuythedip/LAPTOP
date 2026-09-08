@@ -1,5 +1,5 @@
-// Tests for web/index.html — the venue comparison, which is the site's landing page. It was
-// web/buy.html until the buy screen was moved to the front. Drives the real page against
+// Tests for web/buy.html — the venue comparison. It was the landing page for a while; the
+// front is now the $SNOOZE launch, and this went back to its own address. Drives it against
 // test/mock-rpc.mjs, including a three-venue fixture with deliberately different depths.
 import { chromium } from "playwright";
 import http from "node:http";
@@ -23,7 +23,7 @@ const eq = (n, g, w) => ok(n, g === w, `got  ${g}\n         want ${w}`);
 
 const site = http.createServer((req, res) => {
   const rel = (req.url || "/").split("?")[0];
-  const f = path.join(ROOT, "web", rel === "/" ? "index.html" : rel.replace(/^\//, ""));
+  const f = path.join(ROOT, "web", rel === "/" ? "buy.html" : rel.replace(/^\//, ""));
   const target = (!fs.existsSync(f) && f.endsWith("bg.png"))
     ? path.join(ROOT, "test", "fixture-bg.png") : f;
   fs.readFile(target, (e, d) => {
@@ -51,7 +51,7 @@ const use = async scn => {
 const compare = async () => { await page.click("#go"); await page.waitForTimeout(1400); };
 
 console.log("── the page connects and reads, and cannot spend money");
-const src = fs.readFileSync(path.join(ROOT, "web", "index.html"), "utf8");
+const src = fs.readFileSync(path.join(ROOT, "web", "buy.html"), "utf8");
 ok("connects to Phantom", /eth_requestAccounts/.test(src));
 ok("uses Phantom's EVM side, which is the only one that can see Base",
    /p\.ethereum/.test(src) && /window\.phantom/.test(src));

@@ -40,10 +40,11 @@ suite "python: laptop_base edge cases" test/test_laptop_base.py python3
 suite "python: patched script integration" test/test_scripts.py python3
 suite "python: size-curve reference math" test/test_size_math.py python3
 suite "python: launch-fee reference model" test/test_launch_model.py python3
+suite "browser: web/index.html (the \$SNOOZE landing page)" test/run-index.mjs node
 suite "browser: web/checker.html" test/run.mjs node
 suite "browser: web/size.html" test/run-size.mjs node
 suite "browser: web/route.html" test/run-route.mjs node
-suite "browser: web/index.html (the buy screen, at the site root)" test/run-buy.mjs node
+suite "browser: web/buy.html (the venue comparison)" test/run-buy.mjs node
 suite "browser: web/order.html" test/run-order.mjs node
 suite "browser: web/slot.html" test/run-slot.mjs node
 suite "browser: web/launch.html" test/run-launch.mjs node

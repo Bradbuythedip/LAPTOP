@@ -128,8 +128,8 @@ ok("no horizontal scroll at 375px",
 const body = await txt("body");
 ok("never tells anyone to buy", !/\byou should buy\b|\bbuy now\b/i.test(body));
 ok("says it has no opinion on the token", /no opinion on it/.test(body));
-ok("links onward to the checker and size curve",
-   src.includes('href="/"') && src.includes('href="/size.html"'));
+ok("links onward to the venue comparison and the size curve",
+   src.includes('href="/buy.html"') && src.includes('href="/size.html"'));
 ok("no page errors", pageErrors.length === 0, pageErrors.join("; "));
 
 await browser.close(); site.close();

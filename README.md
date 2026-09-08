@@ -79,14 +79,15 @@ file and opening it locally removes the hosting party from the trust question en
 Published build `2026-09-08a`:
 
 ```
-sha256(web/index.html)   = eaa83de5cd038c0f495da3076f08eb2457b75cc5722f748dacc841a8f84162c0
-sha256(web/checker.html) = 810d7f4ccca41bd4c39ff7fa7e0c2c6cc4bca78027a3a1bcfaa0579816ce6ef1
-sha256(web/size.html)    = d6dcaa05e37b62eb47b7d7c09e8c1714189c0ac1fe7de6801152ba68f787090b
-sha256(web/route.html)   = 1918c234915042687b869c7c54d9f5b918f1f60dc6aa2ba448268f19ca9cd7a1
-sha256(web/order.html)   = 9807edc55cb674887550e239b77ad8f5f52d3327fe03a5e7c5aa576962348565
-sha256(web/slot.html)    = 4bf5b2ee22170f2cfe341714edfd76f02061b0b7cddca08156407b681051375e
-sha256(web/launch.html)  = e3745a95357710991b829529d767974c5388282c1f0899560afdcd366a5eb338
-sha256(web/snooze.html)  = db91da622599c27a8b4947ba0e693027619b5164203065801514ca77597abbc3
+sha256(web/index.html)   = db510f05ab6b48e54314cf6b5adf91511c68f2090d9ccccaf075b2c87a493bd7
+sha256(web/buy.html)     = ffeb12c7cb12f8343334242b2b4f9ec3ebea46ae7925fb2b7b5b954f014bef5b
+sha256(web/checker.html) = 1bffec74837f1202fab93dc7a8dcf9c692229f1f7ff9c0c4bac4d721fdc44e1a
+sha256(web/size.html)    = 590dc8f5b4d02863957aa5215a0e55f73a7bb7b2e30c1be9041309f3c811a8dd
+sha256(web/route.html)   = c697fa28b026717a4800d2c267893ac34ac891da9e5bc82b9a7c57b9d7bcecb5
+sha256(web/order.html)   = b29f87991c3091c4004833f779960c804b662ce7182b516d361f1190c0d8198a
+sha256(web/slot.html)    = 91a4c64ad9f69c7193871e340fc743d97ea76213b2f2b790fd58540c4c4790b9
+sha256(web/launch.html)  = 778e80932cb12cea6cdf2e8ad932f41b86547d83f03c01a1d999214c730c699a
+sha256(web/snooze.html)  = 7772045a9b8884c7ba6e47958ef94c69f479476285f2c27381b3589d29cc589f
 ```
 
 ### Tests
@@ -95,9 +96,9 @@ sha256(web/snooze.html)  = db91da622599c27a8b4947ba0e693027619b5164203065801514c
 sh test/run-all.sh         # everything below, no network touched
 ```
 
-**1277 assertions across seventeen suites.**
+**1388 assertions across eighteen suites.**
 
-`test/run.mjs` — 277, drives the real page in Chromium against `test/mock-rpc.mjs`: Keccak vectors,
+`test/run.mjs` — 306, drives the real page in Chromium against `test/mock-rpc.mjs`: Keccak vectors,
 the four EIP-55 reference addresses, the v4 poolId derivation checked against a real Base pool
 id, ABI-string decoding (including a 10-character name, whose length word contains a hex
 letter, and truncated/absurd offsets), result-length discipline, and full flows for the happy
@@ -122,6 +123,17 @@ USDC-quoted — the exact shape that used to print "no liquidity anywhere".
 of the JavaScript, plus properties a size curve lives or dies on: output rises with size,
 effective price strictly worsens, a fee costs exactly its rate at the limit, deeper liquidity
 fills better, and no fill can exceed the output-side virtual reserve. Emits the fixture below.
+
+`test/run-index.mjs` — 77, drives the $SNOOZE landing page. Most of it is about one
+distinction: a plot of a FORMULA and a plot of a MARKET look identical from three feet away, so
+the suite asserts which one is on screen. With nothing deployed the chart shows Rule 1 itself —
+exact, checkable against `burnBps()` in the contract, labelled *this is arithmetic, not a
+market* — and `window.__CHART.marketSeries` is empty. It only becomes a market series when a
+chain read produced one, and a single deposit is never drawn as a line. The launch-day path is
+driven before launch day against a mock node, including a node that refuses `eth_getLogs`, one
+that only serves a short window, and one that is not there at all — none of which may produce a
+number. It also pins the artwork (transparent WebP hero under 120 KB, the baked-in one for
+`og:image`) and checks four phone widths for overflow.
 
 `test/run-buy.mjs` — 33, drives the venue comparison against a three-venue fixture with
 deliberately different depths and asserts the ranking follows depth, the spread is quantified,
@@ -177,7 +189,7 @@ transaction, and comes in at 7.2% of a 30M block. It writes `deploy/`.
 can arrive, the three-way distribution that could not settle by hand settling in one block,
 every admin call from every party reverting afterwards, and the parameters it refuses.
 
-`test/run-pooled.mjs` — 72, compiles `contracts/PooledLaunchBuy.sol` and executes it against a
+`test/run-pooled.mjs` — 77, compiles `contracts/PooledLaunchBuy.sol` and executes it against a
 hostile token (fee-on-transfer, returns-false, reentrant), a router that lies about its output
 or keeps the ETH, a depositor that refuses ETH and one that reenters on receive. It reads the
 ABI and fails if a sweep, rescue, withdraw or ownership function ever appears.

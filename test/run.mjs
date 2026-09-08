@@ -307,8 +307,8 @@ await useScenario("happy");
 await type("0xB095274743941e953c746F9C228DA9c18Bb6ec29");
 const ctaMatch = await page.$$eval("#verdictArea a.cta", as => as.map(a => a.getAttribute("href")));
 ok("a match offers a primary action", ctaMatch.length >= 1, JSON.stringify(ctaMatch));
-ok("it leads to the venue comparison, which is now the front page",
-   ctaMatch.includes("/"), JSON.stringify(ctaMatch));
+ok("it leads to the venue comparison", ctaMatch.includes("/buy.html"),
+   JSON.stringify(ctaMatch));
 ok("and to the size curve", ctaMatch.includes("/size.html"), JSON.stringify(ctaMatch));
 await type("0x0000000000000000000000000000000000001234");
 const ctaMiss = await page.$$eval("#verdictArea a.cta", as => as.length);
@@ -369,42 +369,95 @@ const stackOf = await page.evaluate(() => {
   return out;
 });
 {
-  // Worst case for a light theme is the page centre with the darkest possible artwork:
-  // the vignette is weakest there, so nothing lightens the ground back up.
-  const PAGE = [244, 245, 251];
+  // WHICH artwork pixel is the worst case depends on the theme, and hardcoding one of them is
+  // how a theme change ships an unreadable page with a green build. Dark text wants the ground
+  // as DARK as possible; light text wants it as BRIGHT as possible. So both extremes are
+  // composited and the WORSE of the two ratios has to clear the bar — that holds whichever way
+  // the theme goes.
+  //
+  // The extremes are MEASURED from the artwork actually shipped, not assumed. The previous
+  // version composited pure black, which is not a pixel bg.png contains: its real range is
+  // roughly #02091b to #212829, so it was testing a page nobody sees while leaving the bright
+  // end — the end that matters once the theme is dark — unchecked.
+  const art = await page.evaluate(async () => {
+    const img = new Image();
+    await new Promise((res, rej) => { img.onload = res; img.onerror = rej; img.src = "/bg.png"; });
+    const c = document.createElement("canvas");
+    c.width = img.naturalWidth; c.height = img.naturalHeight;
+    const g = c.getContext("2d", { willReadFrequently: true });
+    g.drawImage(img, 0, 0);
+    const d = g.getImageData(0, 0, c.width, c.height).data;
+    let hi = -1, lo = 1e9, hp = null, lp = null;
+    for (let i = 0; i < d.length; i += 4) {
+      if (d[i + 3] === 0) continue;
+      const L = 0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2];
+      if (L > hi) { hi = L; hp = [d[i], d[i + 1], d[i + 2]]; }
+      if (L < lo) { lo = L; lp = [d[i], d[i + 1], d[i + 2]]; }
+    }
+    return { bright: hp, dark: lp,
+             page: getComputedStyle(document.documentElement).backgroundColor
+                   || getComputedStyle(document.body).backgroundColor };
+  });
+  ok("the artwork's real luminance range could be measured", !!art.bright && !!art.dark,
+     JSON.stringify(art));
+
+  // The page colour is read, not assumed, so flipping the theme cannot leave this lying.
+  const PAGE = parseRGB(art.page).slice(0, 3).length === 3
+    ? parseRGB(art.page).slice(0, 3)
+    : parseRGB(await page.evaluate(() => getComputedStyle(document.body).backgroundColor)).slice(0, 3);
   const composite = (fg, a, bg) => fg.map((c, i) => a * c + (1 - a) * bg[i]);
-  for (const st of stackOf) {
-    if (!st) continue;
-    const artOn = composite([0, 0, 0], st.artOpacity, PAGE);   // black artwork
-    const scrim = composite(PAGE, 0.30, artOn);                // vignette at its weakest
-    let ground = scrim;
+  // The vignette is a gradient, so there is no single alpha to read. 0.30 is its weakest
+  // point — the page centre — which is where it helps least.
+  const VIGNETTE_WEAKEST = 0.30;
+
+  const groundFor = (st, artPixel) => {
+    let g = composite(artPixel, st.artOpacity, PAGE);
+    g = composite(PAGE, VIGNETTE_WEAKEST, g);
     for (const l of st.layers.slice().reverse()) {
       const v = parseRGB(l); if (v.length < 3) continue;
       const a = v.length === 4 ? v[3] : 1;
-      if (a > 0) ground = composite(v.slice(0, 3), a, ground);
+      if (a > 0) g = composite(v.slice(0, 3), a, g);
     }
+    return g;
+  };
+
+  for (const st of stackOf) {
+    if (!st) continue;
     const fg = parseRGB(st.color).slice(0, 3);
-    const r = contrast(fg, ground);
-    ok(`${st.sel} clears WCAG AA over the darkest possible composited ground`,
-       r >= 4.5, `ratio ${r.toFixed(2)} of ${st.color} on rgb(${ground.map(Math.round)})`);
+    const rDark = contrast(fg, groundFor(st, art.dark));
+    const rBright = contrast(fg, groundFor(st, art.bright));
+    const worst = Math.min(rDark, rBright);
+    ok(`${st.sel} clears WCAG AA over the artwork's darkest AND brightest ground`,
+       worst >= 4.5,
+       `worst ratio ${worst.toFixed(2)} (dark ${rDark.toFixed(2)}, bright ${rBright.toFixed(2)}) ` +
+       `for ${st.color}`);
   }
 }
 
 // The site is about one token. Anything else named on it is either cross-promotion or a
 // chance for a reader to confuse two things, and both are out.
 console.log("── one token, and only one");
-const pages = ["index.html", "checker.html", "size.html", "route.html", "order.html",
-               "slot.html", "launch.html", "snooze.html"];
+const pages = ["index.html", "buy.html", "checker.html", "size.html", "route.html",
+               "order.html", "slot.html", "launch.html", "snooze.html"];
 for (const f of pages) {
   const t = fs.readFileSync(path.join(ROOT, "web", f), "utf8");
   ok(`${f} never mentions $TWD`, !/\$TWD|%24TWD/.test(t));
   ok(`${f} never mentions another token`, !/POT ?PAL|POTPAL/i.test(t));
   ok(`${f} does not link to another token's page`, !/potpal\.html/.test(t));
 }
+// The artwork, named exhaustively. A wildcard here would let anything ending in .png be
+// served from the site root, which is the hole this check exists to close.
+//   bg.png     the dark ground behind every page
+//   snooze.png the bear with a TRANSPARENT background, 1024px — the one that composites
+//   hero.png   the same bear with its navy disc baked in, for og:image and the medallion
+// plus the WebP derivatives tools/encode-art.mjs writes, because 1.2 MB of PNG is not a
+// thing to put in front of somebody on a phone.
+const ART = ["bg.png", "snooze.png", "hero.png",
+             "snooze-256.webp", "snooze-512.webp", "snooze-768.webp", "hero-512.webp"];
 for (const f of fs.readdirSync(path.join(ROOT, "web"))) {
   ok(`web/${f} is not an asset named after another token`, !/TWD|POT ?PAL|POTPAL/i.test(f));
   ok(`web/${f} is a page or the artwork, nothing else`,
-     pages.includes(f) || f === "bg.png", `unexpected file served at /${f}`);
+     pages.includes(f) || ART.includes(f), `unexpected file served at /${f}`);
 }
 
 // The site's one safety rule. It is only worth anything if a visitor meets it wherever they

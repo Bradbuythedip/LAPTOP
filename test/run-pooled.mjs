@@ -425,6 +425,40 @@ console.log("── configuration that would trap depositors is rejected at cons
   ok("a sane configuration deploys", (await mk(T_EXEC, T_REFUND, 500)) === null);
 }
 
+// The landing page filters eth_getLogs on a topic0 it carries as a literal, because it holds
+// no keccak of its own — /checker.html is the page whose job is derivation. A literal is fine
+// only if something recomputes it, so this does: rename an event or reorder a parameter and
+// the page would silently read zero deposits and show "no interest" forever. That failure is
+// invisible from the page, so it has to be caught here.
+console.log("── the event topics the site reads on");
+{
+  const { keccak256 } = await import("ethereum-cryptography/keccak.js");
+  const enc = new TextEncoder();
+  const topic = sig => "0x" + [...keccak256(enc.encode(sig))]
+    .map(b => b.toString(16).padStart(2, "0")).join("");
+
+  // Taken from the ABI the compiler just produced, so this compares the page's literal against
+  // what the CONTRACT actually emits rather than against a signature retyped here.
+  const ev = all.PooledLaunchBuy.abi.filter(e => e.type === "event");
+  const sigOf = e => `${e.name}(${e.inputs.map(i => i.type).join(",")})`;
+  const dep = ev.find(e => e.name === "Deposited");
+  ok("PooledLaunchBuy still emits Deposited", !!dep, ev.map(e => e.name).join(","));
+  ok("with (address indexed who, uint256 amount)",
+     dep && sigOf(dep) === "Deposited(address,uint256)" && dep.inputs[0].indexed
+       && !dep.inputs[1].indexed, dep && sigOf(dep));
+
+  const PAGE_TOPIC = (fs.readFileSync("web/index.html", "utf8")
+    .match(/TOPIC_DEPOSITED\s*=\s*"(0x[0-9a-f]{64})"/) || [])[1];
+  ok("web/index.html carries a Deposited topic to filter on", !!PAGE_TOPIC, String(PAGE_TOPIC));
+  ok("and it is the keccak of the signature the contract actually emits",
+     PAGE_TOPIC === topic(sigOf(dep)),
+     `page has ${PAGE_TOPIC}, the contract's is ${dep && topic(sigOf(dep))}`);
+  // A guard on the guard: a topic function that returned the same thing for everything would
+  // pass the line above while proving nothing.
+  ok("the topic function distinguishes different signatures",
+     topic("Deposited(address,uint256)") !== topic("Refunded(address,uint256)"));
+}
+
 console.log("\n" + results.join("\n"));
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

@@ -4,3 +4,4 @@ __pycache__/
 *.pyc
 .vercel
 test/shot-*.png
+shots/

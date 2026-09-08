@@ -4,18 +4,28 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="referrer" content="no-referrer">
-<meta name="color-scheme" content="light">
+<meta name="color-scheme" content="dark">
 <title>LAPTOP contract checker</title>
 <style>
 :root{
-  /* Light, cool, Ethereum-ish: lavender-white ground, slate text, the ETH blue-violet as the
-     one accent. Every colour here was picked against the composited ground (art + scrim +
-     card), not against a swatch — the suite recomputes the WCAG ratios and fails on a
-     regression, which is the only reason these are the exact values they are. */
-  --bg:#f4f5fb; --fg:#1f2033; --dim:#565a72; --line:#dde0f0; --card:#ffffff; --cardBg:rgba(255,255,255,.92);
-  --eth:#4a63d8; --ethSoft:rgba(74,99,216,.09);
-  --ok:#0c6b3a; --okbg:rgba(12,107,58,.10); --bad:#b3251c; --badbg:rgba(179,37,28,.09);
-  --warn:#7f5600; --warnbg:rgba(127,86,0,.10); --unk:#4b5069; --unkbg:rgba(74,99,216,.07);
+  /* Dark. The ground is near-black navy so the gold artwork reads as metal rather than as a
+     watermark, and gold is the single accent because it is the one colour the bear already is.
+     Every value was chosen against the COMPOSITED ground — the artwork at the brightest pixel
+     bg.png actually contains (#212829), plus the vignette at its weakest, plus the card — and
+     not against a swatch. tools/contrast.mjs prints the arithmetic; test/run.mjs recomputes it
+     in the browser and fails the build on a regression. That is the only reason these are the
+     exact values they are. */
+  --bg:#070b16; --fg:#e9edf8; --dim:#9aa6c2;
+  --line:#26304a;                    /* dividers and card edges: decorative, no WCAG floor */
+  --edge:#7c8aaf;                    /* borders of things you can TOUCH: 3.86:1, clears 1.4.11 */
+  --card:#0e1424;                    /* opaque, for inputs and selects */
+  --cardBg:rgba(255,255,255,.045);
+  --gold:#f0c040; --goldHi:#ffd970; --goldSoft:rgba(240,192,64,.14);
+  --onGold:#140f02;                  /* text ON a gold fill. White on gold is 1.8:1 — unusable */
+  --ok:#4fd18a; --okbg:rgba(79,209,138,.13);
+  --bad:#ff8178; --badbg:rgba(255,129,120,.13);
+  --warn:#f2c14e; --warnbg:rgba(242,193,78,.13);
+  --unk:#9aa6c2; --unkbg:rgba(154,166,194,.09);
   --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
 }
 *{box-sizing:border-box}
@@ -126,7 +136,7 @@ td.c{font-family:var(--mono)}
 body::before{
   content:"";position:fixed;inset:0;z-index:-3;pointer-events:none;
   background:url("/bg.png") center center / cover no-repeat;
-  opacity:.26;
+  opacity:0.34;
 }
 
 /* Cards sit on a near-opaque ground so the art shows through the page without ever
@@ -138,13 +148,13 @@ body::before{
 html::before{
   content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;
   background:radial-gradient(ellipse 120% 90% at 50% 38%,
-    rgba(244,245,251,.30) 0%, rgba(245,246,252,.62) 48%, rgba(248,249,253,.90) 82%, rgba(250,251,254,.96) 100%);
+    rgba(7,11,22,.30) 0%, rgba(7,11,22,.62) 48%, rgba(6,9,19,.90) 82%, rgba(5,8,17,.97) 100%);
 }
 /* One primary action per page, used only where acting is safe. */
 a.cta{display:flex;align-items:center;justify-content:center;gap:8px;
   min-height:52px;padding:14px 18px;margin-top:12px;border-radius:11px;
-  background:var(--eth);color:#fff;font-weight:650;font-size:15px;
-  text-decoration:none;border:1px solid var(--eth)}
+  background:var(--gold);color:var(--onGold);font-weight:650;font-size:15px;
+  text-decoration:none;border:1px solid var(--gold)}
 a.cta:hover{filter:brightness(1.08)}
 a.cta.sub2{background:transparent;color:var(--fg);border-color:var(--line);font-weight:500;
   min-height:44px;font-size:13.5px}
@@ -189,13 +199,34 @@ button.act.phantom{background:#ab9ff2;border-color:#ab9ff2;color:#1c1c2e;font-we
   display:inline-flex;align-items:center;justify-content:center;gap:9px}
 button.act.phantom:hover{background:#bcb0ff;border-color:#bcb0ff}
 button.act.phantom .ghost{width:20px;height:20px;flex:none;display:block}
+/* ---------------------------------------------------------------- dark: edges and material.
+   "Bolder edges" is a real accessibility win, not only a look: WCAG 1.4.11 wants 3:1 on the
+   boundary of anything you can interact with, and the old 1px hairline did not have it on any
+   ground. Interactive borders move to --edge; decorative ones stay on --line. */
+input,select,textarea{border:1.5px solid var(--edge);background:var(--card)}
+input::placeholder{color:var(--dim);opacity:.75}
+input:focus,select:focus,textarea:focus{outline:none;border-color:var(--gold);
+  box-shadow:0 0 0 3px rgba(240,192,64,.22)}
+button.act{border:1.5px solid var(--edge);background:var(--card);color:var(--fg)}
+button.act:hover{border-color:var(--gold);color:var(--goldHi)}
+button.act:focus-visible,a:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
+.card{border:1px solid var(--line);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.05), 0 1px 2px rgba(0,0,0,.5)}
+.badge{border-width:1.5px}
+a.ext,a.cta{text-underline-offset:3px}
+::selection{background:rgba(240,192,64,.28);color:var(--fg)}
+/* Scrollbars, so a dense table does not paint a white gutter across a dark page. */
+*{scrollbar-color:var(--edge) transparent}
+*::-webkit-scrollbar{height:10px;width:10px}
+*::-webkit-scrollbar-thumb{background:var(--edge);border-radius:10px}
+*::-webkit-scrollbar-track{background:transparent}
 </style>
 </head>
 <body>
 
 <h1>LAPTOP contract checker</h1>
 <p class="sub">Checks whether an address is the one published for LAPTOP on Base.
-Read-only. &middot; <a href="/">where to buy &rarr;</a> &middot;
+Read-only. &middot; <a href="/buy.html">where to buy &rarr;</a> &middot;
 <a href="/size.html">size curve</a> &middot; <a href="/order.html">standing order</a> &middot;
 <a href="/slot.html">getting a slot</a> &middot; <a href="/route.html">get ready</a></p>
 
@@ -653,7 +684,7 @@ function renderVerdict(){
     // The buy path appears only on a match. Offering it next to DOES NOT MATCH would be
     // handing someone a shortcut to the wrong token.
     const cta=el("a","cta","Find the best price →");
-    cta.href="/";
+    cta.href="/buy.html";
     note.appendChild(cta);
     const sz=el("a","cta sub2","See what your size actually gets you");
     sz.href="/size.html";
