@@ -164,17 +164,29 @@ console.log("── the curve is the contract's arithmetic, not a drawing of it"
 
 console.log("── the page says what the mechanism is, in as few words as it takes");
 {
-  ok("it says anyone can launch, which is the whole pitch", /anyone can launch/i.test(body));
+  // This asserted "anyone can launch". The deployer is now locked to one address until the
+  // first token is out, so that sentence became false and the assertion was holding it up.
+  // What the page owes a reader is the true version, in the steps AND in the limits.
+  ok("it does not claim to be permissionless while the deployer is locked",
+     !/anyone can launch/i.test(body));
+  ok("it says one wallet launches, for now", /One wallet launches, for now/i.test(body));
+  ok("and repeats it where the limits are listed",
+     /not permissionless yet/i.test(body) && /nobody else can launch/i.test(body));
+  ok("while being clear that buying is open to everyone", /Anyone can BUY/i.test(body));
   ok("it says the price is a curve rather than a pool", /a curve, not a pool/i.test(body));
   ok("it says the curve can only pay out what came in",
      /only ever pay out the ETH that came in/i.test(body));
   ok("bonding is described with a number, not a vibe",
      /2\.16/.test(body) && /bonds/i.test(body));
   ok("Rule 1 is stated against the 24-hour average", /24-hour average/i.test(body));
-  ok("$SNOOZE is named as the launchpad and LAPTOP as a launch on it",
-     /\$SNOOZE is the launchpad/i.test(body) && /LAPTOP is the first launch/i.test(body));
-  ok("and why holding one gets you the other",
-     /Holding \$SNOOZE is how you get into LAPTOP early/i.test(body));
+  ok("LAPTOP is named as the first launch on the pad",
+     /LAPTOP is the first launch on it/i.test(body));
+  ok("the gate is stated in the hero, where the decision is made",
+     /Hold \$SNOOZE to bid on LAPTOP at launch/i.test(body));
+  ok("and the dynamic is stated, not just the rule",
+     /pays holders, not renters/i.test(body));
+  ok("including that renting the gate is the worst way to use it",
+     /worst way to use it/i.test(body));
   ok("the claim is self-service, because nothing can claim for you",
      /claimed by you, from your own wallet/i.test(body));
   // textContent on <body> sweeps up the inline <script> too, which is most of this file and
@@ -204,6 +216,24 @@ console.log("── and what it does not do, which is the part a launch page lea
      /No audit, no testnet/i.test(body));
   ok("it states plainly that nothing is deployed", /Nothing is deployed/i.test(body));
   ok("and that anything shown today is not it", /is not it/i.test(body));
+}
+
+console.log("── the first action on the page is the one the owner asked for");
+{
+  const order = await page.$$eval("h1, .card, section.card", els =>
+    els.map(e => (e.id || e.tagName + ":" + (e.textContent || "").trim().slice(0, 18))));
+  const buyAt = order.findIndex(x => x === "buy");
+  const liveAt = order.findIndex(x => x === "live");
+  ok("the Buy LAPTOP card exists", buyAt >= 0, JSON.stringify(order));
+  ok("and comes before everything else on the page", buyAt >= 0 && buyAt < liveAt,
+     JSON.stringify(order.slice(0, 5)));
+  const cta = await page.$eval(".heroCta a.cta", a => a.getAttribute("href") + "|" + a.textContent.trim());
+  ok("the hero's primary action is Buy LAPTOP", cta === "#buy|Buy LAPTOP", cta);
+  ok("the contract row is hidden while there is no contract",
+     await page.isHidden("#lapCaRow"));
+  ok("and the card says so rather than showing a blank", /not launched/i.test(body));
+  const copy = await page.$$eval(".copy", els => els.length);
+  ok("there is a copy control ready for the address", copy === 1, String(copy));
 }
 
 console.log("── depth costs speed, with the numbers rather than the adjective");

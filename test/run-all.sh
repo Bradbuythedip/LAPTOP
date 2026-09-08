@@ -37,6 +37,7 @@ suite "solidity: Snooze + PooledLaunchBuy wired together" test/run-wiring.mjs no
 suite "solidity: contracts/SnoozeLaunchpad.sol (compiled and executed)" test/run-launchpad.mjs node
 suite "solidity: contracts/SnoozeCurve.sol (virtual liquidity, compiled and executed)" test/run-curve.mjs node
 suite "solidity: contracts/SnoozeGate.sol (why you need SNOOZE to get LAPTOP)" test/run-gate.mjs node
+suite "solidity: the first launch, driven from the owner's wallet" test/run-owner.mjs node
 suite "solidity: is any of it deployable? (EIP-170/3860, real ctor args)" test/run-deployable.mjs node
 suite "python: laptop_base edge cases" test/test_laptop_base.py python3
 suite "python: patched script integration" test/test_scripts.py python3

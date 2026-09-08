@@ -222,6 +222,20 @@ ul{margin:0;padding-left:18px} li{margin-bottom:5px}
 .leg .v{font-family:var(--mono);font-size:16px;font-weight:600}
 .leg.out .v{color:var(--baseLt)}
 .swap .arrow{text-align:center;color:var(--dim);font-size:15px;line-height:1}
+/* The two rows that carry a fact rather than an action. Flat, ruled, unpressable. */
+.need,.ca{display:flex;align-items:center;justify-content:space-between;gap:10px;
+  margin-top:8px;padding:10px 12px;background:rgba(255,255,255,.03);border-radius:4px}
+.need .k,.ca .k{font-size:11px;letter-spacing:.04em;text-transform:uppercase;color:var(--dim)}
+.need .v{font-weight:700;color:var(--gold)}
+.ca .v{font-family:var(--mono);font-size:12.5px;word-break:break-all;color:var(--fg)}
+.ca[hidden]{display:none}
+/* The one control in those rows, and it looks like one. */
+.copy{font:inherit;font-size:11.5px;font-weight:600;padding:6px 10px;min-height:32px;
+  border:1.5px solid var(--edge);border-radius:5px;background:#111a2a;color:var(--fg);
+  cursor:pointer;flex:none}
+.copy:hover{border-color:var(--gold);color:var(--goldHi)}
+.copy:active{transform:translateY(1px)}
+.copy:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
 .pair{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:2px 0 0}
 .pill{display:inline-flex;align-items:center;gap:7px;padding:7px 12px;border-radius:999px;
   font-weight:700;font-size:14px;background:var(--goldSoft);border:1.5px solid var(--gold);
@@ -245,6 +259,47 @@ a.cta.sub2{border-color:var(--edge)}
   .spin{animation:none;opacity:.6}
   .bear{animation:none}
 }
+/* ------------------------------------------------------------------ surfaces vs controls.
+   Everything below exists to make "can I press this?" answerable at a glance. */
+
+/* SURFACES. Solid, so the artwork does not show through the thing you are reading; sharp, so
+   they read as panels rather than as buttons; unoutlined, because an outline is the strongest
+   press-me signal there is and these do not press. */
+.card{background:#0b111c;border:0;border-radius:6px;padding:16px;margin:12px 0;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.04)}
+.stat,.leg,.step{background:#0b111c;border:0;border-radius:6px;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.04)}
+.card .card{background:#0e1524}
+.hr{height:1px;background:var(--line);margin:16px 0;border:0}
+
+/* LABELS. A bordered pill is a toggle everywhere else; none of these toggle. */
+.badge{border:0;border-radius:4px;background:rgba(255,255,255,.06);color:var(--dim);
+  font-weight:600;letter-spacing:.02em;padding:4px 8px}
+.badge.good{background:rgba(79,209,138,.14);color:var(--ok)}
+.badge.bad{background:rgba(255,129,120,.14);color:var(--bad)}
+.badge.warn{background:rgba(242,193,78,.14);color:var(--warn)}
+.badge.gold{background:var(--goldSoft);color:var(--gold)}
+
+/* Message boxes are surfaces too. They keep a colour and lose the ring; the left rule carries
+   the meaning without pretending to be pressable. */
+.warnbox,.badbox,.okbox{border:0;border-left:3px solid;border-radius:0 4px 4px 0;padding:11px 13px}
+.warnbox{border-left-color:var(--warn);background:rgba(242,193,78,.08);color:var(--warn)}
+.badbox{border-left-color:var(--bad);background:rgba(255,129,120,.08);color:var(--bad)}
+.okbox{border-left-color:var(--ok);background:rgba(79,209,138,.08);color:var(--ok)}
+
+/* CONTROLS. The only outlined things on the page, and they say so when you push them. */
+a.cta,button.act{border-radius:6px;transition:transform .06s ease, filter .12s ease}
+a.cta:active,button.act:active{transform:translateY(1px);filter:brightness(.94)}
+button.act{border:1.5px solid var(--edge);background:#111a2a}
+button.act:hover{border-color:var(--gold);color:var(--goldHi);background:#16203300}
+input,select,textarea{border-radius:6px;background:#0b111c}
+
+/* Tables are data, not a grid of cells to click. */
+table{border-collapse:collapse}
+th{font-weight:600;letter-spacing:.04em;text-transform:uppercase;font-size:10.5px;
+  color:var(--dim)}
+th,td{border-bottom:1px solid rgba(255,255,255,.05)}
+tbody tr:last-child td{border-bottom:0}
 </style>
 </head>
 <body>
@@ -256,17 +311,39 @@ a.cta.sub2{border-color:var(--edge)}
   </div>
   <h1 class="ticker">Snooze&nbsp;Bear</h1>
   <p class="tag">You snooze, you win. <span class="tick">$SNOOZE</span></p>
-  <p class="lede">A launchpad on Base. <b>Anyone can launch.</b> No permission, no listing, and
-  no liquidity of your own &mdash; it starts
+  <p class="lede">Launchpad on Base. Liquidity starts
   <button class="d" data-t="Virtual liquidity" data-d="Pretend reserves that set the price. Real money buys against them; no real money is behind them until the token bonds.">virtual</button>
-  and turns real when the token
-  <button class="d" data-t="Bonding" data-d="When enough real ETH has arrived, the token graduates: the ETH and a token allocation go into a real pool and the curve retires.">bonds</button>.</p>
+  and turns real when a token
+  <button class="d" data-t="Bonding" data-d="Enough real ETH arrives, the token graduates: the ETH and a token allocation go into a real pool and the curve retires.">bonds</button>
+  at 10&times;. <b>Hold $SNOOZE to bid on LAPTOP at launch.</b></p>
   <div class="heroCta">
-    <a class="cta" href="#get">Get $SNOOZE</a>
+    <a class="cta" href="#buy">Buy LAPTOP</a>
     <a class="cta sub2" href="#how">How it works</a>
   </div>
   <p style="margin:12px 0 0"><span class="chain"><span class="dot"></span>Base &middot; 8453</span></p>
 </header>
+
+<div class="card" id="buy">
+  <div class="hdr"><h2>Buy LAPTOP</h2><span class="badge warn" id="lapBadge">not launched</span></div>
+  <div class="swap">
+    <div class="leg"><div class="k">you pay</div><div class="v">ETH</div></div>
+    <div class="arrow" aria-hidden="true">&darr;</div>
+    <div class="leg out"><div class="k">you get</div><div class="v">LAPTOP</div></div>
+  </div>
+  <div class="need" id="lapNeed">
+    <span class="k">to bid at launch you need</span>
+    <span class="v" id="lapNeedAmt">$SNOOZE</span>
+  </div>
+  <div class="ca" id="lapCaRow" hidden>
+    <span class="k">contract</span>
+    <code class="v" id="lapAddr">&mdash;</code>
+    <button class="copy" id="lapCopy" type="button">copy</button>
+  </div>
+  <a class="cta" id="lapCta" href="#get">Get $SNOOZE first</a>
+  <p class="tiny dim" style="margin:10px 0 0">Buying happens on the curve, from your wallet.
+  This page reads and never signs. Check any address against
+  <a class="ext" href="/checker.html">the checker</a> before you send.</p>
+</div>
 
 <section class="card live" id="live">
   <div class="hdr">
@@ -286,8 +363,9 @@ a.cta.sub2{border-color:var(--edge)}
 <h1 id="how" style="margin-top:26px">How it works</h1>
 <div class="steps">
   <div class="step"><div class="n">1</div><div>
-    <h3>Anyone launches</h3>
-    <p>Permissionless. You bring a name and nothing else.</p>
+    <h3>One wallet launches, for now</h3>
+    <p>The deployer is locked to a single address until the first token is out. Opening it up
+    is a later contract, not a setting.</p>
   </div></div>
   <div class="step"><div class="n">2</div><div>
     <h3>The price is a curve, not a pool</h3>
@@ -304,49 +382,37 @@ a.cta.sub2{border-color:var(--edge)}
   <div class="step"><div class="n">4</div><div>
     <h3>Selling into a spike burns</h3>
     <p>Above the
-    <button class="d" data-t="24-hour average" data-d="The average price over the last day. Sell above it and the difference is destroyed; sell at or below it and nothing is.">24-hour average</button>,
-    the difference is destroyed. Below it, nothing burns.</p>
+    <button class="d" data-t="24-hour average" data-d="The average price over the last day. Sell above it and the difference is destroyed; at or below it, nothing is.">24-hour average</button>,
+    the difference is destroyed. Below it, nothing.</p>
   </div></div>
 </div>
 
-<h1 id="get" style="margin-top:26px">$SNOOZE and LAPTOP</h1>
-<p class="sub">$SNOOZE is the launchpad. LAPTOP is the first launch on it.</p>
+<h1 id="get" style="margin-top:26px">$SNOOZE</h1>
+<p class="sub">The launchpad's token. LAPTOP is the first launch on it.</p>
 
 <div class="card">
-  <p style="margin:0;font-size:14.5px"><b>Holding $SNOOZE is how you get into LAPTOP
-  early.</b> The curve opens to $SNOOZE holders first, and an allocation is set aside for
-  whoever holds it at a
-  <button class="d" data-t="Snapshot" data-d="A single block, fixed in advance, at which balances are read. What you hold at that block is what you get; what you do after does not change it.">snapshot block</button>
+  <p style="margin:0;font-size:14.5px">The LAPTOP curve opens to $SNOOZE holders first, and an
+  allocation is set aside for whoever holds it at a
+  <button class="d" data-t="Snapshot" data-d="A single block, fixed in advance, at which balances are read. What you hold then is what you get; what you do after does not change it.">snapshot</button>
   &mdash; claimed by you, from your own wallet.</p>
-  <p class="mono" id="poolAddr" style="margin:10px 0 0">&mdash;</p>
-  <div class="warnbox" style="margin-top:8px">
-    <b>Nothing is deployed.</b> <span id="poolBadge" class="badge warn">not deployed</span>
-    There is no $SNOOZE contract and no LAPTOP curve yet, so there is no snapshot and no
-    address. Anything you are shown today is not it. When there is one, check it against
-    <a class="ext" href="/checker.html">the checker</a> before you send anything.
+  <p class="tiny dim" style="margin:9px 0 0">Buying it the hour before and selling the hour
+  after is the worst way to use it: everyone doing that at once is what pushes the price above
+  its own average, which is exactly when selling burns most. The gate pays holders, not
+  renters.</p>
+  <div class="ca">
+    <span class="k">$SNOOZE contract</span>
+    <code class="v" id="poolAddr">not deployed</code>
+    <span class="badge warn" id="poolBadge">not deployed</span>
   </div>
-</div>
-
-<div class="card" id="buylaptop">
-  <div class="hdr"><h2>Buy LAPTOP</h2><span class="badge warn" id="lapBadge">not launched</span></div>
-  <div class="swap">
-    <div class="leg"><div class="k">you pay</div><div class="v">ETH</div></div>
-    <div class="arrow" aria-hidden="true">&darr;</div>
-    <div class="leg out"><div class="k">you get</div><div class="v">LAPTOP</div></div>
-  </div>
-  <p class="mono" id="lapAddr" style="margin:10px 0 0">&mdash;</p>
-  <a class="cta" id="lapCta" href="/buy.html">Where to buy</a>
-  <p class="tiny dim" style="margin:9px 0 0">Buying happens on the curve, from your wallet.
-  This page reads and does not sign. Once there is a curve, check its address against
-  <a class="ext" href="/checker.html">the checker</a> before you send anything.</p>
+  <p class="tiny dim" style="margin:9px 0 0">Nothing is deployed. Any address you are shown
+  for either token today is not it.</p>
 </div>
 
 <div class="card">
   <div class="hdr"><h2>Depth costs speed. Pick one.</h2></div>
-  <p class="tiny" style="margin:0 0 8px">Raising the virtual ETH makes every buy cheaper in
+  <p class="tiny" style="margin:0 0 8px">More virtual ETH means cheaper
   <button class="d" data-t="Slippage" data-d="The gap between the price you see and the price you get. Bigger trades against a thinner book pay more of it.">slippage</button>
-  and raises what bonding costs by exactly as much. The number of buys it takes does not
-  move:</p>
+  and a proportionally bigger raise. The number of buys does not move:</p>
   <div class="scroll"><table>
     <thead><tr><th>slippage per buy</th><th>buys to bond at 10&times;</th><th>at 3 virtual ETH</th><th>at 25</th></tr></thead>
     <tbody>
@@ -356,8 +422,7 @@ a.cta.sub2{border-color:var(--edge)}
     </tbody>
   </table></div>
   <p class="tiny dim" style="margin:8px 0 0">The last two columns are the same on purpose.
-  Virtual ETH sets what a comfortable buy is <i>denominated</i> in; it does not buy depth. So
-  "deep enough that slippage is never an issue" is a choice of units, not of depth.</p>
+  Virtual ETH sets what a comfortable buy is <i>denominated</i> in. It does not buy depth.</p>
 </div>
 
 <div class="card no" style="border-color:var(--warn)">
@@ -373,6 +438,8 @@ a.cta.sub2{border-color:var(--edge)}
     to seed at all. <a class="ext" href="/snooze.html">the detail</a></li>
     <li><b>Slippage gets 46% worse at bonding, not better.</b> Only the real ETH goes into the
     pool; the virtual part does not exist to move. The curve is the deepest the book ever is.</li>
+    <li><b>It is not permissionless yet.</b> One wallet can deploy, and that wallet is the
+    launcher's. Anyone can BUY; nobody else can launch until a different contract ships.</li>
     <li><b>Most tokens never bond.</b> That is the normal outcome, not the failure case.</li>
     <li><b>No audit, no testnet run.</b> Nothing here has been either.</li>
   </ul>
@@ -392,7 +459,7 @@ a.cta.sub2{border-color:var(--edge)}
 
 <div class="footer">
   <div class="hr"></div>
-  <p>totalworlddomination.xyz &middot; Build <span class="mono" id="buildId">2026-09-08a</span>
+  <p>snoozebear.xyz &middot; Build <span class="mono" id="buildId">2026-09-08a</span>
   &middot; no analytics, no trackers, no cookies. This page connects and reads, and it does not
   ask you to sign anything. The README publishes the sha256 of every page under this build tag.</p>
 </div>
@@ -701,19 +768,43 @@ window.__SNOOZE = { burnAt, POOL, TOKEN };
 /* The buy card, honest about there being nothing to buy yet. LAPTOP is a token launched on
    this pad like any other; when its curve exists, the address goes here and the button points
    at it. Until then the card says so rather than linking somewhere hopeful. */
+/* The addresses. Empty is the honest state and it is today's state. Filling either one in
+   changes this file, which changes its hash, which the README republishes — so an address
+   arrives through the same door as everything else instead of out of a config nobody reads. */
 const LAPTOP_CURVE = "";
+const SNOOZE_TOKEN = "";
+const GATE_MIN_TEXT = "$SNOOZE";   // set to the real minimum once the curve is deployed
+
 (function(){
-  const badge = $("lapBadge"), addr = $("lapAddr"), cta = $("lapCta");
+  const badge = $("lapBadge"), cta = $("lapCta"), row = $("lapCaRow"), addr = $("lapAddr");
   if(!badge) return;
+  const needAmt = $("lapNeedAmt");
+  if(needAmt) needAmt.textContent = GATE_MIN_TEXT;
   if(LAPTOP_CURVE){
     badge.textContent = "live"; badge.className = "badge good";
     addr.textContent = LAPTOP_CURVE;
+    row.hidden = false;
     cta.textContent = "Buy on the curve";
+    cta.href = "https://basescan.org/address/" + LAPTOP_CURVE;
+    cta.rel = "noopener noreferrer";
   }else{
     badge.textContent = "not launched"; badge.className = "badge warn";
-    addr.textContent = "no curve yet";
-    cta.textContent = "Where to buy";
+    row.hidden = true;
+    cta.textContent = SNOOZE_TOKEN ? "Get $SNOOZE first" : "How it works";
+    cta.href = SNOOZE_TOKEN ? "#get" : "#how";
   }
+  const c = $("lapCopy");
+  if(c) c.addEventListener("click", async () => {
+    // No clipboard permission prompt on a page that has not earned one: fall back to
+    // selecting the text so a copy is always one keystroke away.
+    try{ await navigator.clipboard.writeText(LAPTOP_CURVE); c.textContent = "copied"; }
+    catch(e){
+      const r = document.createRange(); r.selectNodeContents(addr);
+      const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r);
+      c.textContent = "selected";
+    }
+    setTimeout(() => { c.textContent = "copy"; }, 1400);
+  });
 })();
 
 showPool();

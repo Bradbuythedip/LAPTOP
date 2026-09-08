@@ -55,6 +55,32 @@ contract SnoozeCurve {
 
     uint256 public constant MAX_FEE_BPS = 500;   // 5%. Above this it is not a fee.
 
+    // ---------------------------------------------------------------------------- the gate
+    //
+    // "You need SNOOZE to bid on LAPTOP at launch." The dynamics are worth stating because they
+    // are not all in the direction they look:
+    //
+    //   It works on the way in. Every launch creates demand for the gate token before it, from
+    //   people who want the early window. That is the loop.
+    //
+    //   It fights itself on the way out. Snooze Rule 1 burns the excess over the 24-hour
+    //   average, and gate demand is exactly what pushes a price above its own average. So the
+    //   people who buy SNOOZE to get in and sell straight after are taxed hardest, precisely
+    //   because they all did it at once. That is the intended shape — it pays holders and not
+    //   renters — but it means the gate is a worse deal than it looks for anyone treating it
+    //   as a toll, and the page has to say so rather than let them find out.
+    //
+    //   It is checkable but not unfakeable. A balance at a moment can be borrowed for that
+    //   moment. A lock would fix it and a lock is the thing that turns the gate into a trap,
+    //   so this takes the weaker check on purpose. What it buys is not exclusion, it is that
+    //   the cheapest way in is to already hold some.
+    //
+    //   And it expires. After gateUntil anybody buys. A permanent gate is a permanent tax on
+    //   the token's own liquidity, and the launch window is the only part worth gating.
+    address public immutable gateToken;    // 0 = no gate
+    uint256 public immutable gateMin;      // base units of gateToken the buyer must hold
+    uint64  public immutable gateUntil;    // unix seconds; after this the gate is off
+
     /// Tokens the curve has sold, net of what it has bought back. The solvency bound.
     uint256 public sold;
     /// Real ETH held for the curve, i.e. excluding fees already paid out.
@@ -73,10 +99,12 @@ contract SnoozeCurve {
     error NothingIn();
     error TooLittleOut();
     error MoreThanWasSold();
+    error GateClosed();
     error TransferFailed();
 
     constructor(address _token, uint256 _virtualEth, uint256 _curveSupply,
-                uint256 _bondTarget, uint256 _feeBps, address _feeTo) {
+                uint256 _bondTarget, uint256 _feeBps, address _feeTo,
+                address _gateToken, uint256 _gateMin, uint64 _gateUntil) {
         if (_token == address(0) || _virtualEth == 0 || _curveSupply == 0) revert BadConfig();
         if (_bondTarget == 0) revert BadConfig();
         if (_feeBps > MAX_FEE_BPS) revert BadConfig();
@@ -87,6 +115,26 @@ contract SnoozeCurve {
         bondTarget = _bondTarget;
         feeBps = _feeBps;
         feeTo = _feeTo;
+        // A gate token with no minimum, or a minimum with no token, is a gate that gates
+        // nothing while looking on the explorer like one that does.
+        if ((_gateToken == address(0)) != (_gateMin == 0)) revert BadConfig();
+        if (_gateMin > 0 && _gateUntil <= block.timestamp) revert BadConfig();
+        gateToken = _gateToken;
+        gateMin = _gateMin;
+        gateUntil = _gateUntil;
+    }
+
+    /// @notice Whether the early window is still closed to people who hold none of the gate
+    ///         token. False once it has expired, and false if there was never a gate.
+    function gateOpen() public view returns (bool) {
+        return gateMin > 0 && block.timestamp < gateUntil;
+    }
+
+    /// @notice Whether `who` could buy right now. A page can call this before anybody pays gas.
+    function canBuy(address who) public view returns (bool ok_, uint256 held, uint256 needed) {
+        if (!gateOpen()) return (true, 0, 0);
+        held = IERC20(gateToken).balanceOf(who);
+        return (held >= gateMin, held, gateMin);
     }
 
     // ------------------------------------------------------------------ reading the curve
@@ -161,6 +209,11 @@ contract SnoozeCurve {
     function buy(uint256 minOut, address to) public payable returns (uint256 out) {
         if (bonded) revert AlreadyBonded();
         if (msg.value == 0) revert NothingIn();
+        // The holder checked is the RECIPIENT, not the payer, so a router or a friend paying on
+        // a holder's behalf works and a holder cannot be bypassed by routing around them. The
+        // reverse — buying tokens "for" somebody who did not ask — costs the buyer money and
+        // gives the recipient tokens, so there is nothing there to grief with.
+        if (gateOpen() && IERC20(gateToken).balanceOf(to) < gateMin) revert GateClosed();
         uint256 fee;
         (out, fee) = quoteBuy(msg.value);
         if (out == 0) revert NothingIn();
