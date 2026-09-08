@@ -110,6 +110,40 @@ await page.waitForTimeout(150);
 const baseAssets = await page.$$eval("#asset option", os => os.map(o => o.value));
 ok("Base offers USDbC", baseAssets.includes("USDbC"));
 
+console.log("── the Phantom track");
+{
+  const ph = (await page.textContent("#phantomCard").catch(() => "") || "").replace(/\s+/g, " ");
+  ok("there is a Phantom section at all", ph.length > 0);
+  ok("it leads with the chain, not the wallet", /LAPTOP is on Base/i.test(ph));
+  ok("it states there is no LAPTOP on Solana", /no LAPTOP on Solana/i.test(ph));
+  ok("and says why a lookalike will exist there",
+     /exactly the setup a lookalike is built for/i.test(ph));
+  ok("it tells them nothing on Solana becomes LAPTOP later",
+     /Nothing you can buy on Solana becomes LAPTOP later/i.test(ph));
+  ok("it says Phantom already supports Base", /Phantom already speaks Base/i.test(ph));
+  ok("and marks that as unverified from here", /cannot confirm it for you/i.test(ph));
+  ok("it reframes 'deposit' as moving your own money to your own address",
+     /moving your own money to your own address/i.test(ph));
+  ok("and says there is nothing to deposit into",
+     /nothing to deposit into and nobody to deposit with/i.test(ph));
+  ok("the gas trap is called out as the sticking point",
+     /This is where people get stuck/i.test(ph));
+  ok("naming the exact failure: USDC on Base with no ETH",
+     /only USDC on Base cannot send anything/i.test(ph));
+  ok("it explains why there is no Connect button", /no Connect button here/i.test(ph));
+  ok("giving the reason rather than just the rule",
+     /it cannot make our prompt appear when we never prompt/i.test(ph));
+  ok("and points the wallet at the venue instead",
+     /connect Phantom to the venue you swap on/i.test(ph));
+  ok("it routes onward to the checker, the venues and the standing order",
+     /href="\/"/.test(src) && src.includes('href="/buy.html"') && src.includes('href="/order.html"'));
+}
+// The whole point of the section is that it adds no wallet surface whatsoever.
+ok("no wallet object is touched, not even to detect one",
+   !/window\.phantom|window\.solana|isPhantom|window\.ethereum/i.test(src));
+ok("no connect call of any kind",
+   !/eth_requestAccounts|\.connect\s*\(|requestAccounts/i.test(src));
+
 console.log("── layout and tone");
 ok("no horizontal scroll at 375px",
    (await page.evaluate(() => document.documentElement.scrollWidth)) <= 375);
