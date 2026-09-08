@@ -28,7 +28,16 @@ const EMPTY = { chainId: null, owner: null, steps: {} };
 export function loadState(file = STATE_PATH, { chainId, owner } = {}) {
   if (!fs.existsSync(file)) return { ...structuredClone(EMPTY), chainId: chainId ?? null,
                                      owner: owner ?? null };
-  const s = JSON.parse(fs.readFileSync(file, "utf8"));
+  let s;
+  try { s = JSON.parse(fs.readFileSync(file, "utf8")); }
+  catch (e) {
+    // A half-written state file is the shape you get from a machine that lost power between
+    // two steps. It has to be reported as itself: a SyntaxError with a stack trace reads like
+    // a bug in the tool, and the operator's next move is to delete the wrong file.
+    throw new Error(`${file} is not readable JSON (${e.message}). It records which steps have ` +
+      "been read back off the chain; move it aside and re-verify each completed step rather " +
+      "than editing it.");
+  }
   if (chainId !== undefined && s.chainId != null && s.chainId !== chainId)
     throw new Error(`${path.basename(file)} records chain ${s.chainId} and this run is chain ` +
       `${chainId}. A rehearsal's verified steps are not this launch's. Move it aside, or set ` +

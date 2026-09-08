@@ -7,15 +7,14 @@
 // verified when all of them agree — that mark is what lib/steps.mjs consults before it will
 // build anything downstream. A transaction can be mined and still have done something other
 // than what you meant.
-import { context, die, bar, green, red, dim, printChecks, readStep } from "./lib/run.mjs";
-import { pickStep } from "./lib/steps.mjs";
+import { context, die, bar, green, red, dim, printChecks, readStep, pick } from "./lib/run.mjs";
 import { markVerified, saveState, stepState, STATE_PATH } from "./lib/state.mjs";
 
 const spec = process.argv.slice(2).find(a => !a.startsWith("-"));
 if (!spec) die("which step? e.g. `node deploy/scripts/verify.mjs 2`");
 
 const { steps, state, rpc, chainId, cfg } = await context();
-const { step } = pickStep(steps, spec);
+const { step } = pick(steps, spec);
 
 const why = step.blocked();
 if (why) die(why);
@@ -62,5 +61,10 @@ saveState(state);
 console.log(green(`  all ${list.length} checks passed.`) + dim(`  recorded in ${STATE_PATH}`));
 const note = step.note && step.note();
 if (note) console.log("\n  " + red("!") + " " + note);
+// Two of the six steps send nothing, so "Next: build.mjs 4" was an instruction to run a
+// command that refuses. Name the one that step actually uses.
 const next = steps.find(s => s.n === step.n + 1);
-if (next) console.log(dim(`\n  Next: node deploy/scripts/build.mjs ${next.n}`));
+if (next) console.log(dim("\n  Next: node deploy/scripts/" +
+  (next.txs.length ? `build.mjs ${next.n}`
+   : next.id === "salt" ? "grind.mjs"
+   : `verify.mjs ${next.n}`)));

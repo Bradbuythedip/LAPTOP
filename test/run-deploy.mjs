@@ -137,6 +137,17 @@ console.log("── the scripts build and read; they cannot sign, send, or hold 
   ok("the endpoint is redacted before it can reach an error message",
      redact("https://base-mainnet.example.com/v2/SECRETKEY") === "https://base-mainnet.example.com/…",
      redact("https://base-mainnet.example.com/v2/SECRETKEY"));
+  // The loop below reads the committed data files. A default endpoint hidden in a .mjs source
+  // is the same bearer credential in a place the loop never looked, and `process.env.SNOOZE_RPC`
+  // being MENTIONED is satisfied by `process.env.SNOOZE_RPC || "https://…/v2/<key>"`.
+  const inSource = files.map(f => [path.relative(ROOT, f), fs.readFileSync(f, "utf8")])
+    .flatMap(([name, t]) => (t.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "")
+      .match(/https?:\/\/[^\s"'`]+/g) || []).map(u => `${name}: ${u}`))
+    // The one that is allowed to appear is the public endpoint named in the "set this yourself"
+    // message, which is not a credential and is not a default — nothing reads it.
+    .filter(u => !/mainnet\.base\.org/.test(u));
+  ok("no script hardcodes an endpoint outside a comment", inSource.length === 0,
+     inSource.join(", "));
   for (const f of ["config.json", "artifacts.json", "artifacts.js"]) {
     const t = R("deploy/" + f);
     ok(`deploy/${f} carries no endpoint`, !/https?:\/\//.test(t.replace(/"_[^"]*":\s*(\[[^\]]*\]|"[^"]*")/g, "")),
@@ -198,15 +209,23 @@ const CFG = loadConfig();
 
 /* ──────────────────────────────────────────────────────────────────── the encoders agree ── */
 console.log("── the page and the scripts encode the same bytes");
+const html = R("deploy/deploy.html");
+const blockOf = id => (html.match(new RegExp(`<script id="${id}">([\\s\\S]*?)<\\/script>`)) || [])[1];
 const PAGE = (() => {
   // Pulled out of the page and evaluated with no DOM and no window, which is possible only
   // because that block is pure. It is the block that decides what bytes go out, so it is the
   // block worth comparing against the scripts.
-  const html = R("deploy/deploy.html");
-  const block = (html.match(/<script id="calldata">([\s\S]*?)<\/script>/) || [])[1];
+  const block = blockOf("calldata");
   if (!block) return null;
-  const fn = new Function(block + "\nreturn SNOOZE;");
-  return fn();
+  return new Function(block + "\nreturn SNOOZE;")();
+})();
+/// deploy/artifacts.js is the ONLY input the signing page has: it carries the bytecode AND the
+/// launch parameters, and the page never reads config.json or the .mjs sources. Comparing the
+/// page's encoder against freshly compiled artifacts and a freshly loaded config therefore
+/// tests something the page never sees. This is the file it actually runs on.
+const TWIN = (() => {
+  const src = R("deploy/artifacts.js");
+  return new Function("window", src + "\nreturn window.__SNOOZE;")({});
 })();
 {
   ok("the page has a pure calldata block that runs outside a browser", !!PAGE);
@@ -229,6 +248,45 @@ const PAGE = (() => {
     try { PAGE.uintWord("18446744073709551616", 64); } catch { threw = true; }
     ok("and refuses a uint64 that does not fit", threw);
   }
+}
+
+/// The page's GATING layer, lifted out and made runnable. It decides whether the next
+/// irreversible button lights up, and it was covered by nothing: changing `push(c, !!ok, …)`
+/// to `push(c, true, …)` on one line made every check on the signing page pass unconditionally
+/// and left the whole suite green. So each step's check is run below at the SAME point in the
+/// sequence as the scripts' own — after the deployment it is about and before the next one,
+/// because "sealed_() is false" and "frozen() is false" are true then and false later.
+/// A copy, not TWIN.launch itself: the suite grinds a two-character suffix rather than the
+/// configured five (a million keccaks is ten seconds of a core and not something a test should
+/// spend), so the page has to be told the same suffix the scripts were told, and mutating the
+/// twin the assertions above just compared against config.json would make that comparison a
+/// lie. Everything else in it is the file the page really runs on.
+const PAGE_LAUNCH = TWIN ? JSON.parse(JSON.stringify(TWIN.launch)) : null;
+const PAGECHECKS = (() => {
+  const block = blockOf("checks");
+  if (!block || !TWIN) return null;
+  const noStore = { getItem: () => null, setItem: () => {} };
+  return new Function("window", "localStorage", "SNOOZE", "$", "A", "L", "W",
+    block + "\nreturn { STEPS: STEPS, ST: ST, oracleChecks: oracleChecks };")(
+    { __SNOOZE: TWIN, localStorage: noStore }, noStore, PAGE,
+    () => null, TWIN, PAGE_LAUNCH, { prov: null, addr: null, chain: null });
+})();
+
+/// Run one of the page's steps against the live EVM, exactly as the page would: its own reads,
+/// its own decoding, its own check.
+async function runPageCheck(id, st) {
+  if (!PAGECHECKS) return { list: [] };
+  Object.assign(PAGECHECKS.ST, st);
+  const step = PAGECHECKS.STEPS().find(x => x.id === id);
+  const results = {};
+  for (const r of step.reads()) {
+    const got = await raw(r.to, r.data, OWNER);
+    results[r.sig] = got.ok ? { ok: true, data: got.raw } : { ok: false, error: got.err };
+  }
+  const target = step.code();
+  const code = target && (await evm.stateManager.getCode(
+    createAddressFromString(target))).length ? "0x01" : "0x";
+  return { step, list: step.check(results, code) };
 }
 
 /* ────────────────────────────────────────────────────── the artifacts are what compiles now ─ */
@@ -254,13 +312,34 @@ const { artifacts: ART, warnings } = compileArtifacts();
      R("deploy/Snooze.bin").trim() === ART.contracts.Snooze.initCode,
      "the two generators in deploy/ have drifted");
   const js = R("deploy/artifacts.js");
-  ok("deploy/artifacts.js is the browser twin of the same object",
-     js.includes(ART.contracts.SnoozeCurve.initCode));
-  ok("and it carries the launch parameters, since a file:// page cannot read config.json",
-     /"launch":/.test(js));
   ok("it is a classic script, not a module, so file:// can load it",
      /window\.__SNOOZE = /.test(js));
-  ok("the page loads it that way", /<script src="artifacts\.js"><\/script>/.test(R("deploy/deploy.html")));
+  ok("the page loads it that way", /<script src="artifacts\.js"><\/script>/.test(html));
+  // Every byte of it, not one initCode and a regex. The page has no other input, so a twin
+  // that has drifted from contracts/ or from config.json is a signing page building the wrong
+  // transaction with nothing anywhere to notice.
+  for (const n of DEPLOYABLE) {
+    ok(`the twin's ${n} is the bytes that compile today`,
+       TWIN.contracts?.[n]?.initCode === ART.contracts[n].initCode, "stale artifacts.js");
+    ok(`and its ${n} constructor list matches`,
+       JSON.stringify(TWIN.contracts?.[n]?.constructorInputs) ===
+       JSON.stringify(ART.contracts[n].constructorInputs));
+  }
+  ok("the twin carries the settable-mock blocklist the page's oracle guard needs",
+     TWIN.refuse?.MockOracle?.runtime === ART.refuse.MockOracle.runtime &&
+     TWIN.refuse?.MockOracle?.selectors?.["set(uint256,uint256,bool)"] === SETTER_SELECTOR);
+  const str = v => (typeof v === "bigint" ? v.toString() : v);
+  const expected = {
+    chainId: CFG.chainId, owner: CFG.owner,
+    token: { ...CFG.token, supply: str(CFG.token.supply) },
+    curve: Object.fromEntries(Object.entries(CFG.curve).map(([k, v]) => [k, str(v)])),
+    vanity: CFG.vanity,
+    oracle: { choice: CFG.oracle.choice, address: CFG.oracle.address,
+              describe: CFG.oracle.describe },
+  };
+  ok("and its launch parameters are exactly what deploy/config.json resolves to",
+     JSON.stringify(TWIN.launch) === JSON.stringify(expected),
+     "regenerate: node deploy/scripts/artifacts.mjs");
 }
 
 /* ────────────────────────────────────────────────── what the oracle guard can and cannot see ─ */
@@ -281,14 +360,33 @@ console.log("── the oracle guard, and the difference between refusing and re
   ok("and by its setter, which survives a recompile the hash does not",
      mock.some(c => !c.ok && /set\(uint256,uint256,bool\)/.test(c.name)));
 
-  // The same mock with a different metadata tail: a rebuild anywhere else. The hash comparison
-  // is defeated, the selector is not.
-  const rebuilt = mockRuntime.slice(0, -6) + "beefaa";
+  // The same mock rebuilt elsewhere: solc's CBOR blob holds a hash of the source and of the
+  // compiler settings, so the bytes inside it differ while its two-byte length trailer does
+  // not. Mutating inside the blob and leaving the trailer alone is what a rebuild actually
+  // looks like — flipping the trailer instead would only test that a corrupt tail is caught.
+  const withOtherMetadata = (rt) => {
+    const tailLen = (parseInt(rt.slice(-4), 16) + 2) * 2;
+    const at = rt.length - tailLen + 8;     // a few bytes into the blob, well clear of the end
+    return rt.slice(0, at) + (rt[at] === "a" ? "b" : "a") + rt.slice(at + 1);
+  };
+  const rebuilt = withOtherMetadata(mockRuntime);
   const reb = inspectOracle({ code: rebuilt, results: good, refuse: ART.refuse,
                               choice: "observational" });
   ok("a rebuilt mock with a different metadata tail is still refused",
      reb.some(c => !c.ok && /set\(uint256,uint256,bool\)/.test(c.name)));
-  ok("stripMetadata takes the CBOR tail off", stripMetadata(mockRuntime).length < mockRuntime.length);
+  // Same source, different machine: the metadata blob changes and its two-byte length trailer
+  // does not. A length test alone passes on an implementation that only drops the "0x", which
+  // would leave inspectOracle doing a byte-for-byte comparison under a stripped name.
+  {
+    const tail = parseInt(mockRuntime.slice(-4), 16);
+    ok("stripMetadata removes exactly the CBOR blob its own length trailer describes",
+       stripMetadata(mockRuntime).length === mockRuntime.length - 2 - (tail + 2) * 2,
+       `${mockRuntime.length - stripMetadata(mockRuntime).length} chars removed, ` +
+       `the trailer says ${(tail + 2) * 2} plus the 0x`);
+    ok("and two builds of the same source agree once it is off",
+       stripMetadata(mockRuntime) === stripMetadata(rebuilt),
+       "a rebuild differs only inside the blob, so stripping it must make them equal");
+  }
   ok("and leaves a runtime whose tail does not parse alone",
      stripMetadata("0xdeadbeef") === "deadbeef");
 
@@ -354,6 +452,30 @@ async function sendBuilt(built, from) {
                                 raw: built.data.slice(10), timestamp: 2000 })
     .then(r => r);
 }
+/// Drive a step's own verify block: its own declared calls, its own decoding, its own check.
+///
+/// WHY THIS EXISTS SEPARATELY from the assertions below. Reading name(), oracle() and
+/// balanceOf() with ABI.readX and comparing them here proves the CHAIN is right and says
+/// nothing about steps.mjs — six wrong expectations were substituted into its check functions
+/// (totalSupply 1, oracle = the owner, isPool false, sealed_ false, curveSupply 42, feeTo zero)
+/// and the suite's output did not change by a byte, because nothing ever called them. The
+/// verify blocks are what decide whether the next irreversible button unlocks, so they are the
+/// part that has to be exercised rather than merely defined.
+async function runStepCheck(step, address) {
+  const results = {};
+  for (const c of step.verify.calls || []) {
+    const r = await raw(address, c.data, OWNER);
+    results[c.sig] = r.ok ? { ok: true, data: r.raw } : { ok: false, error: r.err };
+  }
+  for (const c of (step.verify.extraCalls ? step.verify.extraCalls() : [])) {
+    const r = await raw(c.to, c.data, OWNER);
+    results[c.sig] = r.ok ? { ok: true, data: r.raw } : { ok: false, error: r.err };
+  }
+  const code = (await evm.stateManager.getCode(createAddressFromString(address))).length
+    ? "0x01" : "0x";
+  return { results, list: step.verify.check(results, { code, address }) };
+}
+
 /// call() prefixes a selector from the signature, which is wrong for pre-encoded calldata. The
 /// harness has no raw-data door, so this is the smallest one: run the EVM directly.
 async function raw(to, data, from, value = 0n, timestamp = 2000) {
@@ -413,6 +535,14 @@ let DEPLOYER;
   const owner = await raw(DEPLOYER, ABI.selector("owner()"), STRANGER);
   ok("anybody can send it, and the owner is still the configured address",
      ABI.sameAddress(ABI.readAddress(owner.raw), CFG.owner), owner.raw);
+  state.steps.deployer = { status: "sent", readBack: { address: DEPLOYER } };
+  const v = await runStepCheck(stepsNow().find(x => x.id === "deployer"), DEPLOYER);
+  ok(`step 2's own verify block passes on the real deployment (${v.list.length} checks)`,
+     v.list.every(c => c.ok), v.list.filter(c => !c.ok).map(c => c.name + " " + c.detail).join("; "));
+  const pv = await runPageCheck("deployer", { deployer: DEPLOYER });
+  ok(`and so does the page's, on the same chain state (${pv.list.length} checks)`,
+     pv.list.length > 0 && pv.list.every(c => c.ok),
+     pv.list.filter(c => !c.ok).map(c => c.name + " " + c.why).join("; "));
   markVerified(state, "deployer", { address: DEPLOYER });
 }
 
@@ -449,6 +579,24 @@ let TOKEN;
   const bal = await raw(TOKEN, ABI.selector("balanceOf(address)") + w(OWNER), OWNER);
   ok("and the whole supply is in the owner's hands, which is what funds the curve",
      ABI.readUint(bal.raw) === CFG.token.supply);
+  state.steps.token = { status: "sent", readBack: { address: TOKEN } };
+  const v = await runStepCheck(stepsNow().find(x => x.id === "token"), TOKEN);
+  ok(`step 3's own verify block passes on the real token (${v.list.length} checks)`,
+     v.list.every(c => c.ok), v.list.filter(c => !c.ok).map(c => c.name + " " + c.detail).join("; "));
+  // And it is not a check that passes on anything: pointed at the DEPLOYER instead, which is a
+  // real contract with real code, every claim about the token has to fail.
+  const wrong = await runStepCheck(stepsNow().find(x => x.id === "token"), DEPLOYER);
+  ok("and fails against a different contract at a real address",
+     wrong.list.filter(c => !c.ok).length >= 5,
+     `only ${wrong.list.filter(c => !c.ok).length} of ${wrong.list.length} failed`);
+  const pv = await runPageCheck("token", { oracle: ORACLE, deployer: DEPLOYER, token: TOKEN });
+  ok(`the page's step 3 check passes on the same token (${pv.list.length} checks)`,
+     pv.list.length > 0 && pv.list.every(c => c.ok),
+     pv.list.filter(c => !c.ok).map(c => c.name + " " + c.why).join("; "));
+  const pw = await runPageCheck("token", { token: DEPLOYER });
+  ok("and fails when pointed at a different contract",
+     pw.list.filter(c => !c.ok).length >= 5,
+     `only ${pw.list.filter(c => !c.ok).length} of ${pw.list.length} failed`);
   markVerified(state, "token", { address: TOKEN });
 }
 
@@ -508,6 +656,7 @@ let SALT, PREDICTED;
   // the derivation and the suffix check are the same code at any length. grind.mjs does the
   // real one, and re-derives the address independently before it will record it.
   cfg.vanity = { ...cfg.vanity, suffix: "ed" };
+  if (PAGE_LAUNCH) PAGE_LAUNCH.vanity = { ...PAGE_LAUNCH.vanity, suffix: cfg.vanity.suffix };
   for (let i = 1; i < 200000; i++) {
     const trial = "0x" + i.toString(16).padStart(64, "0");
     const at = ABI.create2Address(DEPLOYER, trial, initHash);
@@ -567,8 +716,15 @@ let CURVE;
   ok("and the refusal says what would happen instead of just refusing",
      before.some(c => !c.ok && /burns/.test(c.detail)));
 
+  // Sent to the address the step CHOSE, with the value the step chose. Passing TOKEN and 0 by
+  // hand meant `to` and `value` were pinned by nothing: repointing 5.fund at the curve and
+  // giving non-payable freeze() ten ether both left the suite at all-green, and the page hands
+  // `built.value` straight to eth_sendTransaction.
   const fundTx = stepsNow().find(x => x.id === "curve").txs.find(t => t.key === "fund").build();
-  const fr = await raw(TOKEN, fundTx.data, OWNER);
+  ok("the funding transaction is addressed to the TOKEN, not the curve",
+     ABI.sameAddress(fundTx.to, TOKEN), String(fundTx.to));
+  ok("and carries no value", fundTx.value === "0x0", fundTx.value);
+  const fr = await raw(fundTx.to, fundTx.data, fundTx.from, BigInt(fundTx.value));
   ok("funding the curve goes through", fr.ok, fr.err);
   const held = await raw(TOKEN, ABI.selector("balanceOf(address)") + w(CURVE), OWNER);
   ok("and it holds every token it is allowed to sell, intact",
@@ -578,7 +734,9 @@ let CURVE;
   ok("now setPool is allowed", after.every(c => c.ok));
 
   const regTx = stepsNow().find(x => x.id === "curve").txs.find(t => t.key === "register").build();
-  const rr = await raw(TOKEN, regTx.data, OWNER);
+  ok("setPool is addressed to the token, which is where isPool lives",
+     ABI.sameAddress(regTx.to, TOKEN), String(regTx.to));
+  const rr = await raw(regTx.to, regTx.data, regTx.from, BigInt(regTx.value));
   ok("registering the curve as the pool goes through", rr.ok, rr.err);
   const isPool = await raw(TOKEN, ABI.selector("isPool(address)") + w(CURVE), OWNER);
   const exempt = await raw(TOKEN, ABI.selector("capExempt(address)") + w(CURVE), OWNER);
@@ -593,7 +751,73 @@ let CURVE;
      ABI.readUint(await rd("bondTarget()")) === CFG.curve.bondTarget);
   ok("token() is the token", ABI.sameAddress(ABI.readAddress(await rd("token()")), TOKEN));
   ok("sold() is zero — nothing has traded", ABI.readUint(await rd("sold()")) === 0n);
+  const v = await runStepCheck(stepsNow().find(x => x.id === "curve"), CURVE);
+  ok(`step 5's own verify block passes on the real curve (${v.list.length} checks)`,
+     v.list.every(c => c.ok), v.list.filter(c => !c.ok).map(c => c.name + " " + c.detail).join("; "));
+  const pv = await runPageCheck("curve",
+    { token: TOKEN, curve: CURVE, predicted: PREDICTED, salt: SALT, deployer: DEPLOYER });
+  ok(`and so does the page's (${pv.list.length} checks)`,
+     pv.list.length > 0 && pv.list.every(c => c.ok),
+     pv.list.filter(c => !c.ok).map(c => c.name + " " + c.why).join("; "));
   markVerified(state, "curve", { address: CURVE });
+}
+
+/* ---- and a buyer who arrives before you get round to verifying ---- */
+console.log("── somebody trades between funding the curve and reading it back");
+{
+  // The curve is public from the block it is funded, so this is not a hypothetical. A strict
+  // `balanceOf(curve) == curveSupply` fails here and never recovers, and step 6 is gated on
+  // step 5 — freeze() and seal() would be unreachable for the rest of the token's life because
+  // somebody bought a tenth of an ether's worth at the wrong moment.
+  const evmT = await createEVM();
+  await fund(evmT, OWNER, 100n * E);
+  await fund(evmT, BUYER, 100n * E);
+  const orcT = await deploy(all.MockOracle.evm.bytecode.object, "", { evm: evmT });
+  const SUP = 1000n * E, FLOAT = 800n * E;
+  const t = await deploy(all.Snooze.evm.bytecode.object,
+    w(SUP) + w(orcT.address.toString()) + w(CFG.token.dev) + w(0), { evm: evmT, from: OWNER });
+  const c = await deploy(all.SnoozeCurve.evm.bytecode.object,
+    [t.address.toString(), 3n * E, FLOAT, 6n * E, 100, OWNER, ABI.ZERO, 0, 0].map(w).join(""),
+    { evm: evmT, timestamp: 1000, from: OWNER });
+  const T = { evm: evmT, address: t.address }, C = { evm: evmT, address: c.address };
+  await call(T, "transfer(address,uint256)", [c.address.toString(), FLOAT], { from: OWNER });
+  await call(T, "setPool(address,bool)", [c.address.toString(), 1], { from: OWNER });
+  const bought = await call(C, "buy(uint256,address)", [0, BUYER],
+                            { from: BUYER, value: E / 10n, timestamp: 2000 });
+  ok("a buy lands before anybody has run verify", bought.ok, bought.revert);
+
+  const st = { chainId: CFG.chainId, owner: CFG.owner, steps: {
+    oracle: { status: "verified", readBack: { address: orcT.address.toString() } },
+    deployer: { status: "verified", readBack: { address: DEPLOYER } },
+    token: { status: "verified", readBack: { address: t.address.toString() } },
+    salt: { status: "verified", readBack: { predicted: c.address.toString() } },
+    curve: { status: "sent", readBack: { address: c.address.toString() } },
+  } };
+  const cfgT = { ...cfg, curve: { ...cfg.curve, curveSupply: FLOAT, virtualEth: 3n * E,
+                                  bondTarget: 6n * E, feeTo: cfg.owner },
+                 vanity: { ...cfg.vanity, suffix: c.address.toString().slice(-2) } };
+  const step = buildSteps({ cfg: cfgT, artifacts: ART, state: st }).find(x => x.id === "curve");
+  const results = {};
+  for (const cc of step.verify.calls)
+    results[cc.sig] = await (async () => {
+      const r = await evmT.runCall({ caller: createAddressFromString(OWNER),
+        to: c.address, gasLimit: 30_000_000n, data: ABI.bytes(cc.data),
+        block: { header: { number: 1n, timestamp: 2100n } } });
+      return { ok: !r.execResult.exceptionError, data: "0x" + ABI.hex(r.execResult.returnValue) };
+    })();
+  for (const cc of step.verify.extraCalls())
+    results[cc.sig] = await (async () => {
+      const r = await evmT.runCall({ caller: createAddressFromString(OWNER),
+        to: createAddressFromString(cc.to), gasLimit: 30_000_000n, data: ABI.bytes(cc.data),
+        block: { header: { number: 1n, timestamp: 2100n } } });
+      return { ok: !r.execResult.exceptionError, data: "0x" + ABI.hex(r.execResult.returnValue) };
+    })();
+  const list = step.verify.check(results, { code: "0x01", address: c.address.toString() });
+  ok("step 5 still verifies, so freeze() and seal() stay reachable",
+     list.every(x => x.ok), list.filter(x => !x.ok).map(x => x.name + " " + x.detail).join("; "));
+  ok("and it says so rather than pretending nothing happened",
+     list.some(x => /already sold/.test(x.detail || "")),
+     "the operator has to know trading has started");
 }
 
 /* ---- what the wrong order would have done ---- */
@@ -637,26 +861,41 @@ console.log("── the sequence, finished");
   ok("freeze goes to the token, seal goes to the deployer",
      ABI.sameAddress(fz.to, TOKEN) && ABI.sameAddress(sl.to, DEPLOYER));
 
-  ok("freeze() goes through", (await raw(TOKEN, fz.data, OWNER)).ok);
+  ok("neither door is sent any value", fz.value === "0x0" && sl.value === "0x0",
+     `${fz.value} / ${sl.value}`);
+  ok("freeze() goes through", (await raw(fz.to, fz.data, fz.from, BigInt(fz.value))).ok);
   ok("and afterwards even the admin cannot register another pool",
      !(await raw(TOKEN, ABI.selector("setPool(address,bool)") + w(STRANGER) + w(1), OWNER)).ok);
-  ok("seal() goes through", (await raw(DEPLOYER, sl.data, OWNER)).ok);
+  ok("seal() goes through", (await raw(sl.to, sl.data, sl.from, BigInt(sl.value))).ok);
   const sealed = await raw(DEPLOYER, ABI.selector("sealed_()"), OWNER);
   ok("sealed_() is true", ABI.readBool(sealed.raw));
   const dep2 = stepsNow().find(x => x.id === "curve").txs[0].build();
   ok("and not even the owner can deploy from it again", !(await raw(DEPLOYER, dep2.data, OWNER)).ok);
+  const v = await runStepCheck(stepsNow().find(x => x.id === "lock"), DEPLOYER);
+  ok(`step 6's own verify block passes once both doors are shut (${v.list.length} checks)`,
+     v.list.every(c => c.ok), v.list.filter(c => !c.ok).map(c => c.name + " " + c.detail).join("; "));
+  const pv = await runPageCheck("lock", { deployer: DEPLOYER, token: TOKEN });
+  ok(`and so does the page's (${pv.list.length} checks)`,
+     pv.list.length > 0 && pv.list.every(c => c.ok),
+     pv.list.filter(c => !c.ok).map(c => c.name + " " + c.why).join("; "));
 }
 
 /* ---- and the thing actually works ---- */
 console.log("── the launch this sequence produces is one somebody can trade");
 {
+  const before = await balance(evm, OWNER);
   const buy = await raw(CURVE, ABI.selector("buy(uint256,address)") + w(0) + w(BUYER),
                         BUYER, E, 3000);
   ok("a 1 ETH buy on the curve settles", buy.ok, buy.err);
   const bal = await raw(TOKEN, ABI.selector("balanceOf(address)") + w(BUYER), BUYER);
   ok("and the buyer holds tokens", ABI.readUint(bal.raw) > 0n, String(ABI.readUint(bal.raw)));
-  const feeTo = await balance(evm, OWNER);
-  ok("the 1% fee reached the owner in the same transaction", feeTo > 999n * E, String(feeTo));
+  // The exact delta, derived from the configured fee. The first version asserted the owner's
+  // balance was "above 999 ETH" against a starting balance of exactly 1000 and a fee of 0.01,
+  // so a curve charging no fee at all passed it.
+  const want = E * BigInt(CFG.curve.feeBps) / 10_000n;
+  const got = (await balance(evm, OWNER)) - before;
+  ok(`the ${CFG.curve.feeBps / 100}% fee reached the owner in the same transaction, exactly`,
+     got === want, `${got} wei, expected ${want}`);
 
   // Rule 1, alive, which it would not be without step 5's setPool.
   await call({ evm, address: orc.address }, "set(uint256,uint256,bool)", [2n * E, E, 1]);
@@ -694,6 +933,30 @@ console.log("── the page's encoder against the scripts', on this launch's re
        err || (theirs ? `page ${ABI.strip(theirs.data).length / 2} bytes, ` +
                         `scripts ${ABI.strip(mine.data).length / 2} bytes` : "the page threw"));
   }
+  ok("the page's check layer is a block a test can run outside a browser", !!PAGECHECKS);
+  ok("and it builds the same six steps", !!PAGECHECKS && PAGECHECKS.STEPS().length === 6);
+  if (PAGECHECKS) {
+    // The page's oracle guard, against the one contract it exists to refuse.
+    const mockRt = "0x" + compile(["contracts/test/SnoozeMocks.sol"]).all
+      .MockOracle.evm.deployedBytecode.object.replace(/^0x/, "");
+    const mocked = PAGECHECKS.oracleChecks(
+      { "ready()": { ok: true, data: "0x" + w(0) },
+        "spot()": { ok: true, data: "0x" + w(1000) },
+        "twap24()": { ok: true, data: "0x" + w(1000) } }, mockRt);
+    ok("the page refuses the settable mock too, not only the scripts",
+       mocked.some(c => !c.ok && /MockOracle/.test(c.name)));
+    ok("and by its setter selector as well as by its bytes",
+       mocked.some(c => !c.ok && /set\(uint256,uint256,bool\)/.test(c.name)));
+    // Nothing on the page may be a green tick that cannot fail. Step 4 is the offline one and
+    // it carried exactly that until it was removed.
+    const salt4 = PAGECHECKS.STEPS().find(x => x.id === "salt");
+    Object.assign(PAGECHECKS.ST, { salt: null, predicted: null });
+    ok("no check on the page is true by construction",
+       salt4.check({}, "0x").every(c => !c.ok),
+       "a push(c, true, …) renders as a green tick indistinguishable from a real one");
+  }
+
+
   const page = R("deploy/deploy.html");
   for (const step of steps)
     if (step.confirm)
@@ -740,6 +1003,83 @@ console.log("── a step that has not been read back blocks the one after it")
   try { loadState(tmp, { chainId: 8453, owner: cfg.owner }); } catch { rejected = true; }
   ok("and so is one belonging to a different owner", rejected);
   fs.unlinkSync(tmp);
+}
+
+/* ────────────────────────────────────────────── the commands refuse rather than crash ────── */
+console.log("── the commands themselves: a refusal, never a stack trace");
+{
+  // Spawned for real, because "it exits non-zero" and "it exits non-zero with a Node stack
+  // trace on stderr" are the same to every in-process check and completely different to
+  // somebody halfway through a deployment. Four of these printed `at file:///…` before this
+  // block existed.
+  const { spawnSync } = await import("node:child_process");
+  const tmp = path.join(ROOT, "deploy", ".test-cli");
+  fs.mkdirSync(tmp, { recursive: true });
+  const cfgPath = path.join(tmp, "config.json");
+  const statePath = path.join(tmp, "state.json");
+  const raw = JSON.parse(R("deploy/config.json"));
+  raw.oracle.choice = "observational";
+  raw.oracle.address = "0x00000000000000000000000000000000000000aa";
+  fs.writeFileSync(cfgPath, JSON.stringify(raw, null, 2));
+
+  const run = (args, extraEnv = {}) => spawnSync(process.execPath, args, {
+    encoding: "utf8", cwd: ROOT,
+    env: { ...process.env, SNOOZE_CONFIG: cfgPath, SNOOZE_STATE: statePath,
+           NO_COLOR: "1", ...extraEnv },
+  });
+  const clean = r => !/\bat file:\/\/|\bat async |Node\.js v/.test((r.stderr || "") + (r.stdout || ""));
+  const B = "deploy/scripts/build.mjs", V = "deploy/scripts/verify.mjs";
+
+  let r = run([B]);
+  ok("build.mjs with no step refuses", r.status === 1 && /refused/.test(r.stderr), r.stderr.trim());
+  r = run([B, "99"]);
+  ok("build.mjs with a step that does not exist refuses, and lists the ones that do",
+     r.status === 1 && /no such step/.test(r.stderr) && /1 \(oracle\)/.test(r.stderr));
+  ok("and does not print a stack trace at it", clean(r), r.stderr.slice(0, 200));
+  r = run([B, "2.nonsense"]);
+  ok("an unknown transaction inside a real step refuses too",
+     r.status === 1 && /no transaction "nonsense"/.test(r.stderr) && clean(r), r.stderr.trim());
+  r = run([V, "zzz"]);
+  ok("verify.mjs refuses an unknown step without a stack trace",
+     r.status === 1 && /no such step/.test(r.stderr) && clean(r), r.stderr.trim());
+
+  fs.writeFileSync(statePath, "{ not json");
+  r = run(["deploy/scripts/plan.mjs"]);
+  ok("a corrupt state file is reported as one, not as a SyntaxError",
+     r.status === 1 && /not readable JSON/.test(r.stderr) && clean(r), r.stderr.trim());
+  fs.rmSync(statePath, { force: true });
+
+  // The confirmation gate, exercised through the command rather than by reading its source.
+  // Step 2 is reachable with nothing verified, so the gate is checked on step 3 with the two
+  // steps before it marked verified in the temporary state.
+  fs.writeFileSync(statePath, JSON.stringify({
+    chainId: raw.chainId, owner: raw.owner,
+    steps: { oracle: { status: "verified", readBack: { address: raw.oracle.address } },
+             deployer: { status: "verified",
+                         readBack: { address: "0x00000000000000000000000000000000000000bb" } } },
+  }));
+  r = run([B, "3"]);
+  ok("an irreversible step refuses to print its bytes without the phrase", r.status === 2);
+  ok("and shows the phrase it wants, alongside what cannot be undone",
+     /--confirm/.test(r.stdout) && /immutable/.test(r.stdout));
+  r = run([B, "3", "--confirm", "the oracle address and devBps are immutable"]);
+  ok("a partial phrase is not the phrase", r.status === 2, String(r.status));
+  r = run([B, "3", "--confirm", "  the oracle address and devBps are immutable and I have checked both  "]);
+  ok("and neither is one with whitespace round it", r.status === 2, String(r.status));
+  r = run([B, "3", "--confirm"]);
+  ok("--confirm with nothing after it is not a bypass", r.status === 2, String(r.status));
+  r = run([B, "3", "--confirm", "the oracle address and devBps are immutable and I have checked both"]);
+  ok("the exact phrase prints the transaction", r.status === 0 && /contract creation/.test(r.stdout),
+     (r.stderr || r.stdout).slice(0, 200));
+  ok("and what it printed is a deployment of Snooze with this launch's arguments",
+     r.stdout.includes(ART.contracts.Snooze.initCode.slice(2, 42)));
+
+  // A step whose prerequisite is unverified stays refused however it is asked for.
+  r = run([B, "5.register"]);
+  ok("a step behind an unverified one refuses whichever transaction is named",
+     r.status === 1 && /has not been verified/.test(r.stderr), r.stderr.trim());
+
+  fs.rmSync(tmp, { recursive: true, force: true });
 }
 
 console.log("\n" + results.join("\n"));

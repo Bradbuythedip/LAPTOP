@@ -352,13 +352,26 @@ if(typeof module !== "undefined" && module.exports) module.exports = SNOOZE;
 
 <script>
 "use strict";
-/* The page: wallet, rendering, sending, reading back. Everything that decides WHAT bytes go out
-   is in the block above; this decides when you are allowed to send them. */
 var $ = function(id){ return document.getElementById(id); };
 var A = window.__SNOOZE, L = A && A.launch;
 var CHAIN_HEX = L ? "0x" + L.chainId.toString(16) : "0x2105";
-
 var W = { prov:null, addr:null, chain:null };
+</script>
+
+<script id="checks">
+"use strict";
+/* ────────────────────────────────────────────────────────────────────────────────────────────
+   THE STEPS, AND WHAT VERIFIES THEM. Pure in the same sense as the block above: STEPS() and
+   every check helper are functions of the page's data, not of the DOM. test/run-deploy.mjs
+   pulls this block out and runs each step's check against read results captured from a real
+   EVM, because the gating layer is what decides whether the next irreversible button lights up
+   — and a one-character edit here (`push(c, !!ok, …)` to `push(c, true, …)`) makes every check
+   on the page pass forever while the whole suite stays green.
+
+   `$`, `A`, `L` and `W` are declared in the block above and the wallet lives in the block
+   below; classic scripts share one global scope, so the split is a seam for the test and
+   nothing else.
+   ──────────────────────────────────────────────────────────────────────────────────────────── */
 var ST = load();
 
 /* Progress lives in this browser, not in deploy/launch-state.json — a page cannot write a file,
@@ -408,9 +421,11 @@ function STEPS(){
     ],
     blocked: function(){
       if(!L.oracle.choice)
-        return 'deploy/config.json has oracle.choice = "". Choose "observational" or ' +
-               '"never-ready" and write it down before anything is built — there is no default, ' +
-               "because both are real choices and one of them is a different token.";
+        return 'oracle.choice is "" in the launch parameters this page loaded from ' +
+               'artifacts.js. Set it in deploy/config.json, then run ' +
+               "`node deploy/scripts/artifacts.mjs` to regenerate what this page reads. " +
+               'Choose "observational" or "never-ready" — there is no default, because both ' +
+               "are real choices and one of them is a different token.";
       return o ? null : "no oracle address yet";
     },
     note: function(){ return L.oracle.choice === "never-ready" ? NEVER_READY : null; },
@@ -517,7 +532,10 @@ function STEPS(){
   { n:4, id:"salt", title:"The vanity salt",
     what:"Ground on the command line, because it is a few million keccaks and a browser is the " +
          "wrong place for that. It has to be last: the curve's constructor arguments contain the " +
-         "token's address, so there was nothing to grind against until step 3 landed.",
+         "token's address, so there was nothing to grind against until step 3 landed. This page " +
+         "ships no keccak, so it checks the shape of what you paste; the derivation itself is " +
+         "checked twice elsewhere — by grind.mjs when it found this, and by the chain in step 5, " +
+         "where addressOf had already committed to the address before the curve existed.",
     cmd: function(){ return "node deploy/scripts/grind.mjs"; },
     field:{ key:"salt", label:"The salt grind.mjs found", placeholder:"0x…" },
     field2:{ key:"predicted", label:"The address it predicts", placeholder:"0x…" },
@@ -533,12 +551,11 @@ function STEPS(){
       if(ST.predicted)
         push(c, ST.predicted.toLowerCase().slice(-L.vanity.suffix.length) === L.vanity.suffix,
              "it ends …" + L.vanity.suffix, ST.predicted);
-      /* The page cannot recompute keccak(0xff, deployer, salt, initCodeHash) — it ships no
-         keccak, deliberately. The third, independent derivation is the chain's own: step 5
-         asserts the deployment landed exactly here, and addressOf computed it on chain before
-         it existed. grind.mjs already did the second one. */
-      push(c, true, "the derivation is checked twice more: by grind.mjs when it found this, " +
-                    "and by the chain in step 5");
+      /* No push(c, true, ...) here, and there was one. The page cannot recompute
+         keccak(0xff, deployer, salt, initCodeHash) — it ships no keccak, deliberately — so it
+         wanted to say so, and said it as a CHECK. A check that is true by construction renders
+         as an identical green tick beside four real ones and inflates "all 4 passed" by one.
+         What the page can honestly say goes in the step's prose, where it cannot be counted. */
       return c;
     }
   },
@@ -679,6 +696,15 @@ var AFTER = [
    "these scripts can prevent it; the fix is a contract change that pins the pool at " +
    "construction. Until then, either watch for the target and be first, or accept the race — " +
    "and do not let anyone find out about it after they have bought."],
+  ["Where the supply ends up, which nothing else on this page adds up for you",
+   "The curve is funded with curveSupply and the rest stays in your wallet from the block the " +
+   "token is deployed — at the configured 8e29 of a 1e30 supply that is 20%. If the curve " +
+   "graduates, bondPreview()'s leftover is curveSupply / m, another 8% of supply, and it goes " +
+   "to feeTo, which is you. Unlike the launchpad path, that residual is NOT exempt from " +
+   "anything: setPool exempts the curve, not the sender, so your treasury is under Rule 1 and " +
+   "Rule 2 exactly like everybody else's, and freeze() makes that permanent. Publish your " +
+   "address alongside the token's — it is checkable, and it is the sort of thing people find " +
+   "out anyway."],
   ["The site still points at nothing",
    "web/index.html holds const POOL = \"\" and const TOKEN = \"\". Filling them in changes those " +
    "files, which changes their hashes, which node tools/stamp.mjs republishes in the README."],
@@ -779,7 +805,10 @@ function sameRuntime(a, b){
     return bytes >= h.length ? h : h.slice(0, h.length - bytes);
   }
 }
+</script>
 
+<script>
+"use strict";
 /* ------------------------------------------------------------------------------- wallet */
 
 function evmProvider(){
@@ -1038,10 +1067,16 @@ async function send(step, tx, card){
         "is spent. Read the revert on a block explorer before resending."));
       return;
     }
-    if(rc.contractAddress && (tx.after ? tx.after() : step.addrKey)){
-      ST[tx.after ? tx.after() : step.addrKey] = rc.contractAddress;
+    /* A creation receipt names the address. A CALL receipt does not, and the curve is deployed
+       by a call to SnoozeDeployer — so for that one the address comes from the salt, which
+       fixed it before the transaction existed. Without this the page deadlocks at step 5. */
+    var slot = tx.after ? tx.after() : step.addrKey;
+    var created = rc.contractAddress || (slot === "curve" ? ST.predicted : null);
+    if(created && slot){
+      ST[slot] = created;
       save();
-      out.appendChild(el("div", "okbox", "created " + rc.contractAddress));
+      out.appendChild(el("div", "okbox",
+        (rc.contractAddress ? "created " : "deployed at the ground address ") + created));
     }else{
       out.appendChild(el("div", "okbox", "mined in block " + Number(BigInt(rc.blockNumber))));
     }

@@ -7,7 +7,7 @@ import fs from "node:fs";
 import { loadConfig } from "./config.mjs";
 import { artifacts as compileArtifacts, loadArtifacts, ARTIFACTS_JSON, ROOT } from "./solc.mjs";
 import { loadState, STATE_PATH } from "./state.mjs";
-import { buildSteps } from "./steps.mjs";
+import { buildSteps, pickStep } from "./steps.mjs";
 import { rpcFromEnv, chainFromEnv, NO_ENDPOINT } from "./rpc.mjs";
 import { keccakHex } from "./abi.mjs";
 
@@ -63,7 +63,9 @@ export async function context({ needChain = false } = {}) {
     die(`SNOOZE_CHAIN is ${chainId} and deploy/config.json says ${cfg.raw.chainId}`);
 
   const artifacts = resolveArtifacts();
-  const state = loadState(STATE_PATH, { chainId, owner: cfg.owner });
+  let state;
+  try { state = loadState(STATE_PATH, { chainId, owner: cfg.owner }); }
+  catch (e) { die(e.message); }
 
   let rpc = rpcFromEnv();
   if (needChain) {
@@ -72,6 +74,13 @@ export async function context({ needChain = false } = {}) {
   }
   const steps = buildSteps({ cfg, artifacts, state });
   return { cfg, artifacts, state, steps, rpc, chainId, ROOT };
+}
+
+/// pickStep, but a bad step name is a refusal rather than an uncaught throw. Every entry point
+/// takes one from the command line, so this is the argument most likely to be a typo, and a
+/// stack trace is the least useful thing to show somebody mid-deployment.
+export function pick(steps, spec) {
+  try { return pickStep(steps, spec); } catch (e) { die(e.message); }
 }
 
 /// Run a step's read-backs. `target` is the address the step is about; extraCalls carry their

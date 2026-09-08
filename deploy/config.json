@@ -91,7 +91,7 @@
       "",
       "So the token is deployed from the owner's wallet, and the ground address goes to the",
       "curve — which is the address buyers actually send ETH to, takes nothing from msg.sender,",
-      "and has no admin at all. \"gate\" is the other safe target. \"token\" is refused."
+      "and has no admin at all. \"token\" is refused."
     ],
     "target": "curve",
     "_grind": "node deploy/scripts/grind.mjs   (which computes the real init-code hash first, then runs tools/vanity-par.mjs)",

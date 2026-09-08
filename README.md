@@ -96,7 +96,7 @@ sha256(web/snooze.html)  = 853fd2c8e91db008592707307be8c0a45bc3229c3ed0d78efbf59
 sh test/run-all.sh         # everything below, no network touched
 ```
 
-**1927 assertions across twenty-three suites.**
+**1972 assertions across twenty-three suites.**
 
 `test/run.mjs` — 368, drives the real page in Chromium against `test/mock-rpc.mjs`: Keccak vectors,
 the four EIP-55 reference addresses, the v4 poolId derivation checked against a real Base pool
@@ -241,7 +241,7 @@ ordinary externally-owned account rather than from another contract, and gas mea
 the block limit — `launch()` deploys two contracts and makes five state-changing calls in one
 transaction, and comes in at 7.2% of a 30M block. It writes `deploy/`.
 
-`test/run-deploy.mjs` — 171, the deployment sequence in `deploy/scripts` sent step by step into
+`test/run-deploy.mjs` — 216, the deployment sequence in `deploy/scripts` sent step by step into
 an in-process EVM, using the exact bytes `build.mjs` prints and `deploy/deploy.html` sends. It is
 an execution rather than a grep because that is what found the thing that decides the shape of
 the whole sequence: **`Snooze` deployed through `SnoozeDeployer` mints the entire supply to the

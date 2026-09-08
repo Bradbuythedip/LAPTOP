@@ -4,10 +4,12 @@ Six steps. Each one builds a transaction, shows you exactly what it is and what 
 never be undone, waits for you to send it from your own wallet, and then reads the result back
 off the chain before it will build the next one.
 
-**Nothing here holds a key, asks for one, or can send anything.** There is no `--send`, no
-signer and no signing library in `package.json`; the RPC client's method allowlist contains no
-sending method at all, and `test/run-deploy.mjs` greps this directory for every one of them. The
-scripts build bytes. Your wallet signs them.
+**Nothing here holds a key, asks for one, or can send anything.** There is no `--send` and no
+signer; the RPC client's method allowlist has seven read methods and no sending method at all,
+and `test/run-deploy.mjs` greps this directory for every signing method by name. There is no
+wallet library either — no ethers, web3 or viem in `package.json`. (`ethereum-cryptography` is a
+dependency and it *could* sign; nothing here imports anything from it but `keccak`, which is what
+a selector is.) The scripts build bytes. Your wallet signs them.
 
 ```
 export SNOOZE_RPC=https://mainnet.base.org      # reads only. Never put a keyed URL in a file here
@@ -28,9 +30,12 @@ Node's `fetch` attaches the full URL to a network error's cause and one `console
 would publish the key to a terminal log.
 
 `SNOOZE_CHAIN=84532` targets Base Sepolia for the rehearsal `LAUNCH.md` §4.0 calls the
-highest-value item in the whole document. The launch state file records which chain it was
-written on and refuses to be read on another, so a rehearsal cannot leave mainnet steps marked
-verified from testnet answers.
+highest-value item in the whole document, `SNOOZE_CONFIG` points at a parameter file other than
+`deploy/config.json` (the rehearsal has a different oracle and different deployed addresses, and
+should not be edited into the file the real launch will be sent from), and `SNOOZE_STATE` moves
+the progress file. The launch state records which chain and which owner it was written for and
+refuses to be read on another, so a rehearsal cannot leave mainnet steps marked verified from
+testnet answers.
 
 ## Two things this sequence does that LAUNCH.md does not
 
@@ -88,6 +93,24 @@ curve is a sell: sending the whole float reverts on the daily cap, and retrying 
 what it should, with immutable parameters. So `5.register` refuses to build until the chain says
 the curve already holds its whole allocation. That is a read, not a comment, because a
 precondition nobody checks is not one.
+
+### And one thing it does that the launchpad path could not
+
+`LAUNCH.md` §1 records the design finding that `SnoozeLaunchpad.launch()` cap-exempts
+`msg.sender` and then freezes, so the launcher's wallet — holding 100% of the supply — ends up
+outside **both** rules permanently, because `capExempt` skips the burn as well as the cap.
+
+That does not happen here. `setPool(curve, true)` sets `capExempt[curve]`, not
+`capExempt[msg.sender]` (`Snooze.sol`: `capExempt[p] = on`), and nothing else in this sequence
+calls `setCapExempt`. So the owner's residual treasury is subject to Rule 1 and Rule 2 exactly
+like everybody else's, and `freeze()` makes that permanent. There is no wallet to move it out
+of, and no exemption to disclose.
+
+Which matters for where the supply ends up: at `curveSupply` 8e29 of a 1e30 supply, 20% stays in
+the owner's hands from the moment the token is deployed, and `bondPreview()`'s leftover —
+`curveSupply / m`, so 8e28 at the m = 10 this `bondTarget` encodes — returns to `feeTo` if the
+curve graduates. Publish the owner's address alongside the token's; it is an ordinary holder
+under both rules, and it is checkable.
 
 ## The sequence
 

@@ -9,8 +9,7 @@
 // they build from the same lib/steps.mjs so they cannot say different things.
 //
 // It does NOT send, and it holds no key. There is no --send, no --private-key and no signer.
-import { context, die, bar, bold, dim, red, printChecks } from "./lib/run.mjs";
-import { pickStep } from "./lib/steps.mjs";
+import { context, die, bar, bold, dim, red, printChecks, pick } from "./lib/run.mjs";
 import { stepState } from "./lib/state.mjs";
 import { toChecksum } from "./lib/abi.mjs";
 
@@ -21,7 +20,7 @@ const ci = argv.indexOf("--confirm");
 const confirmed = ci >= 0 ? argv[ci + 1] : null;
 
 const { cfg, steps, state, rpc } = await context();
-const { step, txKey } = pickStep(steps, spec);
+const { step, txKey } = pick(steps, spec);
 
 const why = step.blocked();
 if (why) die(why);

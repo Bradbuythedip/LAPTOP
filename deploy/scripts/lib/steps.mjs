@@ -434,8 +434,14 @@ export function buildSteps({ cfg, artifacts, state }) {
       ],
       confirm: "the curve parameters and the fee address are immutable and I have checked them",
       blocked: () => need("salt", "the curve is deployed at the ground address"),
+      // The curve is deployed BY A CONTRACT, so the transaction is a call to SnoozeDeployer and
+      // its receipt carries no contractAddress — a receipt only names an address it created
+      // directly. There is nothing to learn from it, and nothing needs learning: CREATE2 means
+      // the address was fixed when the salt was ground, and step 4 recorded it. This is what
+      // record.mjs uses when a receipt has no address of its own.
+      expectAddress: () => saltRecord.predicted || null,
       verify: {
-        target: () => curveAddress,
+        target: () => curveAddress || saltRecord.predicted,
         needsAddress: "the address SnoozeCurve landed at",
         calls: [view("token()"), view("feeTo()"), view("feeBps()"), view("virtualEth()"),
                 view("curveSupply()"), view("bondTarget()"), view("gateToken()"),
@@ -468,11 +474,34 @@ export function buildSteps({ cfg, artifacts, state }) {
           c.num(results, "bondTarget()", cfg.curve.bondTarget);
           c.addr(results, "gateToken()", cfg.curve.gateToken);
           c.num(results, "gateMin()", cfg.curve.gateMin);
-          c.num(results, "sold()", 0n, "sold() is 0 — nothing has traded yet");
-          c.num(results, "reserveEth()", 0n, "reserveEth() is 0");
+          // NOT assertions that these are zero. They are zero if you verify before anybody
+          // trades, and the curve is public from the block it is funded — a single buy between
+          // the transfer and this read would otherwise fail step 5 forever, and step 6 is
+          // gated on step 5, so freeze() and seal() would be unreachable for the rest of the
+          // token's life. What actually has to hold is that the curve has not bonded and has
+          // not sold more than it owns; the two numbers are reported so you can see whether
+          // trading has started, which is a fact and not a failure.
+          const sold = decode(results, "sold()", readUint);
+          c.add(sold !== null && sold <= cfg.curve.curveSupply,
+                "sold() is within what the curve was funded with",
+                sold === null ? "could not be read"
+                  : sold === 0n ? "nothing has traded yet"
+                  : `${sold} already sold — trading has started, so freeze quickly`);
+          const res = decode(results, "reserveEth()", readUint);
+          c.add(res !== null, "reserveEth() reads",
+                res === null ? "could not be read" : res === 0n ? "" : `${res} wei already in`);
           c.bool(results, "bonded()", false);
-          c.num(results, "token.balanceOf(curve)", cfg.curve.curveSupply,
-                "the curve actually holds every token it is allowed to sell");
+          // held + sold, not held == curveSupply. The curve is public from the block it is
+          // funded, and every buy moves tokens out of it (`sold += out`, then a transfer), so a
+          // strict equality fails the moment anybody trades before you get round to verifying —
+          // and step 6 is gated on step 5, so freeze() and seal() would be out of reach for the
+          // rest of the token's life. The invariant SnoozeCurve actually maintains is that what
+          // it holds plus what it has sold is what it was funded with.
+          const held = decode(results, "token.balanceOf(curve)", readUint);
+          c.add(held !== null && sold !== null && held + sold >= cfg.curve.curveSupply,
+                "the curve holds every token it is allowed to sell, less what it has sold",
+                held === null || sold === null ? "could not be read"
+                  : `holds ${held}, sold ${sold}, funded with ${cfg.curve.curveSupply}`);
           c.bool(results, "token.isPool(curve)", true,
                  "isPool(curve) is true, so both Snooze rules are on");
           c.bool(results, "token.capExempt(curve)", true,
@@ -560,6 +589,15 @@ export const AFTER_THE_SEQUENCE = [
       "the fix is a contract change that pins `pool` at construction. Until then, either " +
       "watch for the target yourself and be first, or accept the race, and do not let anyone " +
       "find out about it after they have bought.",
+  },
+  {
+    title: "Where the supply ends up",
+    body: "The curve is funded with curveSupply and the rest stays in your wallet from the " +
+      "block the token is deployed — at the configured numbers that is 20% of supply, and " +
+      "another 8% comes back to feeTo as bondPreview()'s leftover (curveSupply / m) if the " +
+      "curve graduates. Unlike the launchpad path in LAUNCH.md 1, that residual is not exempt " +
+      "from anything: setPool exempts the CURVE, not the sender, so your treasury sits under " +
+      "both rules like everybody else's and freeze() makes it permanent. Publish the address.",
   },
   {
     title: "The site still points at nothing",

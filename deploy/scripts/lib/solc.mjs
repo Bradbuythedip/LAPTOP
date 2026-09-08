@@ -1,4 +1,4 @@
-// Compile the four contracts this launch actually deploys, and pin what they compile to.
+// Compile the three contracts this launch actually deploys, and pin what they compile to.
 //
 // WHY THIS EXISTS ALONGSIDE test/run-deployable.mjs. That script is the go/no-go for the
 // launchpad-era contracts — SnoozeLaunchpad, Snooze, PooledLaunchBuy, LaunchTaxRamp — and it

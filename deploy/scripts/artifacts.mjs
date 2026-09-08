@@ -22,6 +22,16 @@ if (warnings.length) {
   process.exit(1);
 }
 
+// Checked BEFORE the first write, not between the two. The first version validated the config
+// after artifacts.json had already been written, so a bad config left the two files holding
+// different compiles under a message saying it had refused to write.
+const cfg = loadConfig();
+if (cfg.problems.length) {
+  console.error("deploy/config.json has problems, refusing to write artifacts:");
+  for (const p of cfg.problems) console.error("  · " + p);
+  process.exit(1);
+}
+
 fs.writeFileSync(ARTIFACTS_JSON, JSON.stringify(a, null, 2) + "\n");
 
 // The browser twin carries the same compile output PLUS the launch parameters, because
@@ -32,12 +42,6 @@ fs.writeFileSync(ARTIFACTS_JSON, JSON.stringify(a, null, 2) + "\n");
 // The parameters are the RESOLVED ones, so the page cannot re-derive them differently: the
 // bigints are stringified, gateUntil is the value config.mjs computed, and the checks
 // config.mjs ran have already passed by the time this is written.
-const cfg = loadConfig();
-if (cfg.problems.length) {
-  console.error("deploy/config.json has problems, refusing to write artifacts:");
-  for (const p of cfg.problems) console.error("  · " + p);
-  process.exit(1);
-}
 const str = v => (typeof v === "bigint" ? v.toString() : v);
 const launch = {
   chainId: cfg.chainId,

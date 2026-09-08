@@ -16,7 +16,12 @@ import { sameAddress, toChecksum, ZERO } from "./abi.mjs";
 import { CHAINS } from "./rpc.mjs";
 import { NEVER_READY_MEANS } from "./oracle.mjs";
 
-export const CONFIG_PATH = path.join(ROOT, "deploy", "config.json");
+/// SNOOZE_CONFIG points at a different parameter file, which is what a Base Sepolia rehearsal
+/// needs: the same sequence, a different oracle address and a different set of deployed
+/// contracts, without editing the file the mainnet launch will be sent from. LAUNCH.md 4.0
+/// calls that rehearsal the highest-value item in the document, and it is not one you can do
+/// while the only config is the real one.
+export const CONFIG_PATH = process.env.SNOOZE_CONFIG || path.join(ROOT, "deploy", "config.json");
 
 const HEX = new Set("0123456789abcdef");
 const isAddr = a => /^0x[0-9a-fA-F]{40}$/.test(String(a ?? ""));
@@ -131,6 +136,10 @@ export function loadConfig(file = CONFIG_PATH) {
   const gateToken = cfg.gate.gateToken ? cfg.gate.gateToken : ZERO;
   let gateMin = 0n;
   try { gateMin = big(cfg.gate.gateMin ?? 0); } catch { bad("gate.gateMin is not an integer"); }
+  // Negative is neither zero nor positive, so it slips between both halves of the gate check
+  // below and then resolves gateUntil to 0 — a config that validates clean and reverts at
+  // construction on the one field the contract does check.
+  if (gateMin < 0n) bad("gate.gateMin cannot be negative — it is a uint256 on chain");
   if (gateToken !== ZERO && !isAddr(gateToken))
     bad("gate.gateToken is neither empty nor an address");
   if (sameAddress(gateToken, ZERO) !== (gateMin === 0n))
@@ -163,6 +172,15 @@ export function loadConfig(file = CONFIG_PATH) {
   if (suffix.length > 8)
     bad(`vanity.suffix is ${suffix.length} characters, about ` +
         `${(16 ** suffix.length).toExponential(1)} salts — that is not a wait, it is a refusal`);
+
+  // The oracle address is the single most irreversible field in the whole sequence, and it was
+  // the only address escaping the checksum discipline the owner gets. A lower-cased address
+  // that lost a character in a paste is still a valid address; a checksummed one is not.
+  if (cfg.oracle.address && isAddr(cfg.oracle.address) &&
+      toChecksum(cfg.oracle.address) !== cfg.oracle.address &&
+      cfg.oracle.address !== cfg.oracle.address.toLowerCase())
+    bad(`oracle.address fails its EIP-55 checksum — it should be ` +
+        `${toChecksum(cfg.oracle.address)}`);
 
   /* ---- the oracle documentation, checked against the choices the code accepts ---- */
   for (const k of ORACLE_CHOICES)

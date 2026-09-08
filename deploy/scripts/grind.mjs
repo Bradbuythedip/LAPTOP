@@ -13,14 +13,14 @@
 // reads the third derivation off the chain by calling addressOf.
 import { spawn } from "node:child_process";
 import path from "node:path";
-import { context, die, bar, bold, dim, green } from "./lib/run.mjs";
-import { pickStep, curveInitCode, curveInitCodeHash } from "./lib/steps.mjs";
+import { context, die, bar, bold, dim, green, pick } from "./lib/run.mjs";
+import { curveInitCode, curveInitCodeHash } from "./lib/steps.mjs";
 import { markVerified, saveState, stepState, STATE_PATH } from "./lib/state.mjs";
 import { create2Address, toChecksum } from "./lib/abi.mjs";
 import { ROOT } from "./lib/solc.mjs";
 
 const { cfg, artifacts, steps, state, chainId } = await context();
-const { step } = pickStep(steps, "salt");
+const { step } = pick(steps, "salt");
 
 const why = step.blocked();
 if (why) die(why);
@@ -30,14 +30,27 @@ const token = stepState(state, "token").readBack?.address;
 const initCode = curveInitCode(artifacts, cfg, token);
 const initHash = curveInitCodeHash(artifacts, cfg, token);
 
+// --max is passed explicitly and it is not optional. tools/vanity-par.mjs computes its
+// per-lane budget as `Number(args[args.indexOf("--max") + 1] || 200e6)`, and with no --max in
+// the list that index is -1, so it reads args[0] — the SUFFIX — and `Number("ba5ed")` is NaN.
+// Every lane then runs zero iterations and the tool exits "no salt found in any lane", which
+// reads exactly like a suffix that is too long rather than a budget that was never set.
+//
+// Sized at 40x the expectation, because the search is geometric: the median is 0.69 * 16^n and
+// one run in a hundred needs 4.6x the mean. 40x turns "it did not find one" into a real signal.
+const expected = 16 ** cfg.vanity.suffix.length;
+const budget = Math.min(Math.ceil(expected * 40), 4e10);
+const args = [cfg.vanity.suffix, "--deployer", deployer, "--inithash", initHash,
+              "--max", String(budget)];
+
 console.log(bar(`grinding …${cfg.vanity.suffix} for ${cfg.vanity.contract}`));
 console.log(`  deployer   ${toChecksum(deployer)}`);
 console.log(`  token      ${toChecksum(token)}   ${dim("(inside the init code, hence the order)")}`);
 console.log(`  init code  ${(initCode.length - 2) / 2} bytes`);
 console.log(`  initHash   ${initHash}`);
-console.log(dim(`  about ${(16 ** cfg.vanity.suffix.length).toLocaleString()} salts on average\n`));
+console.log(dim(`  about ${expected.toLocaleString()} salts on average, ` +
+                `${budget.toLocaleString()} before it gives up\n`));
 
-const args = [cfg.vanity.suffix, "--deployer", deployer, "--inithash", initHash];
 const out = await new Promise((resolve, reject) => {
   const k = spawn(process.execPath, [path.join(ROOT, "tools", "vanity-par.mjs"), ...args],
                   { stdio: ["ignore", "pipe", "inherit"] });
