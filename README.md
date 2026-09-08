@@ -79,7 +79,7 @@ file and opening it locally removes the hosting party from the trust question en
 Published build `2026-09-08a`:
 
 ```
-sha256(web/index.html)   = db884de9945316e6458d6b9af3c112c1c04c2a487998c594cfc581e462061db1
+sha256(web/index.html)   = b144fe1fb3c63367ce99dffad8dc3a16f194f637a1cc806dc887826ad92283f2
 sha256(web/buy.html)     = 2e41166e2adee2b4d823e766a13ed39c3e8376fc1522ff85c12a7abe146c1726
 sha256(web/checker.html) = f353cc03fae59f4a05d99ada22b94028e3b2e5656dca858fab33a7b461b3555e
 sha256(web/size.html)    = bbdf523d9a92489bc0a13dbd7aaecd256e0c02f66de1dc1d6ad332a9060e1fb1
@@ -96,7 +96,7 @@ sha256(web/snooze.html)  = 853fd2c8e91db008592707307be8c0a45bc3229c3ed0d78efbf59
 sh test/run-all.sh         # everything below, no network touched
 ```
 
-**1734 assertions across twenty-two suites.**
+**1736 assertions across twenty-two suites.**
 
 `test/run.mjs` — 353, drives the real page in Chromium against `test/mock-rpc.mjs`: Keccak vectors,
 the four EIP-55 reference addresses, the v4 poolId derivation checked against a real Base pool
@@ -124,7 +124,7 @@ of the JavaScript, plus properties a size curve lives or dies on: output rises w
 effective price strictly worsens, a fee costs exactly its rate at the limit, deeper liquidity
 fills better, and no fill can exceed the output-side virtual reserve. Emits the fixture below.
 
-`test/run-index.mjs` — 167, drives the $SNOOZE landing page. Most of it is about one
+`test/run-index.mjs` — 169, drives the $SNOOZE landing page. Most of it is about one
 distinction: a plot of a FORMULA and a plot of a MARKET look identical from three feet away, so
 the suite asserts which one is on screen. With nothing deployed the chart shows Rule 1 itself —
 exact, checkable against `burnBps()` in the contract, labelled *this is arithmetic, not a
@@ -347,9 +347,16 @@ pooled buy calls and the pool Rule 1 taxes, and nothing deployed is both. `LAUNC
 through the three shapes that follow from that, one of which is broken in a way that looks
 correct.
 
-## Snooze — the launchpad
+## Snooze — the launch machinery
 
-The launchpad is Snooze. Every token launched on it carries the two rules, and `$SNOOZE` is
+> **The relationship between $SNOOZE and LAPTOP is not settled, and this section describes the
+> contracts, not the product.** An earlier version of the site said "LAPTOP is the first launch
+> on $SNOOZE". That was invented here and it is wrong — the two are separate tokens on Base,
+> and what is actually known is that holding $SNOOZE is how you get into LAPTOP. The contracts
+> below deploy a token that carries the two rules; whether LAPTOP is one of them is an open
+> question, not a fact this repo should be asserting.
+
+Every token launched through `SnoozeLaunchpad` carries the two rules, and `$SNOOZE` is
 the first ticker on it.
 
 **`contracts/SnoozeLaunchpad.sol` exists for exactly one reason,** and it is not convenience.

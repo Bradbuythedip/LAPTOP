@@ -169,20 +169,26 @@ console.log("── the page says what the mechanism is, in as few words as it t
   // What the page owes a reader is the true version, in the steps AND in the limits.
   ok("it does not claim to be permissionless while the deployer is locked",
      !/anyone can launch/i.test(body));
-  ok("it says one wallet launches, for now", /One wallet launches, for now/i.test(body));
+  ok("it says $SNOOZE launches first", /\$SNOOZE launches first/i.test(body));
   ok("and repeats it where the limits are listed",
      /not permissionless yet/i.test(body) && /nobody else can launch/i.test(body));
   ok("while being clear that buying is open to everyone", /Anyone can BUY/i.test(body));
   ok("it says the price is a curve rather than a pool", /a curve, not a pool/i.test(body));
+  ok("and does not describe itself as a launchpad", !/launchpad/i.test(body));
   ok("it says the curve can only pay out what came in",
      /only ever pay out the ETH that came in/i.test(body));
   ok("bonding is described with a number, not a vibe",
      /2\.16/.test(body) && /bonds/i.test(body));
   ok("Rule 1 is stated against the 24-hour average", /24-hour average/i.test(body));
-  ok("LAPTOP is named as the first launch on the pad",
-     /LAPTOP is the first launch on it/i.test(body));
-  ok("the gate is stated in the hero, where the decision is made",
-     /Hold \$SNOOZE to bid on LAPTOP at launch/i.test(body));
+  // "LAPTOP is the first launch on $SNOOZE" was never true — it was invented here and the
+  // assertion was holding it up. What the owner actually said is that holding one gets you the
+  // other, so that is what is asserted, and the invented version is asserted ABSENT.
+  ok("it does not claim LAPTOP launches on $SNOOZE",
+     !/first launch on it/i.test(body) && !/Launchpad on Base/i.test(body));
+  ok("the gate is the first thing the hero says",
+     /Hold \$SNOOZE to get into LAPTOP/i.test(body));
+  ok("and both are named as separate tokens on Base",
+     /Two tokens on Base/i.test(body));
   ok("and the dynamic is stated, not just the rule",
      /pays holders, not renters/i.test(body));
   ok("including that renting the gate is the worst way to use it",
