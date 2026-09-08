@@ -33,6 +33,12 @@
      and --baseLt is the tint allowed to speak at 5.68:1. Using the brand blue as text would be
      the one place on this site where the brand beat the reader. */
   --base:#0052ff; --baseLt:#5b94ff; --baseSoft:rgba(0,82,255,.16); --onBase:#ffffff;
+  /* #0000FF is CSS pure blue and it is NOT Base's blue — Base's is the #0052ff above, and the
+     two are visibly different side by side. It earns a token anyway because it is the deeper
+     end of the same hue, and a wash nobody reads text on is the one place a colour can be
+     chosen for how it looks rather than for what it scores: as text it would be 2.29:1 here,
+     worse than the brand blue it is standing next to. It fills nothing and labels nothing. */
+  --baseDeep:#0000ff;
   --onGold:#140f02;                  /* text ON a gold fill. White on gold is 1.70:1 — unusable */
   --ok:#4fd18a; --okbg:rgba(79,209,138,.13);
   --bad:#ff8178; --badbg:rgba(255,129,120,.13);
@@ -123,8 +129,13 @@ a.cta{display:inline-flex;align-items:center;justify-content:center;gap:8px;
   background:var(--gold);color:var(--onGold);font-weight:700;font-size:15px;
   text-decoration:none;border:1.5px solid var(--gold)}
 a.cta:hover{background:var(--goldHi);border-color:var(--goldHi)}
-a.cta.sub2{background:transparent;color:var(--fg);border-color:var(--edge);font-weight:600}
-a.cta.sub2:hover{border-color:var(--gold);color:var(--goldHi)}
+/* The second hero button, in Base blue. Gold stays the colour of the thing to press — one
+   action per screen — and this is the other one, so it needs to be a button without competing
+   to be THE button. Filled rather than outlined, because #0052ff is 2.91:1 on this ground and
+   would be a border you cannot see, while white on it is 5.75:1 and clears AA. Its border is
+   transparent for the same reason and keeps the 1.5px so both buttons measure the same. */
+a.cta.sub2{background:var(--base);color:var(--onBase);border-color:transparent;font-weight:600}
+a.cta.sub2:hover{background:var(--baseLt);color:#06122c;border-color:transparent}
 
 /* ------------------------------------------------------------------------ the live panel.
    Deliberately large. It is the only part of this page that is not an argument. */
@@ -278,10 +289,12 @@ ul{margin:0;padding-left:18px} li{margin-bottom:5px}
 .ca[hidden]{display:none}
 /* The one control in those rows, and it looks like one. */
 a.cta[hidden]{display:none}
+/* Also Base blue, and for a plainer reason than the hero button: the thing it copies is a
+   Base address. Filled white-on-blue at 5.75:1, next to a gold Buy that stays the loud one. */
 .copy{font:inherit;font-size:11.5px;font-weight:600;padding:6px 10px;min-height:32px;
-  border:1.5px solid var(--edge);border-radius:5px;background:#111a2a;color:var(--fg);
+  border:1.5px solid transparent;border-radius:5px;background:var(--base);color:var(--onBase);
   cursor:pointer;flex:none}
-.copy:hover{border-color:var(--gold);color:var(--goldHi)}
+.copy:hover{filter:brightness(1.18)}
 .copy:active{transform:translateY(1px)}
 .copy:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
 .owner{border-left:3px solid var(--gold)}
@@ -307,14 +320,22 @@ a.cta[hidden]{display:none}
 
 body::before{content:"";position:fixed;inset:0;z-index:-3;pointer-events:none;
   background:url("/bg.png") center center / cover no-repeat;opacity:0.34}
+/* The chain, as weather. It sits ABOVE the artwork and BELOW the vignette, so the vignette
+   still does its job of pulling the edges down under the text — a wash painted last would
+   raise the ground everywhere and quietly cost every contrast figure in the palette above.
+   At .07 it is about two levels of blue on a #070b16 ground: findable, never legible. */
+body::after{content:"";position:fixed;inset:0;z-index:-2;pointer-events:none;
+  background:radial-gradient(ellipse 90% 60% at 50% 0%,
+    rgba(0,0,255,.07) 0%, rgba(0,0,255,.035) 45%, rgba(0,0,255,0) 78%)}
 html::before{
   content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;
   background:radial-gradient(ellipse 120% 90% at 50% 38%,
     rgba(7,11,22,.30) 0%, rgba(7,11,22,.62) 48%, rgba(6,9,19,.90) 82%, rgba(5,8,17,.97) 100%);
 }
 /* Boundaries of things you can touch, at 3:1. --line is 1.28:1 on a card and is for dividers
-   only; anything with a hit area gets --edge (4.87:1). */
-a.cta.sub2{border-color:var(--edge)}
+   only; anything with a hit area gets --edge (4.87:1). A FILLED control does not need one:
+   .cta.sub2 is its own boundary at 5.75:1 against the ground, which is the rule this line
+   was enforcing rather than the border it used to enforce it with. */
 /* Three spinners rotated forever regardless of the setting, on three different pages, because
    the reduced-motion guard was written for the hero and nothing else. */
 @media (prefers-reduced-motion:reduce){

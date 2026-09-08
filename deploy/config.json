@@ -97,7 +97,20 @@
     "_comment": "An address is hex, so only 0-9 and a-f exist in one. PUMP, DUMP, BULL, MOON, BEAR and ZZZ all contain letters the alphabet does not have and cannot be ground at any cost.",
     "_reachable": "ba5ed (BASED), bada55 (BADASS), 1337 (LEET), 600d (GOOD), beabed (BEA-BED), 5eeded (SEEDED), acce55 (ACCESS), f00d, face, dead, cafe, beef",
     "_ifYouWantAWordThatIsNotHex": "It goes in a Base name, not in the address. pump.snoozebear.eth is what a wallet shows people; the hex underneath it can be anything.",
-    "suffix": "ba5ed",
+    "_suffix": [
+      "8453 is Base's chain id, and every character of it is a digit, so unlike BASE it is",
+      "reachable. Four hex characters is 16^4 = 65,536 salts on average, which is about a",
+      "second — cheap enough that a re-grind after a missed prediction costs nothing.",
+      "",
+      "Rejected: ba5ed (BASED), the previous value, at 16^5 = 1.05M and about seven seconds.",
+      "Nothing wrong with it; 8453 says the chain rather than a pun, and a chain id is the one",
+      "thing a buyer checking an address on a block explorer is actually looking for.",
+      "",
+      "Rejected: both, ...ba5ed8453. Nine characters is 16^9 = 68.7 BILLION salts, and this",
+      "machine grinds about 150k/s across its lanes, so five days — for an address nobody",
+      "reads past the first six characters of anyway."
+    ],
+    "suffix": "8453",
     "_target": [
       "Which contract gets the ground address. It is NOT the token, and that is a fact about",
       "these contracts rather than a preference:",

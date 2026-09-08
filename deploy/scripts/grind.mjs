@@ -12,11 +12,13 @@
 // keccak(0xff, deployer, salt, initCodeHash) independently before anything is sent, and step 5
 // reads the third derivation off the chain by calling addressOf.
 import { spawn } from "node:child_process";
+import fs from "node:fs";
 import path from "node:path";
 import { context, die, bar, bold, dim, green, pick } from "./lib/run.mjs";
 import { curveInitCode, curveInitCodeHash } from "./lib/steps.mjs";
-import { markVerified, saveState, stepState, STATE_PATH } from "./lib/state.mjs";
-import { create2Address, toChecksum } from "./lib/abi.mjs";
+import { markVerified, saveState, stepState, STATE_PATH,
+         PREDICTION_PATH } from "./lib/state.mjs";
+import { create2Address, toChecksum, sameAddress } from "./lib/abi.mjs";
 import { ROOT } from "./lib/solc.mjs";
 
 const { cfg, artifacts, steps, state, chainId } = await context();
@@ -43,15 +45,40 @@ const budget = Math.min(Math.ceil(expected * 40), 4e10);
 const args = [cfg.vanity.suffix, "--deployer", deployer, "--inithash", initHash,
               "--max", String(budget)];
 
+// A salt ground before the launch by deploy/scripts/predict.mjs, reused only after the ONE
+// comparison that matters: the init-code hash it was ground against, recomputed here from the
+// token that really landed, has to be identical. It is a hash of the curve's bytecode with the
+// token address inside it, so if the wallet's nonce moved — an approval, a reverted
+// transaction — the token is elsewhere, this hash differs, and the prediction is discarded
+// rather than turned into a salt for an address the deployment will never reach.
+//
+// Not conditional on trusting the file. Nothing in it is taken except the salt, and the salt
+// is checked by the same two derivations every ground salt goes through below.
+let reused = null, predictionNote = "";
+if (fs.existsSync(PREDICTION_PATH)) {
+  try {
+    const prev = JSON.parse(fs.readFileSync(PREDICTION_PATH, "utf8"));
+    if (prev.salt && prev.initCodeHash === initHash && prev.suffix === cfg.vanity.suffix &&
+        sameAddress(prev.deployer, deployer)) {
+      reused = prev.salt;
+      predictionNote = "reusing the salt predict.mjs ground against this same init-code hash";
+    } else {
+      predictionNote = "the prediction was ground against different numbers — grinding fresh";
+    }
+  } catch { /* a corrupt prediction is one to redo, not an error to stop the launch on */ }
+}
+
 console.log(bar(`grinding …${cfg.vanity.suffix} for ${cfg.vanity.contract}`));
 console.log(`  deployer   ${toChecksum(deployer)}`);
 console.log(`  token      ${toChecksum(token)}   ${dim("(inside the init code, hence the order)")}`);
 console.log(`  init code  ${(initCode.length - 2) / 2} bytes`);
 console.log(`  initHash   ${initHash}`);
+if (predictionNote) console.log(dim(`  prediction ${predictionNote}`));
 console.log(dim(`  about ${expected.toLocaleString()} salts on average, ` +
                 `${budget.toLocaleString()} before it gives up\n`));
 
-const out = await new Promise(resolve => {
+const out = reused ? `salt      ${reused}\naddress   ${create2Address(deployer, reused, initHash)}\n`
+: await new Promise(resolve => {
   const k = spawn(process.execPath, [path.join(ROOT, "tools", "vanity-par.mjs"), ...args],
                   { stdio: ["ignore", "pipe", "inherit"] });
   let buf = "";
