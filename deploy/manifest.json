@@ -3,12 +3,14 @@
     "contract": "SnoozeLaunchpad",
     "initCodeBytes": 13021,
     "runtimeBytes": 12993,
+    "deployExecutionGas": 2601414,
     "constructorInputs": []
   },
   {
     "contract": "Snooze",
     "initCodeBytes": 5428,
     "runtimeBytes": 4977,
+    "deployExecutionGas": 1043243,
     "constructorInputs": [
       "uint256 supply",
       "address _oracle",
@@ -20,6 +22,7 @@
     "contract": "PooledLaunchBuy",
     "initCodeBytes": 4462,
     "runtimeBytes": 3828,
+    "deployExecutionGas": 767634,
     "constructorInputs": [
       "address _router",
       "address _token",
@@ -34,6 +37,7 @@
     "contract": "LaunchTaxRamp",
     "initCodeBytes": 3233,
     "runtimeBytes": 2462,
+    "deployExecutionGas": 633844,
     "constructorInputs": [
       "tuple s",
       "address seedLp"

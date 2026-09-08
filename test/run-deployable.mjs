@@ -59,6 +59,7 @@ for (const n of DEPLOYABLE) {
 }
 
 console.log("── the constructor arguments you will paste actually work");
+const gas = {};
 {
   // Every deployment below runs the real constructor with real encoded arguments. If the
   // encoding is wrong the deployment reverts here rather than on Base.
@@ -72,6 +73,7 @@ console.log("── the constructor arguments you will paste actually work");
     .then(r => r).catch(e => e);
   ok("SnoozeLaunchpad deploys with no constructor arguments", !(lp instanceof Error),
      String(lp));
+  if (!(lp instanceof Error)) gas.SnoozeLaunchpad = lp.gasUsed;
 
   const orc = await deploy(all.MockOracle.evm.bytecode.object, "", { evm });
   await call({ evm, address: orc.address }, "set(uint256,uint256,bool)", [E, E, 1]);
@@ -81,18 +83,21 @@ console.log("── the constructor arguments you will paste actually work");
      "0x00000000000000000000000000000000000000de", 0].map(w).join(""), { evm })
     .then(r => r).catch(e => e);
   ok("Snooze deploys with (supply, oracle, dev, devBps)", !(tok instanceof Error), String(tok));
+  if (!(tok instanceof Error)) gas.Snooze = tok.gasUsed;
 
   const pool = await deploy(all.PooledLaunchBuy.evm.bytecode.object,
     [orc.address.toString(), orc.address.toString(), 1000, 1000 + 86400 * 2, 0, 500, 1]
       .map(w).join(""), { evm })
     .then(r => r).catch(e => e);
   ok("PooledLaunchBuy deploys with its seven arguments", !(pool instanceof Error), String(pool));
+  if (!(pool instanceof Error)) gas.PooledLaunchBuy = pool.gasUsed;
 
   const ramp = await deploy(all.LaunchTaxRamp.evm.bytecode.object,
     [0, 0, 100, 100, 0, 1000, 500, 0, "0x00000000000000000000000000000000000005ee"]
       .map(w).join(""), { evm })
     .then(r => r).catch(e => e);
   ok("LaunchTaxRamp deploys with its schedule struct", !(ramp instanceof Error), String(ramp));
+  if (!(ramp instanceof Error)) gas.LaunchTaxRamp = ramp.gasUsed;
 
   // The one that matters most: a launch from a plain EOA, which is what a wallet is.
   const rtr = await deploy(all.SnoozeRouter.evm.bytecode.object,
@@ -104,6 +109,22 @@ console.log("── the constructor arguments you will paste actually work");
     [], { from: DEPLOYER, timestamp: 1000, raw: params });
   ok("and a launch succeeds when sent from an ordinary externally-owned account", r.ok,
      r.revert);
+  gas["launch() itself"] = r.gasUsed;
+
+  // Gas is the other way a deployment fails after you have paid for it: a transaction that
+  // needs more than a block can hold never lands, at any price. launch() deploys two
+  // contracts and makes five state-changing calls inside one transaction, so it is the one
+  // to watch. Base inherits Ethereum's 30M block gas limit; a single transaction that wants
+  // more than half a block is already at the mercy of what else is in it.
+  //
+  // These are EXECUTION gas from an in-process EVM. They exclude the 21,000 intrinsic cost
+  // and the per-byte charge on the calldata, and they are not a quote — they are a check that
+  // nothing here is anywhere near the ceiling.
+  const BLOCK_GAS = 30_000_000;
+  for (const [n, g] of Object.entries(gas)) {
+    ok(`${n} fits in a block with room to spare`, Number(g) < BLOCK_GAS / 2,
+       `${g} gas is more than half of a ${BLOCK_GAS} block`);
+  }
 }
 
 console.log("── nothing here holds or wants a key");
@@ -137,6 +158,8 @@ console.log("── write the artifacts a wallet actually needs");
       contract: n,
       initCodeBytes: sizes[n].init,
       runtimeBytes: sizes[n].runtime,
+      // Execution gas only: no 21,000 intrinsic, no calldata charge. A floor, not a quote.
+      deployExecutionGas: gas[n] === undefined ? null : Number(gas[n]),
       constructorInputs: ctor ? ctor.inputs.map(i => `${i.type} ${i.name}`) : [],
     });
   }
@@ -158,5 +181,9 @@ for (const n of DEPLOYABLE)
   console.log(`  ${n.padEnd(18)} init ${String(sizes[n].init).padStart(6)}   ` +
               `runtime ${String(sizes[n].runtime).padStart(6)}   ` +
               `${(sizes[n].runtime / MAX_RUNTIME * 100).toFixed(1)}% of the EIP-170 limit`);
+console.log("\ndeployment gas (execution only, no 21k intrinsic, no calldata charge):");
+for (const [n, g] of Object.entries(gas))
+  console.log(`  ${n.padEnd(18)} ${String(g).padStart(9)}  ` +
+              `${(Number(g) / 30_000_000 * 100).toFixed(1)}% of a 30M block`);
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

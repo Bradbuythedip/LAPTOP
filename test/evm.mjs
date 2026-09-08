@@ -70,7 +70,9 @@ export async function deploy(bytecodeHex, ctorArgsHex = "", opts = {}) {
   });
   if (r.execResult.exceptionError)
     throw new Error("deploy reverted: " + r.execResult.exceptionError.error);
-  return { evm, address: r.createdAddress };
+  // Execution gas only. It excludes the 21,000 intrinsic cost and the per-byte calldata
+  // charge a real transaction also pays, so treat it as a floor rather than a quote.
+  return { evm, address: r.createdAddress, gasUsed: r.execResult.executionGasUsed };
 }
 
 /// Run a call. Returns {ok, words, raw, revert} — a revert is a result, not a throw, so a
@@ -91,9 +93,10 @@ export async function call(ctx, sig, args = [], opts = {}) {
                        timestamp: BigInt(opts.timestamp ?? 1000) } },
   });
   const raw = bytesToHex(r.execResult.returnValue);
+  const gasUsed = r.execResult.executionGasUsed;
   if (r.execResult.exceptionError)
-    return { ok: false, revert: r.execResult.exceptionError.error, raw, words: [] };
-  return { ok: true, raw, words: decodeWords(raw) };
+    return { ok: false, revert: r.execResult.exceptionError.error, raw, words: [], gasUsed };
+  return { ok: true, raw, words: decodeWords(raw), gasUsed };
 }
 
 /// Give an address a balance, so a depositor can actually send ETH.

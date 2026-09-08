@@ -95,7 +95,7 @@ sha256(web/snooze.html)  = db91da622599c27a8b4947ba0e693027619b5164203065801514c
 sh test/run-all.sh         # everything below, no network touched
 ```
 
-**1272 assertions across seventeen suites.**
+**1277 assertions across seventeen suites.**
 
 `test/run.mjs` — 277, drives the real page in Chromium against `test/mock-rpc.mjs`: Keccak vectors,
 the four EIP-55 reference addresses, the v4 poolId derivation checked against a real Base pool
@@ -166,10 +166,12 @@ distribution still cannot complete: `claim()` is an outbound transfer and the 20
 applies to it. Also carries the axiomatics — the decay condition, depth-versus-appreciation,
 and what a large supply does and does not buy.
 
-`test/run-deployable.mjs` — 27, the go/no-go before a wallet is opened: every runtime under
+`test/run-deployable.mjs` — 32, the go/no-go before a wallet is opened: every runtime under
 EIP-170 and every init code under EIP-3860 (the launchpad is the big one at 52.9% of the
-limit), every constructor run with real encoded arguments, and a full `launch()` sent from an
-ordinary externally-owned account rather than from another contract. It writes `deploy/`.
+limit), every constructor run with real encoded arguments, a full `launch()` sent from an
+ordinary externally-owned account rather than from another contract, and gas measured against
+the block limit — `launch()` deploys two contracts and makes five state-changing calls in one
+transaction, and comes in at 7.2% of a 30M block. It writes `deploy/`.
 
 `test/run-launchpad.mjs` — 37, `launch()` end to end: the wiring granted before any deposit
 can arrive, the three-way distribution that could not settle by hand settling in one block,

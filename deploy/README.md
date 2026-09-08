@@ -24,6 +24,24 @@ constructor has run and been paid for.
 Compiled with solc 0.8.36, optimizer on, 200 runs. Change either and the bytes change, so
 regenerate before you verify on a block explorer or the source will not match.
 
+## What it costs
+
+The other way a deployment fails after you have paid for it: a transaction needing more gas
+than a block can hold never lands, at any price. `launch()` is the one to watch, because it
+deploys two contracts and makes five state-changing calls inside a single transaction.
+
+| Transaction | Execution gas | Of a 30M block |
+| --- | ---: | ---: |
+| Deploy `SnoozeLaunchpad` | 2,601,414 | 8.7% |
+| `launch()` — token + pooled buy + wiring + freeze | 2,159,913 | 7.2% |
+| Deploy `Snooze` alone (you do not need to) | 1,043,243 | 3.5% |
+| Deploy `PooledLaunchBuy` alone (you do not need to) | 767,634 | 2.6% |
+| Deploy `LaunchTaxRamp` | 633,844 | 2.1% |
+
+**These are execution gas from an in-process EVM, not a quote.** They exclude the 21,000
+intrinsic cost and the per-byte charge on your calldata, and they assume no other state. Read
+them as "nothing here is near the ceiling", and let your wallet estimate the real number.
+
 ## The order, and why it is this order
 
 You do **not** deploy `Snooze` and `PooledLaunchBuy` yourself. `SnoozeLaunchpad.launch()`
