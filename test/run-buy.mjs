@@ -58,9 +58,11 @@ ok("no transaction construction",
    !/eth_sendTransaction|eth_sendRawTransaction|personal_sign|signTypedData|signTransaction/.test(src));
 ok("no token approval, which is the other way a page takes your money",
    !/approve\(/.test(src));
-ok("says it does not ask you to sign", (await txt("body")).includes("does not ask you to sign"));
-ok("the swap still happens somewhere else",
-   (await txt("body")).includes("from your own wallet"));
+// Collapse whitespace before matching prose: the assertion is about what the page says, not
+// about where the source happens to wrap.
+const flat = (await txt("body")).replace(/\s+/g, " ");
+ok("says it does not ask you to sign", flat.includes("does not ask you to sign"));
+ok("the swap still happens somewhere else", flat.includes("from your own wallet"));
 
 console.log("── ranking across three venues of different depth");
 await use("venues");
