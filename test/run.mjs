@@ -665,6 +665,36 @@ for (const f of pages) {
      "the old close-it rule now points at this page's own prompt");
 }
 
+// The site's one safety rule has an exception, and the exception has to live somewhere else.
+//
+// A deploy button signs. Every page above is checked to contain none of the seven signing or
+// sending methods, and that check IS the clone argument — "if a page that looks like this asks
+// you to sign, it is not ours". So deploy/deploy.html cannot be a page of this site without
+// deleting that argument for all nine at once, and it is not one: vercel.json publishes web/
+// and nothing else, so deploy/ is never served.
+//
+// Checked from both sides, because only one of them is load-bearing on its own. The readdir
+// above already fails on an unexpected file in web/; what nothing else pins is the reason it
+// has to stay out, and the vercel.json line that keeps it out.
+console.log("── the deploy button is somewhere this site cannot serve it");
+{
+  const here = f => path.join(ROOT, f);
+  ok("deploy/deploy.html exists", fs.existsSync(here("deploy/deploy.html")));
+  ok("and it is not inside web/", !fs.existsSync(here("web/deploy.html")),
+     "a page that signs, served from the origin whose whole clone defence is that it never " +
+     "asks you to sign, takes that defence down for every other page at once");
+  const deployer = fs.readFileSync(here("deploy/deploy.html"), "utf8");
+  ok("it really does sign, which is the reason it had to go outside", SIGNING.test(deployer),
+     "if this stops being true the exile has stopped being justified");
+  const vercel = JSON.parse(fs.readFileSync(here("vercel.json"), "utf8"));
+  ok("vercel publishes web/, so deploy/ is not served at all",
+     vercel.outputDirectory === "web", JSON.stringify(vercel.outputDirectory));
+  for (const f of pages)
+    ok(`${f} does not link to the deploy button`,
+       !/deploy\.html/.test(fs.readFileSync(here("web/" + f), "utf8")),
+       "a visitor must not arrive at a signing page from an origin that promises it never signs");
+}
+
 // The failure a customer actually hits: Phantom installed, Solana side only, LAPTOP on Base.
 // "No wallet found" would be a lie there, and the lie costs them a bridge to the wrong chain.
 console.log("── Phantom: the Solana/EVM split");

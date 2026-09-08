@@ -23,23 +23,54 @@
     "name": "Snooze Bear",
     "symbol": "SNOOZE",
     "decimals": 18,
-    "_devBps": "0 keeps 'supply only falls' exactly true. Up to 2000 is a share OF THE HAIRCUT, never of the trade."
+    "_supply": "1e30 base units = 1e12 whole tokens. A units choice and nothing more: price is E/T, so supply sets the unit price and nobody's share. LAUNCH.md 3 has the arithmetic and the uint192 ceiling that is 27 orders of magnitude away.",
+    "supply": "1000000000000000000000000000000",
+    "_devBps": "0 keeps 'supply only falls' exactly true. Up to 2000 is a share OF THE HAIRCUT, never of the trade.",
+    "devBps": 0,
+    "_dev": "What goes in the constructor's `_dev`, which is NOT the same field as fees.snoozeDev. At devBps 0 the dev is paid nothing ever, and LAUNCH.md 3 asks for the zero address here so that anybody reading dev() on chain can see that at a glance — a live-looking address with no cut invites the question. Set this to fees.snoozeDev only if devBps goes above zero; the scripts refuse the combination of a non-zero devBps and a zero dev.",
+    "dev": "0x0000000000000000000000000000000000000000"
   },
 
   "curve": {
-    "_virtualEth": "Sets what a comfortable buy is denominated in, NOT how deep the book is. 3e18 = a 0.1 ETH buy moves the price 3.3%.",
+    "_virtualEth": "Sets what a comfortable buy is denominated in, NOT how deep the book is. At 3e18 a 0.1 ETH buy raises the ETH reserve 3.3% and the PRICE 6.7% — price is E/T and both sides move, so the price change is roughly double the reserve change. Measured against the compiled curve: spot 3750000 to 4001583, +6.709%.",
     "virtualEth": "3000000000000000000",
     "_bondTarget": "E0*(sqrt(m)-1). At E0=3 and m=10 that is 6.487 ETH of real buys.",
     "bondTarget": "6486832980505137996",
     "feeBps": 100,
-    "_feeBps": "1%, charged in ETH on the way in and the way out, and paid straight to curveFeeTo. Capped at 500 by the contract."
+    "_feeBps": "1%, charged in ETH on the way in and the way out, and paid straight to curveFeeTo. Capped at 500 by the contract.",
+    "_curveSupply": "What the curve may sell — 80% of supply. Not the total supply, and the curve never holds the rest. bondPreview()'s leftover is curveSupply/m, so at the m=10 this bondTarget encodes, 8e28 base units come back to curveFeeTo when it graduates.",
+    "curveSupply": "800000000000000000000000000000"
   },
 
   "gate": {
-    "_comment": "Hold SNOOZE to bid on LAPTOP during the early window. Zero on the SNOOZE curve itself, since there is nothing to hold yet.",
+    "_comment": "Hold SNOOZE to bid on LAPTOP during the early window. Zero on the SNOOZE curve itself, since there is nothing to hold yet — and both halves have to be zero together, or the constructor reverts.",
     "gateToken": "",
     "gateMin": "0",
     "gateUntilHoursAfterLaunch": 24
+  },
+
+  "oracle": {
+    "_comment": [
+      "The one address on the token that nobody can change afterwards, including you. There is",
+      "no oracle in this repository, so there is no default here and the scripts refuse to build",
+      "the token transaction while `choice` is empty. Guessing on your behalf would mean shipping",
+      "one of the two failures below without anybody having decided to.",
+      "",
+      "SETTABLE is contracts/test/SnoozeMocks.sol:MockOracle — a dial that sets every sale's burn",
+      "to anything up to the 90% cap, held forever by whoever holds its key. It must never reach",
+      "Base, so deploy/scripts refuses it by comparing deployed bytecode, not by asking.",
+      "",
+      "REVERTING is a permanent honeypot: ready() runs inside every sell, so sells revert while",
+      "buys work, and the address cannot be changed. Step 1 calls all three views before the",
+      "token exists, which is the only moment refusing still costs nothing."
+    ],
+    "_choices": {
+      "observational": "A real, ownerless observation on Base — a V3/Slipstream observe() adapter wrapped in try/catch, or a V2-style cumulative-price adapter you checkpoint. Rule 1 starts working once 24h of history exists. LAUNCH.md 2.1 has what it must satisfy.",
+      "never-ready": "A deployed oracle whose ready() is false forever. Legitimate, and it means RULE 1 NEVER FIRES: no sale is ever haircut, at any price, on any day. $SNOOZE is then an ordinary ERC-20 with a 20%/day cap on selling into the curve, and nothing else. deploy/deploy.html says exactly that on its face when this is the choice, rather than in a comment."
+    },
+    "choice": "",
+    "address": "",
+    "_address": "Where the chosen oracle is deployed. Step 1 checks ready(), spot() and twap24() all return without reverting WITH NO HISTORY YET, because that is the state they will be in at the moment of launch."
   },
 
   "vanity": {
@@ -47,7 +78,23 @@
     "_reachable": "ba5ed (BASED), bada55 (BADASS), 1337 (LEET), 600d (GOOD), beabed (BEA-BED), 5eeded (SEEDED), acce55 (ACCESS), f00d, face, dead, cafe, beef",
     "_ifYouWantAWordThatIsNotHex": "It goes in a Base name, not in the address. pump.snoozebear.eth is what a wallet shows people; the hex underneath it can be anything.",
     "suffix": "ba5ed",
-    "_grind": "node tools/vanity-par.mjs beabed --deployer <SnoozeDeployer> --inithash <keccak of the real init code>",
-    "_warning": "The address depends on the exact bytecode AND the constructor arguments. Grind last, after nothing else will change."
+    "_target": [
+      "Which contract gets the ground address. It is NOT the token, and that is a fact about",
+      "these contracts rather than a preference:",
+      "",
+      "Snooze's constructor runs `balanceOf[msg.sender] = supply` and `admin = msg.sender`.",
+      "Deployed through SnoozeDeployer, msg.sender is the DEPLOYER CONTRACT — so the entire",
+      "supply is minted to a contract with no transfer, no approve and no rescue, and the admin",
+      "that could register the curve as a pool is that same contract, which has no function that",
+      "could call setPool. The supply would be unrecoverable and neither Snooze rule could ever",
+      "be switched on. test/run-deploy.mjs deploys it that way and measures both.",
+      "",
+      "So the token is deployed from the owner's wallet, and the ground address goes to the",
+      "curve — which is the address buyers actually send ETH to, takes nothing from msg.sender,",
+      "and has no admin at all. \"token\" is refused."
+    ],
+    "target": "curve",
+    "_grind": "node deploy/scripts/grind.mjs   (which computes the real init-code hash first, then runs tools/vanity-par.mjs)",
+    "_warning": "The address depends on the exact bytecode AND the constructor arguments. The curve's arguments contain the token address, so this cannot even be attempted before the token exists. Grind last."
   }
 }

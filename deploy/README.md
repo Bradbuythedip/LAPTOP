@@ -42,6 +42,22 @@ deploys two contracts and makes five state-changing calls inside a single transa
 intrinsic cost and the per-byte charge on your calldata, and they assume no other state. Read
 them as "nothing here is near the ceiling", and let your wallet estimate the real number.
 
+## Two runbooks, and this is the other one
+
+**There are now two ways to launch in this repository and they do not agree, because they are
+about different contracts.** This file describes the launchpad path: `SnoozeLaunchpad.launch()`
+deploys `Snooze` and `PooledLaunchBuy` together and wires them, which needs a venue answering
+`swapExactETHForTokens(address,uint256,address)` — and LAUNCH.md §2.2 records that nothing
+deployed on Base is one.
+
+`deploy/scripts/README.md` describes the **curve** path, where `SnoozeCurve` is its own venue,
+`Snooze` is deployed from your own wallet, and `SnoozeDeployer` puts the curve on a chosen
+address. The instruction below that you do *not* deploy `Snooze` yourself is about this file's
+sequence and is still true of it; the other sequence deploys it deliberately, and says at length
+why it cannot do otherwise.
+
+Neither is wrong. Pick one before you send anything.
+
 ## The order, and why it is this order
 
 You do **not** deploy `Snooze` and `PooledLaunchBuy` yourself. `SnoozeLaunchpad.launch()`
