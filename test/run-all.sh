@@ -16,6 +16,9 @@ echo
 echo "=== python: size-curve reference math ==="
 python3 test/test_size_math.py
 echo
+echo "=== python: launch-fee reference model ==="
+python3 test/test_launch_model.py
+echo
 echo "=== browser: web/index.html ==="
 node test/run.mjs
 echo
