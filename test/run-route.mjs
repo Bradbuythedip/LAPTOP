@@ -37,15 +37,27 @@ page.on("request", r => requests.push(r.url()));
 await page.goto(SITE + "/route.html", { waitUntil: "networkidle" });
 const txt = async s => (await page.textContent(s).catch(() => "")) || "";
 
-console.log("── the page takes no custody and makes no requests");
+console.log("── the page takes no custody, and reaches out only when asked");
+// The page still originates nothing on load. A wallet connection is a deliberate act by the
+// visitor, so "makes no requests" is now "makes none until you press the button" — which is
+// only meaningful if load itself is still silent. That is what this asserts.
 const external = requests.filter(u => !u.startsWith(SITE));
-ok("no request leaves the origin", external.length === 0, external.join(", "));
+ok("no request leaves the origin on load", external.length === 0, external.join(", "));
 const src = fs.readFileSync(path.join(ROOT, "web", "route.html"), "utf8");
-ok("no wallet connection", !/window\.ethereum|eth_requestAccounts|solana\.connect|WalletConnect/i.test(src));
 ok("no fetch, XHR or websocket anywhere", !/\bfetch\s*\(|XMLHttpRequest|WebSocket/.test(src));
+ok("the routing table is still computed locally, not fetched",
+   /buildRoute/.test(src) && !/\bfetch\s*\(/.test(src));
+ok("connects to Phantom when asked", /eth_requestAccounts/.test(src));
+ok("uses Phantom's EVM side — the Solana one cannot see Base",
+   /p\.ethereum/.test(src) && /window\.phantom/.test(src));
+ok("never asks the Solana provider to connect", !/solana\.connect/i.test(src));
+ok("cannot sign or send",
+   !/eth_sendTransaction|eth_sendRawTransaction|personal_sign|signTypedData|signTransaction/.test(src));
 ok("no deposit address is offered", !/send (?:your )?(?:funds|sol|eth) to/i.test(src));
 ok("states plainly that it never touches money",
    (await txt("body")).includes("never touches your money"));
+ok("says it does not ask you to sign",
+   (await txt("body")).includes("does not ask you to sign"));
 ok("names the preorder arrangement for what it is",
    (await txt("body")).includes("somebody holds your money"));
 ok("explains why a preorder cannot exist yet",

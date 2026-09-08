@@ -70,12 +70,12 @@ file and opening it locally removes the hosting party from the trust question en
 Published build `2026-09-08a`:
 
 ```
-sha256(web/index.html) = 1a678263d392b4946bbb89747c16c3f48a737f7d9468db057b2038fab78e64cd
-sha256(web/size.html)  = 18625246fcea388f5e184dc123df191c859b471a36807842365830cbc28251ed
-sha256(web/route.html) = 966df9b84694bb07b3371b458bc9995308ef442d7433c0c7410bd7ca306a3862
-sha256(web/buy.html)   = 9219006305c9762f4b923938c744a5bd91594ea21bff6a15454c7af282a32d23
-sha256(web/order.html) = 256a0fbff3d05ec7bf50dd969ece79969d361c8023b7d2122761ca8323f51702
-sha256(web/slot.html)  = a12501448ebe11fef39db420d878cf8b475ddc6732655e80065be0abd664b7e7
+sha256(web/index.html) = 91d8995f71f0d62d1f91f5726f9a91015eed56ef71a410879323639b9f7adf5e
+sha256(web/size.html)  = a5c8c512cbeced5ee7a0317982bde0889cc150a4a032f7532daceaf36286d304
+sha256(web/route.html) = c1ac4bb53c79171d23ffef3e70f782f4c4911b3d8a7c5aa7dcb06f2641d3a40e
+sha256(web/buy.html)   = 6319505ecf3f39c20f2ab05b24e199caad390474632858c151636c9cbe55b38c
+sha256(web/order.html) = 7443e8b6264943016e6a675e26b0c0a1ca6028c81da1cd2fd92bcf250e6d26f6
+sha256(web/slot.html)  = 1eadddc6128b12c08701f3e0153af4b1be62bb08e5f246737640a13dc08f7201
 ```
 
 ### Tests
@@ -84,17 +84,23 @@ sha256(web/slot.html)  = a12501448ebe11fef39db420d878cf8b475ddc6732655e80065be0a
 sh test/run-all.sh         # everything below, no network touched
 ```
 
-**604 assertions across nine suites.**
+**Nine suites.** The per-suite counts below were last confirmed at build `2026-09-08a`, before
+the Phantom change; the session that added the wallet could not execute the suite, so the
+totals are stale until someone runs it. **Run `sh test/run-all.sh` before merging that work**
+and update these numbers from the output.
 
-`test/run.mjs` — 165, drives the real page in Chromium against `test/mock-rpc.mjs`: Keccak
-vectors, the four EIP-55 reference addresses, the v4 poolId derivation checked against a real
-Base pool id, ABI-string decoding (including a 10-character name, whose length word contains a
-hex letter, and truncated/absurd offsets), result-length discipline, and full flows for the
-happy path, pools present, wrong chain, a flaky rate-limited node, and an endpoint that refuses
-JSON-RPC batches. It also holds the cross-page invariants: that all six pages carry the one
-safety rule in the same words, that they all state the same build tag and that the README
+`test/run.mjs` — drives the real page in Chromium against `test/mock-rpc.mjs`: Keccak vectors,
+the four EIP-55 reference addresses, the v4 poolId derivation checked against a real Base pool
+id, ABI-string decoding (including a 10-character name, whose length word contains a hex
+letter, and truncated/absurd offsets), result-length discipline, and full flows for the happy
+path, pools present, wrong chain, a flaky rate-limited node, and an endpoint that refuses
+JSON-RPC batches. It also holds the cross-page invariants: that every page says it does not ask
+you to sign and mentions no `eth_*` method outside the read set, that any page touching
+`window.phantom` uses its EVM side, that they all state the same build tag and that the README
 publishes that tag and the current hash of every page, and that `web/` serves nothing but the
-six pages and the artwork. Needs `playwright`.
+six pages and the artwork. Plus the Phantom provider matrix (no wallet, Solana-only, both
+sides, injected as `window.ethereum`, inside a multi-provider array, and a non-Phantom wallet)
+and balance formatting and read discipline. Needs `playwright`.
 
 `test/test_laptop_base.py` — 65, pure functions against a fake `call`, so every failure mode is
 directly reachable: none-vs-unknown, Aerodrome's reverting `getPair`, the V3/Aerodrome selector
@@ -299,12 +305,33 @@ reported either way — an empty PoolManager proves the branch negative in one c
 non-empty one says plainly that hooked v4 pools cannot be enumerated and may hold a better or
 worse fill than anything listed.
 
-**There is no swap button, and there should not be one.** This repo's own failure analysis says
-the single thing it cannot defend against is being cloned at another address. Today a clone can
-only lie to you. The moment this domain teaches people to connect a wallet, a clone drains them
-instead — the site would become the highest-quality phishing template for its own brand. Staying
-something that *cannot* spend your money is the most valuable property it has, and a test
-asserts no wallet or transaction-construction code exists in the page.
+**The pages connect to Phantom, and still cannot spend your money.** This was a deliberate
+reversal, and the cost is real, so it is written down rather than quietly dropped.
+
+The old position was that the site should never prompt for a wallet at all. The argument was
+that the one thing this repo cannot defend against is being cloned at another address; while
+the site never prompts, a clone can only lie to you, and the moment the domain teaches people
+to connect, a clone's identical prompt drains them instead. That argument has not been refuted
+— it was overruled, because customers need to connect, and a tool nobody can use protects
+nobody.
+
+What replaces it is a narrower rule chosen because it can be enforced rather than promised:
+**these pages connect and read, and never ask you to sign.** They call `eth_requestAccounts`,
+`eth_chainId`, `eth_getBalance` and `eth_call`, and nothing else. A test parses every page for
+every `eth_*` method it mentions and fails on anything outside that list, so a signing or
+sending call cannot be added to any page without the suite going red. That is a weaker defence
+than "we never prompt" and it is worth being plain about why: a clone can now copy the connect
+button too. The remaining check is the one that was always doing the real work — the URL.
+
+**Phantom ships two wallets, and only one of them can see Base.** `window.phantom.solana` and
+`window.phantom.ethereum` hold different keys and see different chains. LAPTOP is on Base,
+which is EVM, so a customer who connects or bridges to their Phantom *Solana* address has put
+money somewhere that cannot buy the token. Every page reaches for the EVM provider, detects the
+Solana-only case specifically, and says so in those words instead of reporting "no wallet
+found" — which would be a lie that costs a bridge to the wrong chain.
+
+Balance reads follow the same discipline as every other read here: 32 bytes is an answer, and
+a bare `0x`, short data, a revert or a throw is "could not read", never zero.
 
 Venue links carry the contract address so nobody retypes it, and the pool address is printed
 beside each link so what the venue loaded can be checked against what was read here.

@@ -49,16 +49,18 @@ const use = async scn => {
 };
 const compare = async () => { await page.click("#go"); await page.waitForTimeout(1400); };
 
-console.log("── the page cannot spend money, and says so");
+console.log("── the page connects and reads, and cannot spend money");
 const src = fs.readFileSync(path.join(ROOT, "web", "buy.html"), "utf8");
-ok("no wallet connection anywhere",
-   !/window\.ethereum|eth_requestAccounts|WalletConnect|personal_sign|eth_sendTransaction/i.test(src));
-ok("no transaction construction", !/sendTransaction|signTypedData|approve\(/.test(src));
-ok("states it will never ask for a wallet", (await txt("body")).includes("never will"));
-ok("tells the user a wallet prompt here means it is not this page",
-   (await txt("body")).includes("close it"));
-ok("explains why: a clone would drain instead of lie",
-   (await txt("body")).includes("a clone drains them"));
+ok("connects to Phantom", /eth_requestAccounts/.test(src));
+ok("uses Phantom's EVM side, which is the only one that can see Base",
+   /p\.ethereum/.test(src) && /window\.phantom/.test(src));
+ok("no transaction construction",
+   !/eth_sendTransaction|eth_sendRawTransaction|personal_sign|signTypedData|signTransaction/.test(src));
+ok("no token approval, which is the other way a page takes your money",
+   !/approve\(/.test(src));
+ok("says it does not ask you to sign", (await txt("body")).includes("does not ask you to sign"));
+ok("the swap still happens somewhere else",
+   (await txt("body")).includes("from your own wallet"));
 
 console.log("── ranking across three venues of different depth");
 await use("venues");
