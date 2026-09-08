@@ -220,13 +220,22 @@ export function oracleDecision(cfg) {
   if (!choices.includes(choice))
     return { ok: false, reason: `oracle.choice is "${choice}", which is not one of ` +
       choices.map(k => `"${k}"`).join(", ") };
-  if (!isAddr(address))
+  if (!isAddr(address)) {
+    // "never-ready" is the one choice this repository can satisfy by itself, because
+    // contracts/SnoozeNeverReady.sol is provably constant. So a blank address there is not a
+    // refusal, it is step 1's transaction. "observational" still refuses: there is no
+    // observational oracle here and inventing one would be the settable mock wearing a name.
+    if (choice === "never-ready")
+      return { ok: true, choice, address: null, deployable: "SnoozeNeverReady",
+               ruleOneEverFires: false, describe: describe[choice] };
     return { ok: false, reason: `oracle.choice is "${choice}" but oracle.address is not an ` +
-      "address. There is no oracle in this repository: deploy yours first, then record it here." };
+      "address. There is no observational oracle in this repository — build or find one on " +
+      "Base, deploy it, then record it here. LAUNCH.md 2.1 has what it must satisfy." };
+  }
   if (sameAddress(address, ZERO))
     return { ok: false, reason: "the zero address is not an oracle — Snooze's constructor " +
       "reverts on it (BadConfig), which is the one guard the token itself has" };
-  return { ok: true, choice, address,
+  return { ok: true, choice, address, deployable: null,
            ruleOneEverFires: choice !== "never-ready",
            describe: describe[choice] };
 }

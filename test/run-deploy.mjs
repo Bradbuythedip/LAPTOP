@@ -510,10 +510,28 @@ const stepsNow = () => buildSteps({ cfg, artifacts: ART, state });
      !s.find(x => x.id === "deployer").blocked() && !!s.find(x => x.id === "token").blocked(),
      "a chosen oracle is a line in a config file; a verified one answered three calls");
 
-  // Step 1 records rather than deploys: there is deliberately no button that puts an oracle on
-  // chain, because the only implementation here is the settable mock.
-  ok("step 1 sends no transaction at all", s[0].txs.length === 0,
-     "a convenient button for the mock is exactly how it would reach Base 'temporarily'");
+  // Step 1 can deploy exactly one oracle and no other, and which one is the whole point. With
+  // an address already configured it deploys nothing; with "never-ready" and no address it
+  // offers SnoozeNeverReady; there is no path at all to the settable mock, because a
+  // convenient button for that is how it reaches Base "temporarily".
+  ok("with an address already configured, step 1 deploys nothing over it",
+     !!s[0].txs[0].blocked(), s[0].txs[0].blocked() || "it offered to redeploy");
+  {
+    const noAddr = { ...CFG, oracle: { ...CFG.oracle, choice: "never-ready", address: "" } };
+    const st = buildSteps({ cfg: noAddr, artifacts: ART, state: { steps: {} } })[0];
+    ok('"never-ready" with no address offers to deploy one', !st.txs[0].blocked());
+    ok("and what it offers is SnoozeNeverReady, with no constructor arguments",
+       st.txs[0].build().data === ART.contracts.SnoozeNeverReady.initCode &&
+       st.txs[0].build().to === null);
+    ok("and it says on its face that Rule 1 will never fire",
+       /never fires/i.test(st.note() || ""), st.note() || "(no note)");
+    const obs = { ...CFG, oracle: { ...CFG.oracle, choice: "observational", address: "" } };
+    ok('"observational" with no address still refuses, because there is no such oracle here',
+       !!buildSteps({ cfg: obs, artifacts: ART, state: { steps: {} } })[0].blocked());
+  }
+  // The one contract that must never have a button.
+  ok("nothing in the sequence can deploy the settable mock",
+     !DEPLOYABLE.includes("MockOracle") && !JSON.stringify(ART.contracts).includes("MockOracle"));
   markVerified(state, "oracle", { address: ORACLE, choice: "observational" });
 }
 
@@ -921,7 +939,7 @@ console.log("── the page's encoder against the scripts', on this launch's re
   const pairs = [];
   for (const step of steps)
     for (const tx of step.txs) pairs.push([`${step.n}.${tx.key}`, step, tx]);
-  ok("every transaction the scripts define has a twin on the page", pairs.length === 7,
+  ok("every transaction the scripts define has a twin on the page", pairs.length === 8,
      String(pairs.length));
   for (const [key, , tx] of pairs) {
     const mine = tx.build();

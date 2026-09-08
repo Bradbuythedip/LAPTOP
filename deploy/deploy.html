@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="referrer" content="no-referrer">
 <meta name="color-scheme" content="dark">
+<link rel="icon" type="image/png" href="../web/snoozebase.png">
 <title>Deploy $SNOOZE — local only</title>
 <!--
   THIS PAGE IS NOT PART OF THE SITE, AND IT CANNOT BE.
@@ -96,7 +97,11 @@ button.act{background:linear-gradient(180deg,var(--goldHi),var(--gold));color:va
   border-color:var(--gold)}
 button.danger{border-color:var(--bad);color:var(--bad)}
 button[disabled]{opacity:.42;cursor:not-allowed}
-.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:10px}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;justify-content:flex-start;margin-top:10px}
+button.big{font-size:15px;padding:13px 20px}
+/* The connect card leads the page, so it keeps the "you are here" ring until it is connected
+   and then gets out of the way. */
+#walletCard.connected{border-color:var(--line);box-shadow:none}
 ul.irr{margin:8px 0 0;padding-left:18px;font-size:12.5px;color:var(--bad);line-height:1.55}
 ul.irr li{margin-bottom:5px}
 ul.checks{list-style:none;margin:8px 0 0;padding:0;font-size:12.5px;line-height:1.6}
@@ -124,6 +129,22 @@ pre{background:var(--card);border:1px solid var(--line);border-radius:8px;paddin
 signs. Nothing here holds a key, and nothing here talks to any server — every read goes through
 your wallet's own provider.</p>
 
+<!-- FIRST, and on the left. Every button below it is disabled until a wallet is connected, so
+     a page that leads with three paragraphs and a red box before the only control that does
+     anything is a page that reads as broken. The warning still comes before the steps; it just
+     no longer comes before the thing you have to press to start. -->
+<div class="card now" id="walletCard">
+  <div class="hdr"><h2>Wallet</h2><span class="badge" id="wBadge">not connected</span></div>
+  <div class="row">
+    <button class="act big" id="wConnect">Connect Phantom</button>
+    <button id="wForget" hidden>Forget</button>
+  </div>
+  <p class="tiny dim" id="wHint" style="margin:9px 0 0">Every button below stays disabled until
+  this is connected. Phantom, or any injected EVM wallet — the page asks the wallet you have.</p>
+  <div class="kv" id="wOut" hidden></div>
+  <div class="warnbox" id="wErr" hidden></div>
+</div>
+
 <div class="badbox" id="notSite">
 <strong>This file must never be moved into <span class="mono">web/</span>.</strong> Every page on
 the site is checked to contain no signing or sending method, and that check is the site's whole
@@ -131,16 +152,6 @@ clone defence — “if a page like this asks you to sign, it is not ours”. Th
 <span class="mono">eth_sendTransaction</span>, so putting it there would delete that property for
 all nine pages at once. <span class="mono">test/run.mjs</span> fails the build if it appears
 under <span class="mono">web/</span>.
-</div>
-
-<div class="card">
-  <div class="hdr"><h2>Wallet</h2><span class="badge" id="wBadge">not connected</span></div>
-  <div class="row">
-    <button class="act" id="wConnect">Connect wallet</button>
-    <button id="wForget" hidden>Forget</button>
-  </div>
-  <div class="kv" id="wOut" hidden></div>
-  <div class="warnbox" id="wErr" hidden></div>
 </div>
 
 <div id="launch"></div>
@@ -273,6 +284,11 @@ var SNOOZE = (function(){
      `st` carries whatever earlier steps established — oracle, deployer, token, salt, curve. */
   function tx(key, A, L, st){
     switch(key){
+      case "1.deploy":
+        /* No constructor arguments, because there is nothing to configure — which is the whole
+           reason this oracle is safe to deploy and the settable one is not. */
+        return { to:null, from:null, value:"0x0",
+                 data: A.contracts.SnoozeNeverReady.initCode };
       case "2.deploy":
         return { to:null, from:null, value:"0x0",
                  data: A.contracts.SnoozeDeployer.initCode + addressWord(L.owner) };
@@ -413,7 +429,17 @@ function STEPS(){
          "reverting while it still has no history — which is the state it will be in at launch.",
     field:{ key:"oracle", label:"The deployed oracle's address",
             placeholder:"0x…", value:o || "" },
-    txs:[],
+    /* One transaction, and only for the oracle this repository can honestly provide. There is
+       deliberately no button for contracts/test/SnoozeMocks.sol:MockOracle — a convenient
+       button for a settable oracle is exactly how one reaches Base "temporarily", and there is
+       no temporarily when the address is immutable on the token. SnoozeNeverReady has every
+       function `pure`, no storage and no owner, so what it answers is fixed at compile time
+       rather than held by anybody. It costs Rule 1, and the note below says so. */
+    txs: (L.oracle.choice === "never-ready" && !o) ? [{
+      key:"1.deploy", label:"Deploy SnoozeNeverReady",
+      about:function(){ return "constructor() — no arguments. ready() false, spot() == twap24(), " +
+        "all three pure. RULE 1 WILL NEVER FIRE against this oracle."; },
+      after:function(){ return "oracle"; } }] : [],
     irreversible:[
       "Snooze.oracle is immutable. After step 3 nobody can change it — not you, not the deployer, not a proxy, because there is no proxy.",
       "A settable oracle is a dial that sets every sale's burn to anything up to 90%, held by whoever holds its key, forever. contracts/test/SnoozeMocks.sol:MockOracle is that, and this page refuses it by looking at the deployed bytecode.",
@@ -908,6 +934,8 @@ function render(){
   if(W.addr){
     wSet(onChain ? "connected" : "wrong network", onChain ? "good" : "warn", "");
     $("wConnect").hidden = true; $("wForget").hidden = false;
+    $("walletCard").className = "card connected";
+    $("wHint").hidden = true;
     var kv = $("wOut"); kv.hidden = false; kv.innerHTML = "";
     var rows = [["Address", W.addr],
                 ["Chain", W.chain === null ? "could not read"
@@ -918,6 +946,8 @@ function render(){
                               kv.appendChild(el("div", null, r[1])); });
   }else{
     $("wConnect").hidden = false; $("wForget").hidden = true; $("wOut").hidden = true;
+    $("walletCard").className = "card now";
+    $("wHint").hidden = false;
   }
 
   var root = $("launch"); root.innerHTML = "";

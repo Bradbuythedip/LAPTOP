@@ -544,7 +544,7 @@ for (const f of pages) {
      "an infinite animation with no prefers-reduced-motion escape");
 }
 
-const ART = ["bg.png", "snooze.png", "hero.png",
+const ART = ["bg.png", "snooze.png", "hero.png", "snoozebase.png",
              "snooze-256.webp", "snooze-512.webp", "snooze-768.webp", "hero-512.webp"];
 for (const f of fs.readdirSync(path.join(ROOT, "web"))) {
   ok(`web/${f} is not an asset named after another token`, !/TWD|POT ?PAL|POTPAL/i.test(f));

@@ -79,15 +79,15 @@ file and opening it locally removes the hosting party from the trust question en
 Published build `2026-09-08a`:
 
 ```
-sha256(web/index.html)   = 029ecc1b96aeb98b9f38ca2290c86978d19ffd926b6c79f145971534ccdb5f67
-sha256(web/buy.html)     = 2e41166e2adee2b4d823e766a13ed39c3e8376fc1522ff85c12a7abe146c1726
-sha256(web/checker.html) = f353cc03fae59f4a05d99ada22b94028e3b2e5656dca858fab33a7b461b3555e
-sha256(web/size.html)    = bbdf523d9a92489bc0a13dbd7aaecd256e0c02f66de1dc1d6ad332a9060e1fb1
-sha256(web/route.html)   = 554f8d9ee85b0ed751d1aa05ac7de215d90fb2e7cde7f73a6e154aee34207910
-sha256(web/order.html)   = 56e8927d76863a91ab8b2faef7e9b83e9694a3e9098a84e11d57b8cb7932682c
-sha256(web/slot.html)    = 0c8fe6393dbf7f7e54c9e2cb7d9d000fa3f8b7e9c779b1c5c9514f79efd588cc
-sha256(web/launch.html)  = 214055efeb5843053e0c8ddadb38a0afe6e05b879c773b8b958f84cd63280843
-sha256(web/snooze.html)  = 853fd2c8e91db008592707307be8c0a45bc3229c3ed0d78efbf599168da6726a
+sha256(web/index.html)   = 2b215d329f9274daa8dac47ad8cd23f09aa24c8a6db94c963963b05cb29564de
+sha256(web/buy.html)     = 3cd6f11114f5f0cbf9696d4153c5349a4c6999326db3e932c185c476f045e8b7
+sha256(web/checker.html) = 42bdeb0c23f1c05b576f1da1da4eb1dda1ce8b4997cb3e69f6d4899e9907e3bf
+sha256(web/size.html)    = 02a2028a2536c5d9764fe38c85e43c02ec3cd7587122b6e462ab0414c304b5f3
+sha256(web/route.html)   = 5660105445c155ced601a492dde81bfd1585fac5e7ef9cad799d9b69da92174f
+sha256(web/order.html)   = baf719324291be7940f9bbdb7d25970779c46afe24a5775492cd85fd8ac46780
+sha256(web/slot.html)    = 9ee55db0c93080f5a9ae28ee61211ab1160b648939e248d305844cad21044322
+sha256(web/launch.html)  = f2509bed82685710ab2b3c889d05bc2e1df6aa500c8db4105b5476021510fb14
+sha256(web/snooze.html)  = 774fc77328903db238f4e99862360ad71b1463a0d411728dd3640056d5635db1
 ```
 
 ### Tests
@@ -96,9 +96,9 @@ sha256(web/snooze.html)  = 853fd2c8e91db008592707307be8c0a45bc3229c3ed0d78efbf59
 sh test/run-all.sh         # everything below, no network touched
 ```
 
-**1972 assertions across twenty-three suites.**
+**1983 assertions across twenty-three suites.**
 
-`test/run.mjs` — 368, drives the real page in Chromium against `test/mock-rpc.mjs`: Keccak vectors,
+`test/run.mjs` — 370, drives the real page in Chromium against `test/mock-rpc.mjs`: Keccak vectors,
 the four EIP-55 reference addresses, the v4 poolId derivation checked against a real Base pool
 id, ABI-string decoding (including a 10-character name, whose length word contains a hex
 letter, and truncated/absurd offsets), result-length discipline, and full flows for the happy
@@ -241,7 +241,7 @@ ordinary externally-owned account rather than from another contract, and gas mea
 the block limit — `launch()` deploys two contracts and makes five state-changing calls in one
 transaction, and comes in at 7.2% of a 30M block. It writes `deploy/`.
 
-`test/run-deploy.mjs` — 216, the deployment sequence in `deploy/scripts` sent step by step into
+`test/run-deploy.mjs` — 225, the deployment sequence in `deploy/scripts` sent step by step into
 an in-process EVM, using the exact bytes `build.mjs` prints and `deploy/deploy.html` sends. It is
 an execution rather than a grep because that is what found the thing that decides the shape of
 the whole sequence: **`Snooze` deployed through `SnoozeDeployer` mints the entire supply to the

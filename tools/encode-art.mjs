@@ -7,12 +7,20 @@ import path from "node:path";
 const ROOT = path.resolve(new URL(".", import.meta.url).pathname, "..");
 const WRITE = process.argv.includes("--write");
 
-// Each derivative names its source, its square edge, and the quality to try.
+// Each derivative names its source, its square edge, the quality to try, and its type.
+//
+// snoozebase.png is the app icon: the medallion, from the hero that already has its navy disc
+// baked in. PNG rather than WebP because it is what a browser tab, an Apple touch icon and
+// Phantom's in-app browser all read without argument. 256 square rather than 512 because it is
+// fetched on every page load and the 512 came out at 259 KB — four times the size for a picture
+// nothing ever renders above about 180. Drop your own square PNG at web/snoozebase.png and it
+// is used as-is; nothing else derives from it.
 const JOBS = [
-  { src: "snooze.png", out: "snooze-256.webp", edge: 256, q: 0.90 },
-  { src: "snooze.png", out: "snooze-512.webp", edge: 512, q: 0.90 },
-  { src: "snooze.png", out: "snooze-768.webp", edge: 768, q: 0.88 },
-  { src: "hero.png",   out: "hero-512.webp",   edge: 512, q: 0.88 },
+  { src: "snooze.png", out: "snooze-256.webp",  edge: 256, q: 0.90 },
+  { src: "snooze.png", out: "snooze-512.webp",  edge: 512, q: 0.90 },
+  { src: "snooze.png", out: "snooze-768.webp",  edge: 768, q: 0.88 },
+  { src: "hero.png",   out: "hero-512.webp",    edge: 512, q: 0.88 },
+  { src: "hero.png",   out: "snoozebase.png",   edge: 256, q: 1, type: "image/png" },
 ];
 
 const b = await chromium.launch();
@@ -39,7 +47,7 @@ const out = await p.evaluate(async jobs => {
     const g = c.getContext("2d");
     g.imageSmoothingQuality = "high";
     g.drawImage(img, 0, 0, j.edge, j.edge);
-    const url = c.toDataURL("image/webp", j.q);
+    const url = c.toDataURL(j.type || "image/webp", j.q);
     results.push({ ...j, dataUrl: url, bytes: Math.floor((url.length - url.indexOf(",") - 1) * 3 / 4) });
   }
   return results;
