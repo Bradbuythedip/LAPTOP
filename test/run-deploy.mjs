@@ -1009,6 +1009,23 @@ console.log("── the page's encoder against the scripts', on this launch's re
        err || (theirs ? `page ${ABI.strip(theirs.data).length / 2} bytes, ` +
                         `scripts ${ABI.strip(mine.data).length / 2} bytes` : "the page threw"));
   }
+  // The page hardcodes the Deployed topic because it ships no keccak. A wrong nibble there
+  // would match no log, so the page would fall through to "created nothing" on a deployment
+  // that worked — or, before that check existed, to trusting the address the operator typed.
+  ok("the Deployed topic the page matches on is keccak of the event signature",
+     R("deploy/deploy.html").includes(ABI.keccakText("Deployed(address,bytes32,address)")),
+     ABI.keccakText("Deployed(address,bytes32,address)"));
+  ok("and SnoozeDeployer really emits that event",
+     /event Deployed\(address indexed [\w]+, bytes32 indexed [\w]+, address indexed [\w]+\)/
+       .test(R("contracts/SnoozeDeployer.sol")));
+  // Step 1's button and step 1's block used to be exact opposites of each other.
+  {
+    const html = R("deploy/deploy.html");
+    ok("step 1 does not block itself out of deploying the oracle it offers",
+       /if\(L\.oracle\.choice === "never-ready"\) return null;/.test(html));
+  }
+  ok("a verified step's send buttons are disabled, so an irreversible deploy cannot repeat",
+     /\|\| done;/.test(R("deploy/deploy.html")));
   ok("the page's check layer is a block a test can run outside a browser", !!PAGECHECKS);
   ok("and it builds the same six steps", !!PAGECHECKS && PAGECHECKS.STEPS().length === 6);
   if (PAGECHECKS) {
