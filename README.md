@@ -79,15 +79,15 @@ file and opening it locally removes the hosting party from the trust question en
 Published build `2026-09-08a`:
 
 ```
-sha256(web/index.html)   = db510f05ab6b48e54314cf6b5adf91511c68f2090d9ccccaf075b2c87a493bd7
-sha256(web/buy.html)     = ffeb12c7cb12f8343334242b2b4f9ec3ebea46ae7925fb2b7b5b954f014bef5b
-sha256(web/checker.html) = 1bffec74837f1202fab93dc7a8dcf9c692229f1f7ff9c0c4bac4d721fdc44e1a
-sha256(web/size.html)    = 590dc8f5b4d02863957aa5215a0e55f73a7bb7b2e30c1be9041309f3c811a8dd
-sha256(web/route.html)   = c697fa28b026717a4800d2c267893ac34ac891da9e5bc82b9a7c57b9d7bcecb5
-sha256(web/order.html)   = b29f87991c3091c4004833f779960c804b662ce7182b516d361f1190c0d8198a
-sha256(web/slot.html)    = 91a4c64ad9f69c7193871e340fc743d97ea76213b2f2b790fd58540c4c4790b9
-sha256(web/launch.html)  = 778e80932cb12cea6cdf2e8ad932f41b86547d83f03c01a1d999214c730c699a
-sha256(web/snooze.html)  = 7772045a9b8884c7ba6e47958ef94c69f479476285f2c27381b3589d29cc589f
+sha256(web/index.html)   = ca75f936a28e7057f125efd88753d6d979d0a1d228ca11606d1792dff566bce3
+sha256(web/buy.html)     = 22599395fae6b4961e1cacbb5c7c7377d9aad803b503b0f561099e4b939a037d
+sha256(web/checker.html) = dba98abcc786bfe9da93c947c42350d8437d3729cfd7de4171751310e05716eb
+sha256(web/size.html)    = d35504a3248a34fff23257524de797dcb93502f14be87406a0ec28cca14c30c5
+sha256(web/route.html)   = 51447c4aea769adb62e9fae568dec397c38b42a3013ee0ec96e01158306fc106
+sha256(web/order.html)   = fe6f8b6541e4d130c2c6479f5e92f89eefa028555423f3482230629829f1d8ff
+sha256(web/slot.html)    = 4ba9b18da2f5f27803e42af72edf32006175216570ff51e1a8b3b4a500e38af2
+sha256(web/launch.html)  = 386009886adc54c2bce639ce68259b38005ebfebadad22153e131438e0da0caa
+sha256(web/snooze.html)  = af52292a0f32cf44e32e2b609fcc677430dc2d08b29f2effc11a357f052086fb
 ```
 
 ### Tests
@@ -96,9 +96,9 @@ sha256(web/snooze.html)  = 7772045a9b8884c7ba6e47958ef94c69f479476285f2c27381b35
 sh test/run-all.sh         # everything below, no network touched
 ```
 
-**1388 assertions across eighteen suites.**
+**1434 assertions across eighteen suites.**
 
-`test/run.mjs` — 306, drives the real page in Chromium against `test/mock-rpc.mjs`: Keccak vectors,
+`test/run.mjs` — 336, drives the real page in Chromium against `test/mock-rpc.mjs`: Keccak vectors,
 the four EIP-55 reference addresses, the v4 poolId derivation checked against a real Base pool
 id, ABI-string decoding (including a 10-character name, whose length word contains a hex
 letter, and truncated/absurd offsets), result-length discipline, and full flows for the happy
@@ -124,7 +124,7 @@ of the JavaScript, plus properties a size curve lives or dies on: output rises w
 effective price strictly worsens, a fee costs exactly its rate at the limit, deeper liquidity
 fills better, and no fill can exceed the output-side virtual reserve. Emits the fixture below.
 
-`test/run-index.mjs` — 77, drives the $SNOOZE landing page. Most of it is about one
+`test/run-index.mjs` — 85, drives the $SNOOZE landing page. Most of it is about one
 distinction: a plot of a FORMULA and a plot of a MARKET look identical from three feet away, so
 the suite asserts which one is on screen. With nothing deployed the chart shows Rule 1 itself —
 exact, checkable against `burnBps()` in the contract, labelled *this is arithmetic, not a
@@ -168,7 +168,7 @@ cap and its construction-time validation, the turn-off, rounding that conserves 
 freezable exemption list, and the three ramp units measured against each other for splitting
 evasion and same-block fairness.
 
-`test/run-snooze.mjs` — 68, compiles `contracts/Snooze.sol` and executes both rules. Most of it
+`test/run-snooze.mjs` — 76, compiles `contracts/Snooze.sol` and executes both rules. Most of it
 tests the SPEC rather than the code: that a dump is free, that sleeping does not bank the
 spike, that the dial is also the buyer's instant loss, that an unregistered venue is outside
 both rules, that the oracle fails open, and that "no lock" is false.
@@ -271,6 +271,31 @@ the Python is right, the same arrangement `size.html` has with `test_size_math.p
 
 The page is not linked from the buyer navigation — operator tool, reachable by URL. Still a
 static file on a public site, so not secret, just not advertised.
+
+## Launching — read `LAUNCH.md` first
+
+[`LAUNCH.md`](LAUNCH.md) is the runbook: what only you can decide, what has to exist before the
+launch transaction, the sequence, and what can still go wrong afterwards. Three things in it are
+worth naming here because they change what is possible rather than what is advisable.
+
+**One wallet is outside both rules.** `launch()` cap-exempts the launcher so it can seed the
+pool — seeding and selling are the same transfer — and `_move()` guards the haircut with
+`if (isPool[to] && !capExempt[from])`, so the flag that skips the cap skips the burn too. That
+wallet holds 100% of supply the moment the token exists. Measured at a 50% dial: an ordinary
+holder is refused above 20% and burns half of what it does sell; the exempt one sells its entire
+balance and burns nothing. Every page that said the rules applied "to everyone, including whoever
+deployed it" was wrong; `test/run-snooze.mjs` now pins the behaviour and `test/run-index.mjs`
+fails if the sentence comes back.
+
+**The TWAP oracle is not in this repository**, and a reverting one is a permanent honeypot —
+sells revert, buys do not, and the address is immutable.
+
+**No router on Base implements the interface `PooledLaunchBuy` calls.** It wants
+`swapExactETHForTokens(address,uint256,address)`, selector `0x1930789c`; the Uniswap-V2 family
+and Aerodrome have `0x7ff36ab5`. Worse, `launch()` passes one address as both the router the
+pooled buy calls and the pool Rule 1 taxes, and nothing deployed is both. `LAUNCH.md` §2.2 works
+through the three shapes that follow from that, one of which is broken in a way that looks
+correct.
 
 ## Snooze — the launchpad
 

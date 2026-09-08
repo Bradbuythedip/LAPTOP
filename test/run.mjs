@@ -368,6 +368,8 @@ const stackOf = await page.evaluate(() => {
   }
   return out;
 });
+// Hoisted: the non-text-contrast section below needs the same measured extremes.
+let art;
 {
   // WHICH artwork pixel is the worst case depends on the theme, and hardcoding one of them is
   // how a theme change ships an unreadable page with a green build. Dark text wants the ground
@@ -379,7 +381,7 @@ const stackOf = await page.evaluate(() => {
   // version composited pure black, which is not a pixel bg.png contains: its real range is
   // roughly #02091b to #212829, so it was testing a page nobody sees while leaving the bright
   // end — the end that matters once the theme is dark — unchecked.
-  const art = await page.evaluate(async () => {
+  art = await page.evaluate(async () => {
     const img = new Image();
     await new Promise((res, rej) => { img.onload = res; img.onerror = rej; img.src = "/bg.png"; });
     const c = document.createElement("canvas");
@@ -434,6 +436,58 @@ const stackOf = await page.evaluate(() => {
   }
 }
 
+// NON-TEXT CONTRAST, and the trap inside it. WCAG 1.4.11 wants 3:1 on the boundary of
+// anything you can interact with, which is why interactive borders moved from --line (1.28:1
+// over a card) to --edge (4.87:1). But a focus indicator is only visible by its DELTA from the
+// resting state, and raising the resting border collapsed --line->--gold at 7.68:1 down to
+// --edge->--gold at 2.02:1 — while `outline:none` had already thrown away the other
+// affordance. Fixing 1.4.11 broke 2.4.11, and the box-shadow meant to carry it is 1.66:1.
+// Both are checked here so the trade cannot be made again silently.
+console.log("── borders you can touch, and a focus state you can see");
+{
+  // The composited card ground, recomputed here rather than reached for: the artwork at its
+  // brightest measured pixel is the worst case for a light-on-dark border.
+  const hex2 = h => { h = h.replace("#", ""); return [0, 2, 4].map(i => parseInt(h.slice(i, i + 2), 16)); };
+  const comp = (fg, a, bg) => fg.map((c, i) => a * c + (1 - a) * bg[i]);
+  const page0 = parseRGB(art.page).slice(0, 3);
+  const artOpacity = await page.evaluate(() =>
+    parseFloat(getComputedStyle(document.body, "::before").opacity));
+  let ground = comp(art.bright, artOpacity, page0);
+  ground = comp(page0, 0.30, ground);            // the vignette at its weakest
+  ground = comp([255, 255, 255], 0.045, ground); // the card
+
+  const probe = await page.evaluate(() => {
+    const out = { tokens: {} };
+    const cs = getComputedStyle(document.documentElement);
+    for (const t of ["--line", "--edge", "--gold"]) out.tokens[t] = cs.getPropertyValue(t).trim();
+    out.touch = [];
+    for (const sel of ["a.cta", "a.cta.sub2", "button.act", "input", "select", ".tools a"]) {
+      const el = document.querySelector(sel);
+      if (!el) continue;
+      const st = getComputedStyle(el);
+      out.touch.push({ sel, border: st.borderTopColor, width: parseFloat(st.borderTopWidth) });
+    }
+    return out;
+  });
+
+  // A guard on the guard: if --line ever clears 3:1 by itself then moving borders to --edge
+  // bought nothing and this whole section is measuring the wrong thing.
+  ok("the divider token really is too faint to be a touch boundary",
+     contrast(hex2(probe.tokens["--line"]), ground) < 3,
+     `--line is ${contrast(hex2(probe.tokens["--line"]), ground).toFixed(2)}:1, which is fine`);
+  ok("and the interactive token really does clear it",
+     contrast(hex2(probe.tokens["--edge"]), ground) >= 3,
+     `--edge is ${contrast(hex2(probe.tokens["--edge"]), ground).toFixed(2)}:1`);
+
+  for (const t of probe.touch) {
+    const c = parseRGB(t.border).slice(0, 3);
+    if (c.length < 3 || t.width === 0) continue;
+    const r = contrast(c, ground);
+    ok(`${t.sel} has a boundary you can see (WCAG 1.4.11)`, r >= 3,
+       `ratio ${r.toFixed(2)} for ${t.border}`);
+  }
+}
+
 // The site is about one token. Anything else named on it is either cross-promotion or a
 // chance for a reader to confuse two things, and both are out.
 console.log("── one token, and only one");
@@ -452,6 +506,44 @@ for (const f of pages) {
 //   hero.png   the same bear with its navy disc baked in, for og:image and the medallion
 // plus the WebP derivatives tools/encode-art.mjs writes, because 1.2 MB of PNG is not a
 // thing to put in front of somebody on a phone.
+// The focus indicator, checked in the stylesheet rather than by focusing something. A DOM
+// probe measures one input on one page and depends on the browser window actually holding
+// focus; the rule is a property of every page's CSS, so that is where it is checked.
+//
+// The specific regression: `outline:none` plus a border recolour is only visible by its DELTA
+// from the resting border. Raising the resting border from --line to --edge for WCAG 1.4.11
+// took --line->--gold at 7.68:1 down to --edge->--gold at 2.02:1, and the box-shadow meant to
+// carry it is 1.66:1 against a card. Fixing one success criterion broke another.
+console.log("── a focus state you can actually see");
+for (const f of pages) {
+  const t = fs.readFileSync(path.join(ROOT, "web", f), "utf8");
+  if (!/<input|<select|<textarea/.test(t)) { ok(`${f} has no field to focus`, true); continue; }
+  const kills = [...t.matchAll(/(input|select|textarea):focus(?:-visible)?[^{]*\{([^}]*)\}/g)]
+    .filter(m => /outline:\s*none/.test(m[2]));
+  ok(`${f} does not throw the focus outline away`, kills.length === 0,
+     kills.map(m => m[0].slice(0, 70)).join(" | "));
+  const draws = [...t.matchAll(/(input|select|textarea):focus(?:-visible)?[^{]*\{([^}]*)\}/g)]
+    .some(m => /outline:\s*(\d+(?:\.\d+)?)px\s+solid/.test(m[2])
+            && parseFloat(m[2].match(/outline:\s*(\d+(?:\.\d+)?)px/)[1]) >= 2);
+  ok(`${f} draws a real outline on a focused field`, draws,
+     "a recoloured border is not a focus indicator once the resting border is already bright");
+}
+
+// Every infinite animation has to be switchable off, not just the one that was thought about.
+// Three spinners on three pages rotated forever regardless of the setting, because the guard
+// was written for the hero and nothing else.
+console.log("── nothing animates forever at somebody who asked it not to");
+for (const f of pages) {
+  const t = fs.readFileSync(path.join(ROOT, "web", f), "utf8");
+  const infinite = [...t.matchAll(/animation:\s*([\w-]+)[^;}]*infinite/g)].map(m => m[1]);
+  if (!infinite.length) { ok(`${f} has no endless animation to guard`, true); continue; }
+  const guard = t.match(/@media\s*\(prefers-reduced-motion:\s*reduce\)\s*\{([\s\S]*?)\n\}/);
+  ok(`${f} guards its endless animation${infinite.length > 1 ? "s" : ""} ` +
+     `(${infinite.join(", ")})`,
+     !!guard && /animation:\s*none/.test(guard[1]),
+     "an infinite animation with no prefers-reduced-motion escape");
+}
+
 const ART = ["bg.png", "snooze.png", "hero.png",
              "snooze-256.webp", "snooze-512.webp", "snooze-768.webp", "hero-512.webp"];
 for (const f of fs.readdirSync(path.join(ROOT, "web"))) {

@@ -26,7 +26,7 @@
   --card:#0e1424;                    /* opaque, for inputs and selects */
   --cardBg:rgba(255,255,255,.045);
   --gold:#f0c040; --goldHi:#ffd970; --goldSoft:rgba(240,192,64,.14);
-  --onGold:#140f02;                  /* text ON a gold fill. White on gold is 1.8:1 — unusable */
+  --onGold:#140f02;                  /* text ON a gold fill. White on gold is 1.70:1 — unusable */
   --ok:#4fd18a; --okbg:rgba(79,209,138,.13);
   --bad:#ff8178; --badbg:rgba(255,129,120,.13);
   --warn:#f2c14e; --warnbg:rgba(242,193,78,.13);
@@ -175,6 +175,16 @@ html::before{
   background:radial-gradient(ellipse 120% 90% at 50% 38%,
     rgba(7,11,22,.30) 0%, rgba(7,11,22,.62) 48%, rgba(6,9,19,.90) 82%, rgba(5,8,17,.97) 100%);
 }
+/* Boundaries of things you can touch, at 3:1. --line is 1.28:1 on a card and is for dividers
+   only; anything with a hit area gets --edge (4.87:1). */
+a.cta.sub2{border-color:var(--edge)}
+.tools a{border-color:var(--edge)}
+/* Three spinners rotated forever regardless of the setting, on three different pages, because
+   the reduced-motion guard was written for the hero and nothing else. */
+@media (prefers-reduced-motion:reduce){
+  .spin{animation:none;opacity:.6}
+  .bear{animation:none}
+}
 </style>
 </head>
 <body>
@@ -187,8 +197,9 @@ html::before{
   <h1 class="ticker">$SNOOZE</h1>
   <p class="tag">You snooze, you win.</p>
   <p class="lede">Two rules, in code rather than in a promise. Selling into a spike burns most
-  of what you would have taken. Nobody moves more than a fifth of their bag a day. Both apply
-  to everyone, including whoever deployed it.</p>
+  of what you would have taken, and nobody moves more than a fifth of their bag a day. One
+  wallet is outside both of them, and it is the launcher's &mdash;
+  <a class="ext" href="#limits">why, and how to check it</a>.</p>
   <div class="heroCta">
     <a class="cta" href="#getin">Get in before launch</a>
     <a class="cta sub2" href="#how">How it works</a>
@@ -287,8 +298,10 @@ one worth reading twice.</p>
       </svg>
     </figure>
     <p>If the price is above its 24-hour average and you sell today, the difference burns. At
-    or below the average, you sell at today's price and nothing burns. The burn is not a fee
-    going anywhere — the tokens stop existing.</p>
+    or below the average, you sell at today's price and nothing burns. The haircut is destroyed
+    rather than collected — unless the launcher took a share of it, which is capped at a fifth
+    of the haircut and fixed at deployment. <span class="mono">supplyOnlyFalls()</span> on the
+    token answers that in one word, and until a token exists there is nothing to ask.</p>
   </div>
 
   <div class="panel">
@@ -306,14 +319,26 @@ one worth reading twice.</p>
         <text x="14" y="94" font-size="9.5" fill="#9aa6c2">the window rolls forward 24 hours after your first move</text>
       </svg>
     </figure>
-    <p>No wallet moves more than 20% of its balance per day. Not whales, not the deployer. It
-    applies to every transfer out, so splitting across fresh wallets is throttled at the same
-    rate — the first hop is itself a transfer.</p>
+    <p>No wallet moves more than 20% of its balance per day, whales included. It applies to
+    every transfer out, so splitting across fresh wallets is throttled at the same rate —
+    the first hop is itself a transfer. One address is exempt, and the panel beside this one
+    says which and why.</p>
   </div>
 
-  <div class="panel no">
+  <div class="panel no" id="limits">
     <h3><span class="num">!</span>What the rules do not do</h3>
     <ul>
+      <li><b>One wallet is outside both rules, permanently.</b> Seeding a pool and selling into
+      it are the same transfer, so the launcher has to be exempt from the cap to seed at all
+      &mdash; and the flag that skips the cap skips the burn as well.
+      <span class="mono">freeze()</span> makes it permanent. It is the wallet holding the whole
+      supply the moment the token exists. Read <span class="mono">capExempt()</span> on it
+      yourself, and look at where the supply went afterwards.</li>
+      <li><b>Before <span class="mono">freeze()</span>, none of it is settled.</b> While
+      <span class="mono">frozen()</span> is false the admin can exempt any address, its own
+      included. Launching through the launchpad freezes in the same transaction, so there is no
+      window — but that is a property of how it was launched, not of the token. Read
+      <span class="mono">frozen()</span> before you believe any of this panel.</li>
       <li><b>The dial is also your instant loss.</b> A burn of 41% means selling burns 41% —
       including if you bought ten minutes ago at the top.</li>
       <li><b>A slow bleed is free.</b> Rule 1 only bites above the 24-hour average. Sell into a
@@ -368,7 +393,11 @@ pro-rata. Until it exists there is nothing to send anything to.</p>
   <p class="tiny dim" style="margin:10px 0 0">
     You can leave before the buy for a fee, and that fee stays in the pool for the people who
     did not leave — it is never paid to the deployer. If the buy never happens, refunds open
-    unconditionally at the date above and anybody can trigger them, including you.
+    at the date above: no permission and no fee, but <b>you have to call
+    <span class="mono">refund()</span> yourself</b>. It reads your own balance and nobody
+    else's, so no helpful stranger can do it for you, and there is no sweep — ETH nobody comes
+    back for sits there. The same is true of <span class="mono">claim()</span> after a
+    successful buy.
   </p>
 </div>
 

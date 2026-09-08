@@ -167,11 +167,26 @@ console.log("── the infographic says what the contracts do");
   ok("the pooled buy is described as one order at one price",
      /one transaction, one price/i.test(body));
   ok("Rule 1 is stated as the 24-hour average", /24-hour average/i.test(body));
-  ok("the burn is named as destruction, not as a fee to someone",
-     /the tokens stop existing/i.test(body));
+  // "the tokens stop existing" is only true at devBps == 0, and the token exposes
+  // supplyOnlyFalls() precisely so a page can stop guessing. snooze.html hedged this and the
+  // landing page did not, which is backwards — the landing page is the one a stranger sees.
+  ok("the burn is named as destruction rather than a fee",
+     /destroyed rather than collected/i.test(body));
+  ok("and the dev-cut exception is stated, not buried",
+     /unless the launcher took a share/i.test(body));
+  ok("and it names the call that settles it", /supplyOnlyFalls\(\)/.test(body));
   ok("Rule 2 is stated as 20% of balance per day",
      /20% of its balance per day/i.test(body));
-  ok("and says the deployer is not exempt", /not the deployer/i.test(body));
+  // This used to assert "not the deployer", which the contract does not support: launch()
+  // cap-exempts the launcher and _move() skips the haircut for any cap-exempt sender, so that
+  // wallet is outside BOTH rules. run-snooze.mjs proves it by execution. What the page owes a
+  // reader is the true version, prominently, so that is what is asserted.
+  ok("it does not claim the deployer is bound by the cap", !/not the deployer/i.test(body));
+  ok("it says one wallet is outside both rules",
+     /outside both/i.test(body) && /launcher/i.test(body));
+  ok("and says why the exemption has to exist at all",
+     /seeding a pool and selling into it are the same transfer/i.test(body));
+  ok("and names the call a reader can check it with", /capExempt\(\)/.test(body));
   ok("and that a fresh wallet does not escape it", /the first hop is itself a transfer/i.test(body));
 }
 
@@ -186,6 +201,8 @@ console.log("── and it says what they do not do, which is the part that gets
   ok("an unregistered venue is admitted to be outside both rules",
      /outside both rules/i.test(body));
   ok("no oracle means no Rule 1, stated plainly", /No oracle, no Rule 1/i.test(body));
+  ok("and that nothing is settled until freeze() has run",
+     /frozen\(\)/.test(body) && /can exempt any address/i.test(body));
   ok("the absence of an audit is on the page, not only in the repo",
      /has been audited/i.test(body) && /testnet/i.test(body));
 }
@@ -201,8 +218,14 @@ console.log("── getting in: the two things that cost money to get wrong");
      /is not an address/i.test(body));
   ok("the exit fee is described as staying with the people who stayed",
      /never paid to the deployer/i.test(body));
-  ok("refunds are described as unconditional and permissionless",
-     /refunds open unconditionally/i.test(body) && /anybody can trigger/i.test(body));
+  // This asserted that the page says "anybody can trigger" a refund, which the contract does
+  // not do: refund() and claim() both read deposited[msg.sender] and there is no refund(address).
+  // The assertion was holding a false sentence in place, which is worse than not testing it.
+  ok("it does not claim a stranger can refund you for you", !/anybody can trigger/i.test(body));
+  ok("it says you have to call refund yourself",
+     /call\s+refund\(\)\s+yourself/i.test(body.replace(/\s+/g, " ")));
+  ok("and that nothing collects what nobody comes back for",
+     /no sweep/i.test(body) || /sits there/i.test(body));
   ok("with nothing deployed it shows no address at all", (await txt("#poolAddr")) === "no address yet");
 }
 

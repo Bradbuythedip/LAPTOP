@@ -21,7 +21,7 @@
   --card:#0e1424;                    /* opaque, for inputs and selects */
   --cardBg:rgba(255,255,255,.045);
   --gold:#f0c040; --goldHi:#ffd970; --goldSoft:rgba(240,192,64,.14);
-  --onGold:#140f02;                  /* text ON a gold fill. White on gold is 1.8:1 — unusable */
+  --onGold:#140f02;                  /* text ON a gold fill. White on gold is 1.70:1 — unusable */
   --ok:#4fd18a; --okbg:rgba(79,209,138,.13);
   --bad:#ff8178; --badbg:rgba(255,129,120,.13);
   --warn:#f2c14e; --warnbg:rgba(242,193,78,.13);
@@ -51,7 +51,6 @@ label{display:block;font-size:12.5px;color:var(--dim);margin-bottom:5px}
   width:100%;font-family:var(--mono);font-size:16px;padding:13px 40px 13px 12px;
   border:1.5px solid var(--line);border-radius:9px;background:var(--card);color:var(--fg);
 }
-#addr:focus{outline:none;border-color:var(--fg)}
 #clear{
   position:absolute;right:4px;top:50%;transform:translateY(-50%);
   width:36px;height:36px;border:0;background:none;color:var(--dim);
@@ -205,8 +204,10 @@ button.act.phantom .ghost{width:20px;height:20px;flex:none;display:block}
    ground. Interactive borders move to --edge; decorative ones stay on --line. */
 input,select,textarea{border:1.5px solid var(--edge);background:var(--card)}
 input::placeholder{color:var(--dim);opacity:.75}
-input:focus,select:focus,textarea:focus{outline:none;border-color:var(--gold);
-  box-shadow:0 0 0 3px rgba(240,192,64,.22)}
+input:focus-visible,select:focus-visible,textarea:focus-visible{
+  outline:2px solid var(--gold);outline-offset:2px;border-color:var(--gold)}
+input:focus,select:focus,textarea:focus{outline:2px solid var(--gold);outline-offset:2px;
+  border-color:var(--gold)}
 button.act{border:1.5px solid var(--edge);background:var(--card);color:var(--fg)}
 button.act:hover{border-color:var(--gold);color:var(--goldHi)}
 button.act:focus-visible,a:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
@@ -220,6 +221,16 @@ a.ext,a.cta{text-underline-offset:3px}
 *::-webkit-scrollbar{height:10px;width:10px}
 *::-webkit-scrollbar-thumb{background:var(--edge);border-radius:10px}
 *::-webkit-scrollbar-track{background:transparent}
+/* Boundaries of things you can touch, at 3:1. --line is 1.28:1 on a card and is for dividers
+   only; anything with a hit area gets --edge (4.87:1). */
+a.cta.sub2{border-color:var(--edge)}
+.tools a{border-color:var(--edge)}
+/* Three spinners rotated forever regardless of the setting, on three different pages, because
+   the reduced-motion guard was written for the hero and nothing else. */
+@media (prefers-reduced-motion:reduce){
+  .spin{animation:none;opacity:.6}
+  .bear{animation:none}
+}
 </style>
 </head>
 <body>
@@ -266,7 +277,7 @@ Read-only. &middot; <a href="/buy.html">where to buy &rarr;</a> &middot;
   <details id="refDetails">
     <summary>Change the reference address</summary>
     <label for="refIn" style="margin-top:6px">Reference address to test against</label>
-    <input id="refIn" class="mono" style="width:100%;padding:10px;border:1.5px solid var(--line);
+    <input id="refIn" class="mono" style="width:100%;padding:10px;border:1.5px solid var(--edge);
       border-radius:8px;background:var(--card);color:var(--fg);font-size:16px">
     <div id="refErr" style="color:var(--bad);font-size:12.5px;margin-top:6px;display:none"></div>
     <div class="btnrow">
@@ -331,7 +342,7 @@ Read-only. &middot; <a href="/buy.html">where to buy &rarr;</a> &middot;
   <details>
     <summary>Change endpoint</summary>
     <label for="rpcIn" style="margin-top:6px">Base JSON-RPC endpoint</label>
-    <input id="rpcIn" class="mono" style="width:100%;padding:10px;border:1.5px solid var(--line);
+    <input id="rpcIn" class="mono" style="width:100%;padding:10px;border:1.5px solid var(--edge);
       border-radius:8px;background:var(--card);color:var(--fg);font-size:16px">
     <div class="btnrow">
       <button class="act" id="rpcApply">Use this endpoint</button>

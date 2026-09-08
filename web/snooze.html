@@ -21,7 +21,7 @@
   --card:#0e1424;                    /* opaque, for inputs and selects */
   --cardBg:rgba(255,255,255,.045);
   --gold:#f0c040; --goldHi:#ffd970; --goldSoft:rgba(240,192,64,.14);
-  --onGold:#140f02;                  /* text ON a gold fill. White on gold is 1.8:1 — unusable */
+  --onGold:#140f02;                  /* text ON a gold fill. White on gold is 1.70:1 — unusable */
   --ok:#4fd18a; --okbg:rgba(79,209,138,.13);
   --bad:#ff8178; --badbg:rgba(255,129,120,.13);
   --warn:#f2c14e; --warnbg:rgba(242,193,78,.13);
@@ -42,7 +42,6 @@ h1{font-size:21px;margin:20px 0 3px;letter-spacing:-.01em}
 label{display:block;font-size:13px;color:var(--dim);margin-bottom:6px}
 input{width:100%;font-family:var(--mono);font-size:16px;padding:11px;border:1.5px solid var(--line);
   border-radius:9px;background:var(--card);color:var(--fg)}
-input:focus{outline:none;border-color:var(--fg)}
 .grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 .hdr{display:flex;justify-content:space-between;align-items:center;gap:8px;
   margin-bottom:8px;flex-wrap:wrap}
@@ -78,6 +77,16 @@ a{color:inherit} a.ext{text-decoration:underline;text-underline-offset:2px}
 .dial .why{font-size:13px;color:var(--dim);margin-top:6px}
 @media (min-width:600px){ .dial .n{font-size:78px} }
 
+/* The medallion. This is the one place hero.png belongs: its navy disc is baked in, which is
+   a defect anywhere it has to composite and exactly right when it should read as a struck coin
+   sitting on the page. The transparent one is the hero on the landing page; this one is the
+   mark. */
+.mark{display:flex;align-items:center;gap:12px;margin:18px 0 3px}
+.mark img{width:52px;height:52px;border-radius:50%;flex:none;
+  border:1.5px solid rgba(240,192,64,.45);
+  box-shadow:0 0 0 4px rgba(240,192,64,.07), 0 6px 14px rgba(0,0,0,.55)}
+.mark h1{margin:0}
+@media (min-width:600px){ .mark img{width:64px;height:64px} }
 .rule{border-left:3px solid var(--gold);padding:2px 0 2px 12px;margin:12px 0}
 .rule h3{margin:0 0 4px;font-size:14px}
 .rule p{margin:0;font-size:13px;color:var(--dim)}
@@ -99,8 +108,10 @@ html::before{
    ground. Interactive borders move to --edge; decorative ones stay on --line. */
 input,select,textarea{border:1.5px solid var(--edge);background:var(--card)}
 input::placeholder{color:var(--dim);opacity:.75}
-input:focus,select:focus,textarea:focus{outline:none;border-color:var(--gold);
-  box-shadow:0 0 0 3px rgba(240,192,64,.22)}
+input:focus-visible,select:focus-visible,textarea:focus-visible{
+  outline:2px solid var(--gold);outline-offset:2px;border-color:var(--gold)}
+input:focus,select:focus,textarea:focus{outline:2px solid var(--gold);outline-offset:2px;
+  border-color:var(--gold)}
 button.act{border:1.5px solid var(--edge);background:var(--card);color:var(--fg)}
 button.act:hover{border-color:var(--gold);color:var(--goldHi)}
 button.act:focus-visible,a:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
@@ -114,11 +125,24 @@ a.ext,a.cta{text-underline-offset:3px}
 *::-webkit-scrollbar{height:10px;width:10px}
 *::-webkit-scrollbar-thumb{background:var(--edge);border-radius:10px}
 *::-webkit-scrollbar-track{background:transparent}
+/* Boundaries of things you can touch, at 3:1. --line is 1.28:1 on a card and is for dividers
+   only; anything with a hit area gets --edge (4.87:1). */
+a.cta.sub2{border-color:var(--edge)}
+.tools a{border-color:var(--edge)}
+/* Three spinners rotated forever regardless of the setting, on three different pages, because
+   the reduced-motion guard was written for the hero and nothing else. */
+@media (prefers-reduced-motion:reduce){
+  .spin{animation:none;opacity:.6}
+  .bear{animation:none}
+}
 </style>
 </head>
 <body>
 
-<h1>$SNOOZE</h1>
+<div class="mark">
+  <img src="/hero-512.webp" width="512" height="512" alt="" decoding="async">
+  <h1>$SNOOZE</h1>
+</div>
 <p class="sub">You snooze, you win. <a href="/buy.html">where to buy</a> &middot;
 <a href="/checker.html">contract checker</a> &middot; <a href="/size.html">size curve</a> &middot;
 <a href="/order.html">standing order</a> &middot; <a href="/slot.html">getting a slot</a></p>
@@ -150,8 +174,13 @@ a.ext,a.cta{text-underline-offset:3px}
   </div>
   <div class="rule">
     <h3>2 &middot; Nobody can nuke it.</h3>
-    <p>No wallet moves more than 20% of its balance per day. Not whales, not the deployer.
-    That applies to every transfer out, so moving to a fresh wallet is throttled too.</p>
+    <p>No wallet moves more than 20% of its balance per day, whales included. That applies to
+    every transfer out, so moving to a fresh wallet is throttled too. One address is exempt
+    &mdash; the launcher's, which cannot seed the pool without it &mdash; and the same flag
+    also skips the haircut, so that wallet is outside <i>both</i> rules and stays that way
+    after <span class="mono">freeze()</span>. Read
+    <span class="mono">capExempt()</span> on the launcher's address before you believe any
+    sentence about fairness, this one included.</p>
   </div>
   <p class="tiny dim" style="margin:10px 0 0">
     Fixed supply, and it only falls &mdash; provided the deployer took no share of the burn.
