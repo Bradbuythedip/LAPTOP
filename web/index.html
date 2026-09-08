@@ -230,6 +230,7 @@ ul{margin:0;padding-left:18px} li{margin-bottom:5px}
 .ca .v{font-family:var(--mono);font-size:12.5px;word-break:break-all;color:var(--fg)}
 .ca[hidden]{display:none}
 /* The one control in those rows, and it looks like one. */
+a.cta[hidden]{display:none}
 .copy{font:inherit;font-size:11.5px;font-weight:600;padding:6px 10px;min-height:32px;
   border:1.5px solid var(--edge);border-radius:5px;background:#111a2a;color:var(--fg);
   cursor:pointer;flex:none}
@@ -238,6 +239,18 @@ ul{margin:0;padding-left:18px} li{margin-bottom:5px}
 .copy:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
 .owner{border-left:3px solid var(--gold)}
 .owner[hidden]{display:none}
+/* The two tokens, side by side, because the question "what are these and how do they relate"
+   is answered by seeing them next to each other and not by another paragraph about it. */
+.twin{display:grid;gap:10px;margin:10px 0 12px}
+@media (min-width:720px){ .twin{grid-template-columns:1fr 1fr} }
+.tok{background:#0b111c;border-radius:6px;padding:14px;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.04)}
+.tok .th{display:flex;align-items:center;justify-content:space-between;gap:8px;
+  margin-bottom:8px;flex-wrap:wrap}
+.sym{font-family:var(--mono);font-size:16px;font-weight:700;letter-spacing:-.01em}
+.sym.gold{color:var(--gold)} .sym.blue{color:var(--baseLt)}
+.tok .what{margin:0 0 10px;font-size:13.5px;line-height:1.55;color:var(--dim)}
+.tok .ca{margin-top:0}
 .pair{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:2px 0 0}
 .pill{display:inline-flex;align-items:center;gap:7px;padding:7px 12px;border-radius:999px;
   font-weight:700;font-size:14px;background:var(--goldSoft);border:1.5px solid var(--gold);
@@ -313,8 +326,7 @@ tbody tr:last-child td{border-bottom:0}
   </div>
   <h1 class="ticker">Snooze&nbsp;Bear</h1>
   <p class="tag">You snooze, you win. <span class="tick">$SNOOZE</span></p>
-  <p class="lede"><b>Hold $SNOOZE to get into LAPTOP.</b> Two tokens on Base. $SNOOZE is the
-  one you hold; LAPTOP is what holding it gets you into.</p>
+  <p class="lede"><b>$SNOOZE is the ticket. LAPTOP is the show.</b></p>
   <div class="heroCta">
     <a class="cta" href="#buy">Buy LAPTOP</a>
     <a class="cta sub2" href="#how">How it works</a>
@@ -335,7 +347,7 @@ tbody tr:last-child td{border-bottom:0}
   </div>
   <div class="ca" id="lapCaRow" hidden>
     <span class="k">contract</span>
-    <code class="v" id="lapAddr">&mdash;</code>
+    <code class="v" id="lapAddr">not deployed</code>
     <button class="copy" id="lapCopy" type="button">copy</button>
   </div>
   <a class="cta" id="lapCta" href="#get">Get $SNOOZE first</a>
@@ -388,25 +400,35 @@ tbody tr:last-child td{border-bottom:0}
   </div></div>
 </div>
 
-<h1 id="get" style="margin-top:26px">$SNOOZE</h1>
-<p class="sub">Snooze Bear. Two rules, and the thing that gets you into LAPTOP.</p>
+<h1 id="get" style="margin-top:26px">The two tokens</h1>
+
+<div class="twin">
+  <div class="tok">
+    <div class="th"><span class="sym gold">$SNOOZE</span><span class="badge warn" id="poolBadge">not deployed</span></div>
+    <p class="what">Snooze Bear. Buy it, hold it. Selling into a spike burns most of what you
+    would have taken; nobody sells more than a fifth of their bag a day.</p>
+    <div class="ca"><span class="k">contract</span>
+      <code class="v" id="poolAddr">not deployed</code></div>
+  </div>
+  <div class="tok">
+    <div class="th"><span class="sym blue">LAPTOP</span><span class="badge warn">not open</span></div>
+    <p class="what">A separate token, on its own. You cannot buy it yet. When it opens,
+    $SNOOZE holders go first and an allocation is already set aside for them.</p>
+    <div class="ca"><span class="k">contract</span>
+      <code class="v" id="lapAddr2">not deployed</code></div>
+  </div>
+</div>
 
 <div class="card">
-  <p style="margin:0;font-size:14.5px">The LAPTOP curve opens to $SNOOZE holders first, and an
-  allocation is set aside for whoever holds it at a
-  <button class="d" data-t="Snapshot" data-d="A single block, fixed in advance, at which balances are read. What you hold then is what you get; what you do after does not change it.">snapshot</button>
-  &mdash; claimed by you, from your own wallet.</p>
-  <p class="tiny dim" style="margin:9px 0 0">Buying it the hour before and selling the hour
-  after is the worst way to use it: everyone doing that at once is what pushes the price above
-  its own average, which is exactly when selling burns most. The gate pays holders, not
+  <div class="hdr"><h2>What connects them</h2></div>
+  <p style="margin:0;font-size:14.5px">One thing, and it is a
+  <button class="d" data-t="Snapshot" data-d="A single block, fixed in advance, at which balances are read. What you hold then is what you get; what you do after does not change it.">snapshot</button>:
+  <b>whatever $SNOOZE you hold at one block, fixed in advance, is your place in LAPTOP.</b>
+  You claim it yourself, from your own wallet. Nothing is locked and nothing is taken.</p>
+  <p class="tiny dim" style="margin:10px 0 0">Buying $SNOOZE the hour before and selling the
+  hour after is the worst way to use it. Everyone doing that at once is what pushes the price
+  above its own average &mdash; which is exactly when selling burns most. It pays holders, not
   renters.</p>
-  <div class="ca">
-    <span class="k">$SNOOZE contract</span>
-    <code class="v" id="poolAddr">not deployed</code>
-    <span class="badge warn" id="poolBadge">not deployed</span>
-  </div>
-  <p class="tiny dim" style="margin:9px 0 0">Nothing is deployed. Any address you are shown
-  for either token today is not it.</p>
 </div>
 
 <div class="card">
@@ -742,7 +764,7 @@ async function loadLive(){
    A page that goes blank because a label moved is a worse failure than a missing label. */
 function showPool(){
   const a = $("poolAddr"), badge = $("poolBadge");
-  if(a) a.textContent = POOL || "no address yet";
+  if(a) a.textContent = POOL || "not deployed";
   if(badge){
     badge.textContent = POOL ? "deployed" : "not deployed";
     badge.className = "badge " + (POOL ? "good" : "warn");
@@ -804,8 +826,14 @@ const GATE_MIN_TEXT = "$SNOOZE";   // set to the real minimum once the curve is 
   }else{
     badge.textContent = "not launched"; badge.className = "badge warn";
     row.hidden = true;
-    cta.textContent = SNOOZE_TOKEN ? "Get $SNOOZE first" : "How it works";
-    cta.href = SNOOZE_TOKEN ? "#get" : "#how";
+    if(SNOOZE_TOKEN){
+      cta.textContent = "Get $SNOOZE first"; cta.href = "#get"; cta.hidden = false;
+    }else{
+      // Nothing to buy and nothing to hold, so there is nothing for a button to do. A control
+      // that goes somewhere unhelpful is the same false affordance as a card shaped like one —
+      // it is removed rather than pointed at the nearest page.
+      cta.hidden = true;
+    }
   }
   const c = $("lapCopy");
   if(c) c.addEventListener("click", async () => {

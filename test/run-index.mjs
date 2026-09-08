@@ -185,16 +185,22 @@ console.log("── the page says what the mechanism is, in as few words as it t
   // other, so that is what is asserted, and the invented version is asserted ABSENT.
   ok("it does not claim LAPTOP launches on $SNOOZE",
      !/first launch on it/i.test(body) && !/Launchpad on Base/i.test(body));
-  ok("the gate is the first thing the hero says",
-     /Hold \$SNOOZE to get into LAPTOP/i.test(body));
-  ok("and both are named as separate tokens on Base",
-     /Two tokens on Base/i.test(body));
+  ok("the hero says what the pair is in one line",
+     /\$SNOOZE is the ticket\. LAPTOP is the show\./i.test(body));
+  ok("and the page shows the two rather than explaining them",
+     (await page.$$eval(".tok", els => els.length)) === 2);
+  ok("LAPTOP is described as separate and on its own",
+     /A separate token, on its own/i.test(body));
+  ok("and as not yet buyable", /You cannot buy it yet/i.test(body));
+  ok("the connection is named as one thing, not several",
+     /whatever \$SNOOZE you hold at one block/i.test(body));
+  ok("and it is a snapshot, not a lock", /Nothing is locked and nothing is taken/i.test(body));
   ok("and the dynamic is stated, not just the rule",
      /pays holders, not renters/i.test(body));
   ok("including that renting the gate is the worst way to use it",
      /worst way to use it/i.test(body));
   ok("the claim is self-service, because nothing can claim for you",
-     /claimed by you, from your own wallet/i.test(body));
+     /You claim it yourself, from your own wallet/i.test(body));
   // textContent on <body> sweeps up the inline <script> too, which is most of this file and
   // none of the page. innerText is what a reader actually sees.
   const seen = await page.evaluate(() => document.body.innerText.replace(/\s+/g, " ").trim());
@@ -220,8 +226,19 @@ console.log("── and what it does not do, which is the part a launch page lea
      /Most tokens never bond/i.test(body) && /normal outcome/i.test(body));
   ok("the absence of an audit is on the page, not only in the repo",
      /No audit, no testnet/i.test(body));
-  ok("it states plainly that nothing is deployed", /Nothing is deployed/i.test(body));
-  ok("and that anything shown today is not it", /is not it/i.test(body));
+  // Every address slot on the page says so for itself, which is stronger than one sentence
+  // somewhere saying it about all of them.
+  // Only the slots a visitor can see. The owner panel and the hidden contract row are not on
+  // screen, and asserting over them measured markup rather than what anybody reads.
+  const slots = await page.$$eval(".ca .v", els => els
+    .filter(e => e.getBoundingClientRect().height > 0)
+    .map(e => e.textContent.trim()));
+  ok("every address slot on screen says the same thing",
+     slots.length >= 2 && new Set(slots).size === 1 && /not deployed/i.test(slots[0]),
+     JSON.stringify(slots));
+  ok("and each token carries its own state badge",
+     (await page.$$eval(".tok .badge", els => els.map(e => e.textContent.trim())))
+       .every(t => /not (deployed|open)/i.test(t)));
 }
 
 console.log("── the first action on the page is the one the owner asked for");
@@ -238,6 +255,8 @@ console.log("── the first action on the page is the one the owner asked for"
   ok("the contract row is hidden while there is no contract",
      await page.isHidden("#lapCaRow"));
   ok("and the card says so rather than showing a blank", /not launched/i.test(body));
+  ok("with no button, because there is nothing for one to do yet",
+     await page.isHidden("#lapCta"));
   const copy = await page.$$eval(".copy", els => els.length);
   ok("there is a copy control ready for the address", copy === 1, String(copy));
 }

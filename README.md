@@ -79,7 +79,7 @@ file and opening it locally removes the hosting party from the trust question en
 Published build `2026-09-08a`:
 
 ```
-sha256(web/index.html)   = b144fe1fb3c63367ce99dffad8dc3a16f194f637a1cc806dc887826ad92283f2
+sha256(web/index.html)   = 029ecc1b96aeb98b9f38ca2290c86978d19ffd926b6c79f145971534ccdb5f67
 sha256(web/buy.html)     = 2e41166e2adee2b4d823e766a13ed39c3e8376fc1522ff85c12a7abe146c1726
 sha256(web/checker.html) = f353cc03fae59f4a05d99ada22b94028e3b2e5656dca858fab33a7b461b3555e
 sha256(web/size.html)    = bbdf523d9a92489bc0a13dbd7aaecd256e0c02f66de1dc1d6ad332a9060e1fb1
@@ -96,7 +96,7 @@ sha256(web/snooze.html)  = 853fd2c8e91db008592707307be8c0a45bc3229c3ed0d78efbf59
 sh test/run-all.sh         # everything below, no network touched
 ```
 
-**1736 assertions across twenty-two suites.**
+**1741 assertions across twenty-two suites.**
 
 `test/run.mjs` — 353, drives the real page in Chromium against `test/mock-rpc.mjs`: Keccak vectors,
 the four EIP-55 reference addresses, the v4 poolId derivation checked against a real Base pool
@@ -124,7 +124,7 @@ of the JavaScript, plus properties a size curve lives or dies on: output rises w
 effective price strictly worsens, a fee costs exactly its rate at the limit, deeper liquidity
 fills better, and no fill can exceed the output-side virtual reserve. Emits the fixture below.
 
-`test/run-index.mjs` — 169, drives the $SNOOZE landing page. Most of it is about one
+`test/run-index.mjs` — 174, drives the $SNOOZE landing page. Most of it is about one
 distinction: a plot of a FORMULA and a plot of a MARKET look identical from three feet away, so
 the suite asserts which one is on screen. With nothing deployed the chart shows Rule 1 itself —
 exact, checkable against `burnBps()` in the contract, labelled *this is arithmetic, not a
@@ -132,6 +132,12 @@ market* — and `window.__CHART.marketSeries` is empty. It only becomes a market
 chain read produced one, and a single deposit is never drawn as a line. The launch-day path is
 driven before launch day against a mock node, including one that refuses `eth_getLogs`, one that
 serves a short window, and one that is not there at all — none of which may produce a number.
+
+It also pins what the page must NOT say: an earlier version claimed "$SNOOZE is the launchpad,
+LAPTOP is the first launch on it", which was invented here and is wrong — they are separate
+tokens, and what is true is that holding one gets you into the other. The words "launchpad" and
+"first launch on it" are now asserted absent, because an assertion that only checks for the right
+sentence lets the wrong one sit beside it.
 
 The rest is the MVP's own rules. The depth-versus-speed table is checked against
 `bond_model.py`'s closed form rather than against the copy that quotes it. Every term with a
