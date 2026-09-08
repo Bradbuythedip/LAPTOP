@@ -729,10 +729,39 @@ let CURVE;
   // The precondition that encodes the ordering. Funding must come first: once isPool[curve] is
   // true, a transfer into the curve is a sell.
   const reg = stepsNow().find(x => x.id === "curve").txs.find(t => t.key === "register");
-  const before = reg.precondition.check({ "token.balanceOf(curve)": { ok: true, data: "0x" + w(0) } });
+  const pre = (held, sold) => reg.precondition.check({
+    "token.balanceOf(curve)": { ok: true, data: "0x" + w(held) },
+    "curve.sold()": { ok: true, data: "0x" + w(sold) } });
+  const before = pre(0n, 0n);
   ok("setPool is refused while the curve is empty", before.some(c => !c.ok));
   ok("and the refusal says what would happen instead of just refusing",
      before.some(c => !c.ok && /burns/.test(c.detail)));
+  ok("and a half-funded curve is refused too", pre(CFG.curve.curveSupply / 2n, 0n).some(c => !c.ok));
+
+  // THE ONE THAT BRICKED THE LAUNCH. The curve is public and tradeable the moment it is
+  // funded, and setPool is a separate transaction, so there is a window and anybody may buy in
+  // it. The first version of this precondition read balanceOf(curve) alone and demanded it
+  // equal curveSupply — so ONE buy of a tenth of an ether left it short forever, setPool could
+  // never be built, neither rule ever fired, and step 6 is gated on step 5, so freeze() and
+  // seal() were unreachable for the life of the token. Measured, not imagined.
+  //
+  // held + sold is what SnoozeCurve actually maintains: buy does `sold += out` then transfers
+  // out, sell reverses both. Trading moves tokens between the two and leaves the sum alone.
+  {
+    const bought = CFG.curve.curveSupply / 100n;
+    const after = pre(CFG.curve.curveSupply - bought, bought);
+    ok("a buy between funding and setPool does NOT block setPool", after.every(c => c.ok),
+       after.filter(c => !c.ok).map(c => c.name + " " + c.detail).join("; "));
+    ok("and it says trading has started rather than saying nothing",
+       after.some(c => /already sold/.test(c.detail || "")));
+    ok("even when almost the whole float has been bought",
+       pre(CFG.curve.curveSupply / 50n, CFG.curve.curveSupply * 49n / 50n).every(c => c.ok));
+    // The shortfall that IS real still refuses, and no longer tells you to send tokens into a
+    // curve that is merely trading.
+    const short = pre(CFG.curve.curveSupply / 2n, bought);
+    ok("but a genuine funding shortfall still refuses", short.some(c => !c.ok));
+    ok("and says which of the two it is", short.some(c => !c.ok && /missing funding/.test(c.detail)));
+  }
 
   // Sent to the address the step CHOSE, with the value the step chose. Passing TOKEN and 0 by
   // hand meant `to` and `value` were pinned by nothing: repointing 5.fund at the curve and
@@ -748,8 +777,11 @@ let CURVE;
   ok("and it holds every token it is allowed to sell, intact",
      ABI.readUint(held.raw) === CFG.curve.curveSupply, String(ABI.readUint(held.raw)));
 
-  const after = reg.precondition.check({ "token.balanceOf(curve)": { ok: true, data: held.raw } });
-  ok("now setPool is allowed", after.every(c => c.ok));
+  const soldNow = await raw(CURVE, ABI.selector("sold()"), OWNER);
+  const after = reg.precondition.check({ "token.balanceOf(curve)": { ok: true, data: held.raw },
+                                         "curve.sold()": { ok: true, data: soldNow.raw } });
+  ok("now setPool is allowed", after.every(c => c.ok),
+     after.filter(c => !c.ok).map(c => c.name).join("; "));
 
   const regTx = stepsNow().find(x => x.id === "curve").txs.find(t => t.key === "register").build();
   ok("setPool is addressed to the token, which is where isPool lives",
@@ -791,6 +823,9 @@ console.log("── somebody trades between funding the curve and reading it bac
   await fund(evmT, OWNER, 100n * E);
   await fund(evmT, BUYER, 100n * E);
   const orcT = await deploy(all.MockOracle.evm.bytecode.object, "", { evm: evmT });
+  if (PAGE_LAUNCH) PAGE_LAUNCH.curve = { ...PAGE_LAUNCH.curve, curveSupply: (800n * E).toString(),
+                                         virtualEth: (3n * E).toString(),
+                                         bondTarget: (6n * E).toString(), feeTo: CFG.owner };
   const SUP = 1000n * E, FLOAT = 800n * E;
   const t = await deploy(all.Snooze.evm.bytecode.object,
     w(SUP) + w(orcT.address.toString()) + w(CFG.token.dev) + w(0), { evm: evmT, from: OWNER });
@@ -836,6 +871,29 @@ console.log("── somebody trades between funding the curve and reading it bac
   ok("and it says so rather than pretending nothing happened",
      list.some(x => /already sold/.test(x.detail || "")),
      "the operator has to know trading has started");
+
+  // AND THE PAGE HAS TO AGREE. These two had silently drifted: steps.mjs was softened and
+  // deploy.html kept the strict equality, so the signing page would have failed step 5 forever
+  // on the same buy. The byte-equality test between them covers CALLDATA only — what a step
+  // considers a pass is a second surface, and this is where it is compared.
+  if (PAGECHECKS) {
+    Object.assign(PAGECHECKS.ST, { token: t.address.toString(), curve: c.address.toString(),
+                                   predicted: c.address.toString(), salt: SALT,
+                                   deployer: DEPLOYER, oracle: orcT.address.toString() });
+    const st = PAGECHECKS.STEPS().find(x => x.id === "curve");
+    const pr = {};
+    for (const rr of st.reads()) {
+      const g = await evmT.runCall({ caller: createAddressFromString(OWNER),
+        to: createAddressFromString(rr.to), gasLimit: 30_000_000n, data: ABI.bytes(rr.data),
+        block: { header: { number: 1n, timestamp: 2100n } } });
+      pr[rr.sig] = { ok: !g.execResult.exceptionError,
+                     data: "0x" + ABI.hex(g.execResult.returnValue) };
+    }
+    const pl = st.check(pr, "0x01");
+    const soldFail = pl.filter(x => !x.ok && /sold|received|holds/i.test(x.name));
+    ok("the page's step 5 also survives a buy before it is verified", soldFail.length === 0,
+       soldFail.map(x => x.name + " — " + x.why).join("; "));
+  }
 }
 
 /* ---- what the wrong order would have done ---- */
@@ -951,6 +1009,23 @@ console.log("── the page's encoder against the scripts', on this launch's re
        err || (theirs ? `page ${ABI.strip(theirs.data).length / 2} bytes, ` +
                         `scripts ${ABI.strip(mine.data).length / 2} bytes` : "the page threw"));
   }
+  // The page hardcodes the Deployed topic because it ships no keccak. A wrong nibble there
+  // would match no log, so the page would fall through to "created nothing" on a deployment
+  // that worked — or, before that check existed, to trusting the address the operator typed.
+  ok("the Deployed topic the page matches on is keccak of the event signature",
+     R("deploy/deploy.html").includes(ABI.keccakText("Deployed(address,bytes32,address)")),
+     ABI.keccakText("Deployed(address,bytes32,address)"));
+  ok("and SnoozeDeployer really emits that event",
+     /event Deployed\(address indexed [\w]+, bytes32 indexed [\w]+, address indexed [\w]+\)/
+       .test(R("contracts/SnoozeDeployer.sol")));
+  // Step 1's button and step 1's block used to be exact opposites of each other.
+  {
+    const html = R("deploy/deploy.html");
+    ok("step 1 does not block itself out of deploying the oracle it offers",
+       /if\(L\.oracle\.choice === "never-ready"\) return null;/.test(html));
+  }
+  ok("a verified step's send buttons are disabled, so an irreversible deploy cannot repeat",
+     /\|\| done;/.test(R("deploy/deploy.html")));
   ok("the page's check layer is a block a test can run outside a browser", !!PAGECHECKS);
   ok("and it builds the same six steps", !!PAGECHECKS && PAGECHECKS.STEPS().length === 6);
   if (PAGECHECKS) {

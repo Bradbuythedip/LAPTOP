@@ -247,13 +247,21 @@ console.log("── the first action on the page is the one the owner asked for"
     els.map(e => (e.id || e.tagName + ":" + (e.textContent || "").trim().slice(0, 18))));
   const buyAt = order.findIndex(x => x === "buy");
   const liveAt = order.findIndex(x => x === "live");
-  ok("the Buy LAPTOP card exists", buyAt >= 0, JSON.stringify(order));
+  ok("the Buy $SNOOZE card exists", buyAt >= 0, JSON.stringify(order));
   ok("and comes before everything else on the page", buyAt >= 0 && buyAt < liveAt,
      JSON.stringify(order.slice(0, 5)));
   const cta = await page.$eval(".heroCta a.cta", a => a.getAttribute("href") + "|" + a.textContent.trim());
-  ok("the hero's primary action is Buy LAPTOP", cta === "#buy|Buy LAPTOP", cta);
+  // It was Buy LAPTOP, and that was the page's worst thing: the token that launches SECOND,
+  // that cannot be bought, that has no address, offered as the primary action above every badge
+  // saying nothing is live. $SNOOZE is what launches first and the only thing anybody can act
+  // on, so it is what the first button points at.
+  ok("the hero's primary action is Buy $SNOOZE", cta === "#buy|Buy $SNOOZE", cta);
+  ok("and the first card sells the same thing the first button does",
+     /Buy \$SNOOZE/.test(await page.$eval("#buy h2", e => e.textContent)));
+  ok("and it says how, which is the question the mechanism copy never answered",
+     (await page.$$eval("#buy .howto li", els => els.length)) >= 3);
   ok("the contract row is hidden while there is no contract",
-     await page.isHidden("#lapCaRow"));
+     await page.isHidden("#buyCaRow"));
   // One word for one state. The page used to carry three — "not launched" in the buy card,
   // "not deployed" on the token, "not open" on LAPTOP — for two facts, and a reader has to
   // decide whether they mean different things. Two of them did not. ("not open" survives
@@ -265,7 +273,7 @@ console.log("── the first action on the page is the one the owner asked for"
      words.filter(w => !/^not open$/.test(w)).every(w => w === "not deployed"),
      words.join(" / "));
   ok("with no button, because there is nothing for one to do yet",
-     await page.isHidden("#lapCta"));
+     await page.isHidden("#buyCta"));
   const copy = await page.$$eval(".copy", els => els.length);
   ok("there is a copy control ready for the address", copy === 1, String(copy));
 }

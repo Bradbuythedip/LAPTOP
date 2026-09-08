@@ -203,9 +203,13 @@ a.cta.sub2:hover{border-color:var(--gold);color:var(--goldHi)}
 .top .soc{display:inline-flex;padding:5px;border-radius:7px;color:var(--dim);line-height:0}
 .top .soc svg{width:16px;height:16px;fill:currentColor}
 .top .soc:hover{color:var(--goldHi);background:var(--goldSoft)}
-.top .conn{font:inherit;font-size:12.5px;font-weight:700;padding:7px 12px;border-radius:8px;
+.top .conn{font:inherit;font-size:12.5px;font-weight:700;padding:6px 11px;border-radius:8px;
   border:1px solid var(--gold);background:var(--goldSoft);color:var(--goldHi);cursor:pointer;
-  white-space:nowrap}
+  white-space:nowrap;display:inline-flex;align-items:center;gap:6px}
+/* The ghost takes the button's own colour, so it goes gold, then green when connected and red
+   on the wrong chain — one object saying one thing, rather than a fixed white mark sitting on a
+   state it disagrees with. */
+.top .conn .ghost{width:14px;height:14px;flex:none;fill:currentColor}
 .top .conn:hover{background:linear-gradient(180deg,var(--goldHi),var(--gold));color:var(--onGold)}
 .top .conn.on{border-color:var(--ok);background:var(--okbg);color:var(--ok);
   font-family:var(--mono);font-weight:600}
@@ -335,6 +339,21 @@ a.cta.sub2{border-color:var(--edge)}
 .leg{background:#141d2f;border:0;border-radius:9px;padding:13px 14px;
   box-shadow:inset 0 1px 0 rgba(255,255,255,.06)}
 .leg.out{background:#152135;box-shadow:inset 0 1px 0 rgba(91,148,255,.14)}
+/* The out leg takes the colour of what you get. Blue was LAPTOP's; $SNOOZE is the gold one. */
+.leg.out.gold{background:#1d1a10;box-shadow:inset 0 1px 0 rgba(240,192,64,.18)}
+.leg.out.gold .v{color:var(--goldHi)}
+/* Three lines, numbered, because "how do I actually do this" was the one question the page
+   answered nowhere — it explained the mechanism at length and never the act. */
+.howto{margin:10px 0 0;padding:0 0 0 4px;list-style:none;counter-reset:h;
+  font-size:13px;line-height:1.7;color:var(--fg)}
+/* NOT display:flex on the li. It was, and it made every inline child a flex item — so the
+   checker link in step 2 stopped flowing with the sentence around it, wrapped onto its own two
+   lines, and left the full stop stranded on the line above. The marker is positioned out of the
+   text flow instead, which is what lets the text stay text. */
+.howto li{counter-increment:h;position:relative;padding-left:26px;margin-bottom:3px}
+.howto li::before{content:counter(h);position:absolute;left:0;top:.15em;
+  width:17px;height:17px;border-radius:50%;
+  background:var(--goldSoft);color:var(--gold);font:600 11px/17px var(--mono);text-align:center}
 .card .card{background:#0e1524}
 .hr{height:1px;background:var(--line);margin:16px 0;border:0}
 
@@ -384,7 +403,15 @@ tbody tr:last-child td{border-bottom:0}
   <a class="soc" href="https://discord.gg/GFDMcfMNN" rel="noopener noreferrer" target="_blank"
      aria-label="Snooze Bear on Discord"><svg viewBox="0 0 24 24" aria-hidden="true"><path
      d="M20.317 4.37a19.79 19.79 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.21.375-.444.865-.608 1.25a18.27 18.27 0 0 0-5.487 0 12.64 12.64 0 0 0-.617-1.25.077.077 0 0 0-.079-.037A19.736 19.736 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.058a.082.082 0 0 0 .031.056 19.9 19.9 0 0 0 5.993 3.03.078.078 0 0 0 .084-.028c.462-.63.874-1.295 1.226-1.994a.076.076 0 0 0-.041-.106 13.1 13.1 0 0 1-1.872-.892.077.077 0 0 1-.008-.128 10.2 10.2 0 0 0 .372-.292.074.074 0 0 1 .078-.01c3.928 1.793 8.18 1.793 12.061 0a.074.074 0 0 1 .079.01c.12.099.246.198.373.292a.077.077 0 0 1-.007.128 12.3 12.3 0 0 1-1.873.891.077.077 0 0 0-.04.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.029 19.84 19.84 0 0 0 6.002-3.03.077.077 0 0 0 .032-.055c.5-5.177-.838-9.674-3.549-13.66a.06.06 0 0 0-.031-.029ZM8.02 15.331c-1.182 0-2.157-1.085-2.157-2.419 0-1.333.956-2.419 2.157-2.419 1.211 0 2.176 1.095 2.157 2.42 0 1.333-.956 2.418-2.157 2.418Zm7.975 0c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.955-2.419 2.157-2.419 1.21 0 2.176 1.095 2.157 2.42 0 1.333-.946 2.418-2.157 2.418Z"/></svg></a>
-  <button class="conn" id="wConnect" type="button">Connect</button>
+  <!-- The ghost, the same path web/buy.html already ships. "Connect" alone is every wallet
+       button on every site; the mark is what says WHICH wallet the click is going to open, and
+       the answer matters here because Phantom has two sides and only one of them can see Base. -->
+  <button class="conn" id="wConnect" type="button"><svg class="ghost" viewBox="0 0 128 128"
+    aria-hidden="true" focusable="false"><path d="M64 10C34.2 10 10 34.2 10 64v42c0
+    6.6 8 9.9 12.6 5.2l9.5-9.5a6.5 6.5 0 0 1 9.2 0l9.1 9.1a6.5 6.5 0 0 0 9.2 0l9.1-9.1a6.5 6.5 0
+    0 1 9.2 0l9.5 9.5c4.6 4.7 12.6 1.4 12.6-5.2V64c0-29.8-24.2-54-54-54z"/><ellipse cx="47"
+    cy="58" rx="8.5" ry="13" fill="#2b2350"/><ellipse cx="81" cy="58" rx="8.5" ry="13"
+    fill="#2b2350"/></svg><span id="wLabel">Connect</span></button>
 </nav>
 
 <header class="hero">
@@ -396,31 +423,38 @@ tbody tr:last-child td{border-bottom:0}
   <p class="tag">You snooze, you win. <span class="tick">$SNOOZE</span></p>
   <p class="lede"><b>$SNOOZE is the ticket. LAPTOP is the show.</b></p>
   <div class="heroCta">
-    <a class="cta" href="#buy">Buy LAPTOP</a>
+    <a class="cta" href="#buy">Buy $SNOOZE</a>
     <a class="cta sub2" href="#how">How it works</a>
   </div>
   <p class="state" id="heroState"></p>
 </header>
 
+<!-- $SNOOZE, not LAPTOP, and the card that used to be here was the page's worst thing. It
+     offered the token that launches SECOND, cannot be bought, and has no address — above the
+     fold, as the primary action, on a page whose every badge says nothing is live. $SNOOZE is
+     what launches first and it is the only thing anybody can ever act on here, so it is what
+     the first card sells and what the first button points at. -->
 <div class="card" id="buy">
-  <div class="hdr"><h2>Buy LAPTOP</h2><span class="badge warn" id="lapBadge">not deployed</span></div>
+  <div class="hdr"><h2>Buy $SNOOZE</h2><span class="badge warn" id="buyBadge">not deployed</span></div>
   <div class="swap">
     <div class="leg"><div class="k">you pay</div><div class="v">ETH</div></div>
     <div class="arrow" aria-hidden="true">&darr;</div>
-    <div class="leg out"><div class="k">you get</div><div class="v">LAPTOP</div></div>
+    <div class="leg out gold"><div class="k">you get</div><div class="v">$SNOOZE</div></div>
   </div>
-  <div class="need" id="lapNeed">
-    <span class="k">to bid at launch you need</span>
-    <span class="v" id="lapNeedAmt">$SNOOZE</span>
+  <!-- The page explained the mechanism at length and never once said how to do the thing. -->
+  <ol class="howto">
+    <li>Connect a wallet on Base.</li>
+    <li>Check the curve's address in <a class="ext" href="/checker.html">the checker</a>.</li>
+    <li>Send it ETH. The curve prices itself.</li>
+  </ol>
+  <div class="ca" id="buyCaRow" hidden>
+    <span class="k">the curve</span>
+    <code class="v" id="buyAddr">not deployed</code>
+    <button class="copy" id="buyCopy" type="button">copy</button>
   </div>
-  <div class="ca" id="lapCaRow" hidden>
-    <span class="k">contract</span>
-    <code class="v" id="lapAddr">not deployed</code>
-    <button class="copy" id="lapCopy" type="button">copy</button>
-  </div>
-  <a class="cta" id="lapCta" href="#get">Get $SNOOZE first</a>
-  <p class="tiny dim" style="margin:10px 0 0">Buying happens on the curve, from your wallet.
-  This page reads and never signs.</p>
+  <a class="cta" id="buyCta" href="#how" hidden>Buy on the curve</a>
+  <p class="tiny dim" style="margin:10px 0 0">Nothing is deployed yet, so there is no address to
+  check. This page reads and never signs.</p>
 </div>
 
 <section class="card live" id="live">
@@ -472,8 +506,8 @@ tbody tr:last-child td{border-bottom:0}
 <div class="twin">
   <div class="tok">
     <div class="th"><span class="sym gold">$SNOOZE</span><span class="badge warn" id="poolBadge">not deployed</span></div>
-    <p class="what">Snooze Bear. Buy it, hold it. Selling into a spike burns most of what you
-    would have taken; nobody sells more than a fifth of their bag a day.</p>
+    <p class="what">Snooze Bear. Buy it, hold it. Nobody sells more than a fifth of their bag
+    a day.</p>
     <div class="ca"><span class="k">contract</span>
       <code class="v" id="poolAddr">not deployed</code></div>
     <div class="ca" id="yours" hidden><span class="k">you hold</span>
@@ -850,7 +884,7 @@ function showPool(){
 (function state(){
   const el = $("heroState"); if(!el) return;
   const paint = () => {
-    const snooze = ($("poolBadge") || {}).textContent || "not deployed";
+    const snooze = ($("buyBadge") || {}).textContent || "not deployed";
     const laptop = (document.querySelector("#get .tok:last-child .badge") || {}).textContent
                    || "not open";
     el.innerHTML = "";
@@ -864,7 +898,7 @@ function showPool(){
   paint();
   /* Repainted when a chain read changes a badge, for the same reason it is derived from them. */
   const o = new MutationObserver(paint);
-  for (const id of ["poolBadge", "lapBadge"])
+  for (const id of ["poolBadge", "buyBadge"])
     if ($(id)) o.observe($(id), { childList: true, characterData: true, subtree: true });
 })();
 
@@ -905,38 +939,35 @@ window.__SNOOZE = { burnAt, POOL, TOKEN };
    changes this file, which changes its hash, which the README republishes — so an address
    arrives through the same door as everything else instead of out of a config nobody reads. */
 const LAPTOP_CURVE = "";
+/* The $SNOOZE curve: the address a buyer sends ETH to. Not the token — a transfer to the token
+   contract buys nothing and is the most common way somebody loses money on a launch day. */
+const SNOOZE_CURVE = "";
 const SNOOZE_TOKEN = "";
 const GATE_MIN_TEXT = "$SNOOZE";   // set to the real minimum once the curve is deployed
 
 (function(){
-  const badge = $("lapBadge"), cta = $("lapCta"), row = $("lapCaRow"), addr = $("lapAddr");
+  const badge = $("buyBadge"), cta = $("buyCta"), row = $("buyCaRow"), addr = $("buyAddr");
   if(!badge) return;
-  const needAmt = $("lapNeedAmt");
-  if(needAmt) needAmt.textContent = GATE_MIN_TEXT;
-  if(LAPTOP_CURVE){
+  if(SNOOZE_CURVE){
     badge.textContent = "live"; badge.className = "badge good";
-    addr.textContent = LAPTOP_CURVE;
+    addr.textContent = SNOOZE_CURVE;
     row.hidden = false;
-    cta.textContent = "Buy on the curve";
-    cta.href = "https://basescan.org/address/" + LAPTOP_CURVE;
+    cta.hidden = false;
+    cta.href = "https://basescan.org/address/" + SNOOZE_CURVE;
     cta.rel = "noopener noreferrer";
   }else{
     badge.textContent = "not deployed"; badge.className = "badge warn";
     row.hidden = true;
-    if(SNOOZE_TOKEN){
-      cta.textContent = "Get $SNOOZE first"; cta.href = "#get"; cta.hidden = false;
-    }else{
-      // Nothing to buy and nothing to hold, so there is nothing for a button to do. A control
-      // that goes somewhere unhelpful is the same false affordance as a card shaped like one —
-      // it is removed rather than pointed at the nearest page.
-      cta.hidden = true;
-    }
+    // Nothing to buy, so there is nothing for a button to do. A control that goes somewhere
+    // unhelpful is the same false affordance as a card shaped like one — it is removed rather
+    // than pointed at the nearest page.
+    cta.hidden = true;
   }
-  const c = $("lapCopy");
+  const c = $("buyCopy");
   if(c) c.addEventListener("click", async () => {
     // No clipboard permission prompt on a page that has not earned one: fall back to
     // selecting the text so a copy is always one keystroke away.
-    try{ await navigator.clipboard.writeText(LAPTOP_CURVE); c.textContent = "copied"; }
+    try{ await navigator.clipboard.writeText(SNOOZE_CURVE); c.textContent = "copied"; }
     catch(e){
       const r = document.createRange(); r.selectNodeContents(addr);
       const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r);
@@ -1001,7 +1032,8 @@ function ownerView(addr){
   function wState(cls, text, title){
     if(!btn) return;
     btn.className = "conn" + (cls ? " " + cls : "");
-    btn.textContent = text;
+    const lab = $("wLabel");
+    if(lab) lab.textContent = text; else btn.textContent = text;
     if(title) btn.title = title; else btn.removeAttribute("title");
   }
   async function connect(){

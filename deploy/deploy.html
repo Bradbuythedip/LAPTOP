@@ -452,7 +452,13 @@ function STEPS(){
                "`node deploy/scripts/artifacts.mjs` to regenerate what this page reads. " +
                'Choose "observational" or "never-ready" — there is no default, because both ' +
                "are real choices and one of them is a different token.";
-      return o ? null : "no oracle address yet";
+      /* NOT blocked for want of the address when deploying one is this step's own
+         transaction. It was, and the two conditions were exact opposites: the button appears
+         only when there is no address, and the step was blocked only when there is no address,
+         so the one control that could produce an oracle was disabled in precisely the case it
+         exists for. With "observational" there is nothing to deploy and the refusal stands. */
+      if(L.oracle.choice === "never-ready") return null;
+      return o ? null : "no oracle address yet — deploy one, or set oracle.address";
     },
     note: function(){ return L.oracle.choice === "never-ready" ? NEVER_READY : null; },
     reads: function(){ return o ? [
@@ -606,8 +612,10 @@ function STEPS(){
            SUCCEEDS while Rule 1 burns part of it. The curve then holds a fraction of what it was
            meant to and its parameters are already immutable. */
         needs:function(){ return ST.fundedOk ? null :
-          "the curve must already hold its whole allocation. Verify step 5 after funding — " +
-          "after setPool, a transfer into the curve is a sell and part of it burns."; } }
+          "the curve must have received its whole allocation. Verify step 5 after funding — " +
+          "once setPool lands, a transfer into the curve is a sell, and Rule 2 rejects it " +
+          "while Rule 1 burns part of a retry. A buy in the meantime is fine: it moves tokens " +
+          "from the balance into sold() and leaves the sum alone."; } }
     ],
     irreversible:[
       "feeTo is immutable. There is no setFeeTo: a fee address that can be repointed later is an admin key with a different name.",
@@ -656,11 +664,30 @@ function STEPS(){
       numIs(c, r, "bondTarget()", L.curve.bondTarget);
       addrIs(c, r, "gateToken()", L.curve.gateToken || SNOOZE.ZERO);
       numIs(c, r, "gateMin()", L.curve.gateMin);
-      numIs(c, r, "sold()", "0", "sold() is 0 — nothing has traded yet");
-      numIs(c, r, "reserveEth()", "0", "reserveEth() is 0");
+      /* NOT "sold() is 0" and NOT "balanceOf(curve) == curveSupply". The curve is public and
+         tradeable the moment it is funded, so a single buy — by anybody, at any time between
+         funding it and reading it back — used to fail step 5 forever. Step 6 is gated on step
+         5, so freeze() and seal() would be unreachable for the life of the token because
+         somebody bought a tenth of an ether at the wrong moment.
+
+         What SnoozeCurve actually maintains is held + sold == curveSupply: buy does
+         `sold += out` then transfers out, sell reverses both. That is the invariant, and the
+         two raw numbers are reported so you can see whether trading has started — which is a
+         fact, not a failure. deploy/scripts/lib/steps.mjs says the same thing; these two had
+         drifted, and the byte-equality test between page and scripts only covers calldata. */
+      var sold = got(r, "sold()", SNOOZE.readUint);
+      var held = got(r, "token.balanceOf(curve)", SNOOZE.readUint);
+      push(c, sold !== null && sold <= BigInt(L.curve.curveSupply),
+           "sold() is within what the curve was funded with",
+           sold === null ? "could not be read"
+             : sold === 0n ? "nothing has traded yet"
+             : sold + " already sold — trading has started, so freeze quickly");
+      push(c, held !== null && sold !== null && held + sold >= BigInt(L.curve.curveSupply),
+           "the curve has received every token it is allowed to sell",
+           held === null || sold === null ? "could not be read"
+             : "holds " + held + ", sold " + sold + ", funded with " + L.curve.curveSupply);
+      push(c, got(r, "reserveEth()", SNOOZE.readUint) !== null, "reserveEth() reads");
       boolIs(c, r, "bonded()", false);
-      numIs(c, r, "token.balanceOf(curve)", L.curve.curveSupply,
-            "the curve actually holds every token it is allowed to sell");
       boolIs(c, r, "token.isPool(curve)", true,
              "isPool(curve) is true, so both Snooze rules are on");
       boolIs(c, r, "token.capExempt(curve)", true,
@@ -668,7 +695,8 @@ function STEPS(){
       /* The gate that unlocks 5.register, recorded from a read rather than from having sent
          the funding transaction. */
       try{
-        ST.fundedOk = SNOOZE.readUint(r["token.balanceOf(curve)"].data) >= BigInt(L.curve.curveSupply);
+        ST.fundedOk = SNOOZE.readUint(r["token.balanceOf(curve)"].data)
+                    + SNOOZE.readUint(r["sold()"].data) >= BigInt(L.curve.curveSupply);
       }catch(e){ ST.fundedOk = false; }
       save();
       return c;
@@ -1018,7 +1046,7 @@ function stepCard(step){
     inp.addEventListener("input", function(){
       var ok = inp.value.trim() === step.confirm;
       card.querySelectorAll("button[data-tx]").forEach(function(b){
-        b.disabled = !!blocked || !ok || !W.addr || !!b.dataset.needs;
+        b.disabled = !!blocked || !ok || !W.addr || !!b.dataset.needs || done;
       });
     });
     w.appendChild(lab); w.appendChild(inp); card.appendChild(w);
@@ -1031,7 +1059,11 @@ function stepCard(step){
     var b = el("button", "act", tx.label);
     b.dataset.tx = tx.key;
     if(needs) b.dataset.needs = needs;
-    b.disabled = !!blocked || !confirmOk || !W.addr || !!needs;
+    /* `done` is the third condition and it was missing. Step 2's Deploy button stayed live
+       after the step was verified, so a second press deployed a SECOND SnoozeDeployer, silently
+       repointed the launch at it, and left the first one holding the salt everything after it
+       was ground against. */
+    b.disabled = !!blocked || !confirmOk || !W.addr || !!needs || done;
     b.addEventListener("click", function(){ send(step, tx, card); });
     row.appendChild(b);
     if(needs) card.appendChild(el("div", "tiny dim", needs));
@@ -1094,8 +1126,12 @@ async function send(step, tx, card){
   /* Poll for the receipt rather than assume. A creation receipt is also where the address
      comes from: an address typed by hand verifies just as happily against somebody else's
      deployment of the same contract with the same constructor argument. */
-  for(var i = 0; i < 120; i++){
-    await new Promise(function(r){ setTimeout(r, 2500); });
+  /* Base makes a block every 2 seconds. Waiting 2500ms BEFORE the first look meant a
+     transaction that was already mined sat under "waiting for a receipt" for longer than it
+     took to confirm — which is how somebody decides it is stuck and sends it again. Ask
+     immediately, then every 2s. */
+  for(var i = 0; i < 150; i++){
+    if(i) await new Promise(function(r){ setTimeout(r, 2000); });
     var rc = await receipt(hash);
     if(!rc) continue;
     if(rc.status !== "0x1"){
@@ -1108,16 +1144,48 @@ async function send(step, tx, card){
        by a call to SnoozeDeployer — so for that one the address comes from the salt, which
        fixed it before the transaction existed. Without this the page deadlocks at step 5. */
     var slot = tx.after ? tx.after() : step.addrKey;
-    var created = rc.contractAddress || (slot === "curve" ? ST.predicted : null);
+    /* From the RECEIPT, never from what was typed. A CREATE2 deploy through SnoozeDeployer is
+       a CALL, so rc.contractAddress is null — but the deployer emits
+       Deployed(address indexed addr, bytes32 indexed salt, address indexed by) and the address
+       is topic 1. Taking ST.predicted instead, which is what this did, meant the page believed
+       a value the operator pasted: a mistyped salt or address would have been "confirmed" by
+       comparing it to itself, and 5.fund would then have sent 80% of the supply to it. The
+       topic is keccak("Deployed(address,bytes32,address)"), asserted against the real hash in
+       test/run-deploy.mjs so a wrong nibble fails the build rather than matching nothing. */
+    var DEPLOYED = "0xfa86dcef4390d6a0f7edde563410fc44e4c2d382b4c6699cce5ebc4071abcc95";
+    var logged = null;
+    (rc.logs || []).forEach(function(g){
+      if(g && g.topics && g.topics[0] &&
+         g.topics[0].toLowerCase() === DEPLOYED && g.topics[1])
+        logged = "0x" + g.topics[1].slice(-40);
+    });
+    if(logged && ST.predicted && !SNOOZE.same(logged, ST.predicted)){
+      out.appendChild(el("div", "badbox",
+        "That transaction deployed " + logged + ", and the salt you entered promises " +
+        ST.predicted + ". Do not go on: one of them is not this launch's curve."));
+      return;
+    }
+    var created = rc.contractAddress || logged;
     if(created && slot){
       ST[slot] = created;
       save();
       out.appendChild(el("div", "okbox",
-        (rc.contractAddress ? "created " : "deployed at the ground address ") + created));
+        (rc.contractAddress ? "created " : "deployed at ") + created +
+        (logged ? " (from the deployer's own log)" : "")));
+    }else if(slot && !created){
+      out.appendChild(el("div", "badbox",
+        "That transaction created nothing and emitted no Deployed log, so there is no address " +
+        "to record. Check it on a block explorer before sending anything else."));
+      return;
     }else{
       out.appendChild(el("div", "okbox", "mined in block " + Number(BigInt(rc.blockNumber))));
     }
+    /* Same rescue verify() needs: render() rebuilds every card, and the line it was throwing
+       away here is the only place the curve's address is ever printed. */
+    var keep = out.cloneNode(true);
     render();
+    var slot2 = $("out-" + step.id);
+    if(slot2 && slot2.parentNode) slot2.parentNode.replaceChild(keep, slot2);
     return;
   }
   out.appendChild(el("div", "warnbox", "no receipt after five minutes. It may still be pending."));
@@ -1154,7 +1222,13 @@ async function verify(step, card){
     ? bad + " of " + list.length + " failed. This step is NOT verified, so nothing after it " +
       "can be sent."
     : "all " + list.length + " passed."));
+  /* render() rebuilds every card, which threw this list away in the same tick that produced
+     it — so a failing verify showed a red count and no reason, and the reason is the whole
+     output. Re-attached after the rebuild. */
+  var keep = out.cloneNode(true);
   render();
+  var slot = $("out-" + step.id);
+  if(slot && slot.parentNode) slot.parentNode.replaceChild(keep, slot);
 }
 
 $("wConnect").addEventListener("click", connect);
