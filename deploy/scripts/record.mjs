@@ -48,7 +48,12 @@ const expected = step.expectAddress ? step.expectAddress() : null;
 if (logged && expected && !sameAddress(logged, expected))
   die(`that transaction deployed ${logged}, and the salt recorded in step 4 promises ` +
       `${expected}. Do not proceed: one of them is not this launch's curve.`);
-const created = r.contractAddress || logged || expected;
+// `expected` is the salt's promise, and it belongs ONLY to the transaction that deploys at it.
+// Applied to every transaction in the step it printed "expected 0x…ba5ed" after the funding
+// transfer and after setPool — neither of which creates anything — which reads as a second
+// deployment.
+const creates = txKey === "deploy";
+const created = r.contractAddress || logged || (creates ? expected : null);
 if (created) {
   const s = stepState(state, step.id);
   state.steps[step.id] = { ...s, readBack: { ...(s.readBack || {}), address: created } };

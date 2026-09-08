@@ -34,8 +34,16 @@ if (!step.txs.length)
 // has not been VERIFIED, because a sent-but-unverified transaction may simply not be mined yet
 // and reprinting it invites sending it twice.
 const sent = stepState(state, step.id).sent || {};
-const tx = txKey ? step.txs.find(t => t.key === txKey)
-                 : step.txs.find(t => !sent[t.key]) || step.txs[step.txs.length - 1];
+const next = step.txs.find(t => !sent[t.key]);
+// Falling back to the LAST transaction when they have all been sent re-printed a transaction
+// already on chain, with no sign it was a repeat — on step 6 that is a second seal(), on step 2
+// a second SnoozeDeployer. Naming one explicitly still works, for a genuine resend.
+if (!txKey && !next)
+  die(`every transaction in step ${step.n} (${step.id}) has already been recorded as sent:\n` +
+      Object.entries(sent).map(([k, h]) => `  ${step.n}.${k}  ${h}`).join("\n") +
+      `\nRun \`node deploy/scripts/verify.mjs ${step.n}\` to read them back. To send one again ` +
+      `on purpose, name it: build.mjs ${step.n}.${step.txs[step.txs.length - 1].key}`);
+const tx = txKey ? step.txs.find(t => t.key === txKey) : next;
 const txBlocked = tx.blocked && tx.blocked();
 if (txBlocked) die(txBlocked);
 

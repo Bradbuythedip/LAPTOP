@@ -445,7 +445,7 @@ tbody tr:last-child td{border-bottom:0}
   <ol class="howto">
     <li>Connect a wallet on Base.</li>
     <li>Check the curve's address in <a class="ext" href="/checker.html">the checker</a>.</li>
-    <li>Send it ETH. The curve prices itself.</li>
+    <li>Call <code>buy</code> on it with ETH. A plain send reverts.</li>
   </ol>
   <div class="ca" id="buyCaRow" hidden>
     <span class="k">the curve</span>
@@ -453,8 +453,8 @@ tbody tr:last-child td{border-bottom:0}
     <button class="copy" id="buyCopy" type="button">copy</button>
   </div>
   <a class="cta" id="buyCta" href="#how" hidden>Buy on the curve</a>
-  <p class="tiny dim" style="margin:10px 0 0">Nothing is deployed yet, so there is no address to
-  check. This page reads and never signs.</p>
+  <p class="tiny dim" style="margin:10px 0 0">Nothing is deployed yet. This page reads and never
+  signs.</p>
 </div>
 
 <section class="card live" id="live">

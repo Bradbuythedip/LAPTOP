@@ -58,7 +58,10 @@ export async function context({ needChain = false } = {}) {
   if (cfg.problems.length)
     die("deploy/config.json:\n" + cfg.problems.map(p => "  · " + p).join("\n"));
 
-  const chainId = chainFromEnv();
+  // chainFromEnv throws on an unknown value, and every entry point calls this, so an unset
+  // shell variable printed a Node stack trace where every other refusal prints a sentence.
+  let chainId;
+  try { chainId = chainFromEnv(); } catch (e) { die(e.message); }
   if (chainId !== cfg.raw.chainId && chainId !== 84532)
     die(`SNOOZE_CHAIN is ${chainId} and deploy/config.json says ${cfg.raw.chainId}`);
 

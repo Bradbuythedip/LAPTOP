@@ -954,6 +954,33 @@ console.log("── the sequence, finished");
   ok(`and so does the page's (${pv.list.length} checks)`,
      pv.list.length > 0 && pv.list.every(c => c.ok),
      pv.list.filter(c => !c.ok).map(c => c.name + " " + c.why).join("; "));
+
+  // RE-READING A FINISHED LAUNCH. Step 3's checks used to assert the values that are true only
+  // AT step 3 — the owner holding the whole supply, and frozen() false. Both stop being true
+  // when the launch completes correctly, so a finished launch failed its own step 3. On the
+  // page the button for a done step is labelled "Re-read from the chain", and that same click
+  // wrote verified.token = false, persisted it, and locked step 4 behind it.
+  markVerified(state, "lock", { address: DEPLOYER });
+  const re = await runStepCheck(stepsNow().find(x => x.id === "token"), TOKEN);
+  ok(`step 3 still verifies on a finished launch (${re.list.length} checks)`,
+     re.list.every(c => c.ok), re.list.filter(c => !c.ok).map(c => c.name + " " + c.detail).join("; "));
+  if (PAGECHECKS) {
+    // The wrong-order block above pointed PAGE_LAUNCH at its scratch curve; the real page reads
+    // the committed twin, so restore it before asking what the real page would conclude.
+    PAGE_LAUNCH.curve = JSON.parse(JSON.stringify(TWIN.launch.curve));
+    PAGECHECKS.ST.verified = { oracle: true, deployer: true, token: true, salt: true,
+                               curve: true, lock: true };
+    const rp = await runPageCheck("token", { oracle: ORACLE, deployer: DEPLOYER, token: TOKEN,
+                                             curve: CURVE, salt: SALT, predicted: PREDICTED });
+    ok(`and so does the page's step 3 (${rp.list.length} checks)`,
+       rp.list.length > 0 && rp.list.every(c => c.ok),
+       rp.list.filter(c => !c.ok).map(c => c.name + " " + c.why).join("; "));
+    PAGECHECKS.ST.verified = {};
+  }
+  ok("and the page never downgrades a recorded verification on a re-read",
+     /var wasVerified = !!ST\.verified\[step\.id\];/.test(R("deploy/deploy.html")) &&
+     /if\(bad === 0\)\{ ST\.verified\[step\.id\] = true;/.test(R("deploy/deploy.html")),
+     "a re-read that shows a difference must report it, not erase the record");
 }
 
 /* ---- and the thing actually works ---- */

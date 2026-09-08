@@ -139,8 +139,9 @@ your wallet's own provider.</p>
     <button class="act big" id="wConnect">Connect Phantom</button>
     <button id="wForget" hidden>Forget</button>
   </div>
-  <p class="tiny dim" id="wHint" style="margin:9px 0 0">Every button below stays disabled until
-  this is connected. Phantom, or any injected EVM wallet — the page asks the wallet you have.</p>
+  <p class="tiny dim" id="wHint" style="margin:9px 0 0">Every button below that touches the chain
+  stays disabled until this is connected. Phantom, or any injected EVM wallet — the page asks the
+  wallet you have.</p>
   <div class="kv" id="wOut" hidden></div>
   <div class="warnbox" id="wErr" hidden></div>
 </div>
@@ -553,10 +554,23 @@ function STEPS(){
       boolIs(c, r, "supplyOnlyFalls()", L.token.devBps === 0);
       addrIs(c, r, "admin()", L.owner,
              "admin() is your wallet, so setPool is callable in step 5");
-      numIs(c, r, "balanceOf(owner)", L.token.supply,
-            "the whole supply is at your address, which is what funds the curve");
-      boolIs(c, r, "frozen()", false,
-             "frozen() is false, so the curve can still be registered");
+      /* State-aware, because this step gets re-read. At step 3 you hold everything; after step
+         5 you hold supply - curveSupply; after step 6 the token is frozen. Asserting the
+         step-3 values unconditionally made a correctly finished launch fail its own step 3. */
+      var owned = got(r, "balanceOf(owner)", SNOOZE.readUint);
+      var funded = !!ST.verified.curve;
+      var want = funded ? BigInt(L.token.supply) - BigInt(L.curve.curveSupply)
+                        : BigInt(L.token.supply);
+      push(c, owned !== null && owned >= want,
+           funded ? "your residual is still at your address"
+                  : "the whole supply is at your address, which is what funds the curve",
+           owned === null ? "could not be read"
+             : owned >= want ? "" : "you hold " + owned + ", expected at least " + want);
+      var froz = got(r, "frozen()", SNOOZE.readBool), locked = !!ST.verified.lock;
+      push(c, froz === locked,
+           locked ? "frozen() is true, as step 6 left it"
+                  : "frozen() is false, so the curve can still be registered",
+           froz === null ? "could not be read" : "it is " + froz);
       return c;
     }
   },
@@ -752,7 +766,7 @@ var AFTER = [
    "and do not let anyone find out about it after they have bought."],
   ["Where the supply ends up, which nothing else on this page adds up for you",
    "The curve is funded with curveSupply and the rest stays in your wallet from the block the " +
-   "token is deployed — at the configured 8e29 of a 1e30 supply that is 20%. If the curve " +
+   "token is deployed — at the configured 8e34 of a 1e35 supply that is 20%. If the curve " +
    "graduates, bondPreview()'s leftover is curveSupply / m, another 8% of supply, and it goes " +
    "to feeTo, which is you. Unlike the launchpad path, that residual is NOT exempt from " +
    "anything: setPool exempts the curve, not the sender, so your treasury is under Rule 1 and " +
@@ -891,6 +905,12 @@ function wSet(text, cls, err){
 function wFail(msg){ wSet("not connected", "bad", msg); return false; }
 
 async function connect(){
+  /* Before the wallet is prompted. With artifacts.js missing there is no L, and this function
+     reads L.chainId — so the click threw, the badge stuck on "connecting…" forever, and the
+     page had already asked for an account it could then do nothing with. */
+  if(!L) return wFail("artifacts.js did not load, so this page has no launch parameters and " +
+    "cannot build anything. Run: node deploy/scripts/artifacts.mjs — and serve deploy/ over " +
+    "http rather than opening the file directly if your browser blocked it.");
   wSet("connecting…", "");
   var prov = evmProvider();
   if(!prov){
@@ -1215,12 +1235,19 @@ async function verify(step, card){
     ul.appendChild(li);
   });
   out.appendChild(ul);
-  ST.verified[step.id] = bad === 0;
-  if(bad === 0 && step.record) step.record();
+  /* Only ever upward. The button on a finished step is labelled "Re-read from the chain", and
+     re-reading step 3 after the launch completes legitimately shows two differences — the owner
+     no longer holds the whole supply, and the token is frozen. Writing `false` there un-verified
+     a step that had been verified, PERSISTED it to localStorage, and locked step 4 behind it.
+     verify.mjs has always had this shape: it only ever records a verification on success. */
+  var wasVerified = !!ST.verified[step.id];
+  if(bad === 0){ ST.verified[step.id] = true; if(step.record) step.record(); }
   save();
   out.appendChild(el("div", bad ? "badbox" : "okbox", bad
-    ? bad + " of " + list.length + " failed. This step is NOT verified, so nothing after it " +
-      "can be sent."
+    ? bad + " of " + list.length + " failed. " + (wasVerified
+        ? "This step was verified earlier and that record stands — nothing here changed it. " +
+          "Read the failures before acting on them."
+        : "This step is not verified, so nothing after it can be sent.")
     : "all " + list.length + " passed."));
   /* render() rebuilds every card, which threw this list away in the same tick that produced
      it — so a failing verify showed a red count and no reason, and the reason is the whole
