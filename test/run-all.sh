@@ -22,7 +22,7 @@ echo
 echo "=== python: launch-fee reference model ==="
 python3 test/test_launch_model.py
 echo
-echo "=== browser: web/index.html ==="
+echo "=== browser: web/checker.html ==="
 node test/run.mjs
 echo
 echo "=== browser: web/size.html ==="
@@ -31,7 +31,7 @@ echo
 echo "=== browser: web/route.html ==="
 node test/run-route.mjs
 echo
-echo "=== browser: web/buy.html ==="
+echo "=== browser: web/index.html (the buy screen, at the site root) ==="
 node test/run-buy.mjs
 echo
 echo "=== browser: web/order.html ==="
