@@ -3,6 +3,7 @@
 import { chromium } from "playwright";
 import http from "node:http";
 import fs from "node:fs";
+import crypto from "node:crypto";
 import path from "node:path";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
@@ -18,6 +19,9 @@ const mockProc = spawn(process.execPath, [path.join(ROOT, "test", "mock-rpc.mjs"
 process.on("exit", () => mockProc.kill());
 await new Promise(r => setTimeout(r, 700));
 
+const require_sha = f =>
+  crypto.createHash("sha256").update(fs.readFileSync(f)).digest("hex");
+
 let pass = 0, fail = 0;
 const results = [];
 function ok(name, cond, extra) {
@@ -29,8 +33,8 @@ const eq = (name, got, want) => ok(name, got === want, `got  ${got}\n         wa
 // static server for web/
 const site = http.createServer((req, res) => {
   const f = path.join(ROOT, "web", req.url === "/" ? "index.html" : req.url);
-  // web/bg.png is supplied by the site owner and is not in the repo. For tests, fall back
-  // to a clearly-named fixture so the background code path is exercised either way.
+  // web/bg.png is in the repo. The fixture fallback stays so the background code path is
+  // still exercised if the artwork is ever swapped out or removed.
   const target = (!fs.existsSync(f) && f.endsWith("bg.png"))
     ? path.join(ROOT, "test", "fixture-bg.png") : f;
   fs.readFile(target, (e, d) => {
@@ -346,7 +350,7 @@ const parseRGB = s => (s.match(/[\d.]+/g) || []).slice(0, 4).map(Number);
 // so a card at 92% over a scrim over 12% art over the page colour resolves to one real colour.
 const stackOf = await page.evaluate(() => {
   const out = [];
-  for (const sel of ["#verdictArea .vtext", "#verdictArea", "h1", ".sub"]) {
+  for (const sel of ["#verdictArea .vtext", "#verdictArea", "h1", ".sub", ".badbox", ".badbox b"]) {
     const el = document.querySelector(sel);
     if (!el) { out.push(null); continue; }
     const layers = [];
@@ -392,6 +396,51 @@ for (const f of pages) {
   ok(`${f} never mentions another token`, !/POT ?PAL|POTPAL/i.test(t));
   ok(`${f} does not link to another token's page`, !/potpal\.html/.test(t));
 }
+for (const f of fs.readdirSync(path.join(ROOT, "web"))) {
+  ok(`web/${f} is not an asset named after another token`, !/TWD|POT ?PAL|POTPAL/i.test(f));
+  ok(`web/${f} is a page or the artwork, nothing else`,
+     pages.includes(f) || f === "bg.png", `unexpected file served at /${f}`);
+}
+
+// The site's one safety rule. It is only worth anything if a visitor meets it wherever they
+// land — a clone can copy every pixel, but it cannot make our prompt appear when we never
+// prompt, and that argument is useless to someone who never read it. Two of the six pages
+// used to carry it.
+// The README publishes a hash per page under a build tag, and the clone argument leans on a
+// reader being able to check the two against each other. That only works if every page states
+// the same tag and the README states that same tag. It used to say 2026-09-07a on one page,
+// 2026-09-07k in the README, and nothing at all on the other five.
+console.log("── one build tag, and the README agrees with it");
+{
+  const readme = fs.readFileSync(path.join(ROOT, "README.md"), "utf8");
+  const declared = (readme.match(/Published build `([^`]+)`/) || [])[1];
+  ok("the README declares a build tag", !!declared, "no `Published build` line found");
+  for (const f of pages) {
+    const t = fs.readFileSync(path.join(ROOT, "web", f), "utf8");
+    const tag = (t.match(/id="buildId">([^<]+)</) || [])[1];
+    ok(`${f} states a build tag`, !!tag);
+    ok(`${f} states the build the README published`, tag === declared,
+       `page ${tag} vs README ${declared}`);
+  }
+  for (const f of pages) {
+    const want = require_sha(path.join(ROOT, "web", f));
+    ok(`README publishes the current sha256 of ${f}`, readme.includes(want),
+       `${f} is ${want}, which the README does not list`);
+  }
+}
+
+console.log("── the one rule, on every page");
+const decode = t => t.replace(/&mdash;/g, "\u2014").replace(/&ldquo;|&rdquo;/g, '"')
+                     .replace(/&middot;/g, "\u00b7").replace(/\s+/g, " ");
+for (const f of pages) {
+  const t = decode(fs.readFileSync(path.join(ROOT, "web", f), "utf8"));
+  ok(`${f} promises it will never ask for a wallet`,
+     /never asks you to connect a wallet, and never will|does not ask for a wallet and never will|no wallet connection/i.test(t));
+  ok(`${f} tells the reader what a page that does ask for one is`,
+     /asks you to connect a wallet or approve a\s+transaction, it is not this page \u2014 close it/i.test(t),
+     "the close-it rule is missing or worded differently");
+}
+
 const bodyText = await txt("body");
 ok("no ticker chip survives in the rendered page", !/\$TWD/.test(bodyText));
 ok("LAPTOP is still named", /LAPTOP/.test(bodyText));

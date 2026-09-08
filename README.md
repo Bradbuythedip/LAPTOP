@@ -67,15 +67,15 @@ python3 -m http.server -d web 8000     # then open http://localhost:8000
 Or just open `web/index.html` from disk — it has no build step and no dependencies. Saving the
 file and opening it locally removes the hosting party from the trust question entirely.
 
-Published build `2026-09-07k`:
+Published build `2026-09-08a`:
 
 ```
-sha256(web/index.html) = 6fbe2386f020117966823fb19de27c8fb0b89700932e9497a810190a93927ab4
-sha256(web/size.html)  = 0948acf9ec3fc803731261885b06373c1839ee29b51c0e9cb8f1287a26b1cdad
-sha256(web/route.html) = 7e50b7ad993b7d96cbeb740ad347c0060b7672589d569bc691454f965b15c4c9
-sha256(web/buy.html)   = a1c11dcc49463985028f9330312566c314dcee1455d8b36992e53858f853bccd
-sha256(web/order.html) = 3479449a5d61e4010958cdc27a433d22b8c70ed42bc4cfbe9ec1e9d710650b0c
-sha256(web/slot.html)  = a8e7e0861a1017ea2185d67d3888ad9db75f333c03cd36fe90782e8b9dcc3107
+sha256(web/index.html) = 1a678263d392b4946bbb89747c16c3f48a737f7d9468db057b2038fab78e64cd
+sha256(web/size.html)  = 18625246fcea388f5e184dc123df191c859b471a36807842365830cbc28251ed
+sha256(web/route.html) = 966df9b84694bb07b3371b458bc9995308ef442d7433c0c7410bd7ca306a3862
+sha256(web/buy.html)   = 9219006305c9762f4b923938c744a5bd91594ea21bff6a15454c7af282a32d23
+sha256(web/order.html) = 256a0fbff3d05ec7bf50dd969ece79969d361c8023b7d2122761ca8323f51702
+sha256(web/slot.html)  = a12501448ebe11fef39db420d878cf8b475ddc6732655e80065be0abd664b7e7
 ```
 
 ### Tests
@@ -84,14 +84,17 @@ sha256(web/slot.html)  = a8e7e0861a1017ea2185d67d3888ad9db75f333c03cd36fe90782e8
 sh test/run-all.sh         # everything below, no network touched
 ```
 
-**557 assertions across nine suites.**
+**604 assertions across nine suites.**
 
-`test/run.mjs` — 118, drives the real page in Chromium against `test/mock-rpc.mjs`: Keccak
+`test/run.mjs` — 165, drives the real page in Chromium against `test/mock-rpc.mjs`: Keccak
 vectors, the four EIP-55 reference addresses, the v4 poolId derivation checked against a real
 Base pool id, ABI-string decoding (including a 10-character name, whose length word contains a
 hex letter, and truncated/absurd offsets), result-length discipline, and full flows for the
 happy path, pools present, wrong chain, a flaky rate-limited node, and an endpoint that refuses
-JSON-RPC batches. Needs `playwright`.
+JSON-RPC batches. It also holds the cross-page invariants: that all six pages carry the one
+safety rule in the same words, that they all state the same build tag and that the README
+publishes that tag and the current hash of every page, and that `web/` serves nothing but the
+six pages and the artwork. Needs `playwright`.
 
 `test/test_laptop_base.py` — 65, pure functions against a fake `call`, so every failure mode is
 directly reachable: none-vs-unknown, Aerodrome's reverting `getPair`, the V3/Aerodrome selector
