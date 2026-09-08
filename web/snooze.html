@@ -1,0 +1,353 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="referrer" content="no-referrer">
+<meta name="color-scheme" content="light">
+<title>$SNOOZE</title>
+<style>
+:root{
+  --bg:#f4f5fb; --fg:#1f2033; --dim:#565a72; --line:#dde0f0; --card:#ffffff; --cardBg:rgba(255,255,255,.92);
+  --eth:#4a63d8; --ethSoft:rgba(74,99,216,.09);
+  --ok:#0c6b3a; --okbg:rgba(12,107,58,.10); --bad:#b3251c; --badbg:rgba(179,37,28,.09);
+  --warn:#7f5600; --warnbg:rgba(127,86,0,.10); --unk:#4b5069; --unkbg:rgba(74,99,216,.07);
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{background:var(--bg);color:var(--fg);
+  font:16px/1.6 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  -webkit-text-size-adjust:100%;overflow-x:hidden;
+  padding:0 16px env(safe-area-inset-bottom) 16px;max-width:680px;margin:0 auto}
+h1{font-size:21px;margin:20px 0 3px;letter-spacing:-.01em}
+.sub{color:var(--dim);font-size:13.5px;margin:0 0 16px;line-height:1.55}
+.card{background:var(--cardBg);border:1px solid var(--line);border-radius:12px;padding:14px;margin:12px 0}
+.mono{font-family:var(--mono);font-size:13px;word-break:break-all;line-height:1.5}
+.dim{color:var(--dim)} .tiny{font-size:12.5px;line-height:1.55}
+label{display:block;font-size:13px;color:var(--dim);margin-bottom:6px}
+input{width:100%;font-family:var(--mono);font-size:16px;padding:11px;border:1.5px solid var(--line);
+  border-radius:9px;background:var(--card);color:var(--fg)}
+input:focus{outline:none;border-color:var(--fg)}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.hdr{display:flex;justify-content:space-between;align-items:center;gap:8px;
+  margin-bottom:8px;flex-wrap:wrap}
+.hdr h2{font-size:14.5px;margin:0;font-weight:600}
+.badge{display:inline-flex;align-items:center;gap:5px;font-size:12px;padding:4px 9px;
+  border-radius:999px;border:1px solid var(--line);background:var(--unkbg);color:var(--dim);white-space:nowrap}
+.badge.good{background:var(--okbg);border-color:var(--ok);color:var(--ok)}
+.badge.bad{background:var(--badbg);border-color:var(--bad);color:var(--bad)}
+.badge.warn{background:var(--warnbg);border-color:var(--warn);color:var(--warn)}
+.warnbox{background:var(--warnbg);border:1px solid var(--warn);color:var(--warn);
+  border-radius:8px;padding:11px;font-size:12.5px;margin:8px 0}
+.badbox{background:var(--badbg);border:1px solid var(--bad);color:var(--bad);
+  border-radius:8px;padding:11px;font-size:12.5px;margin:8px 0}
+.okbox{background:var(--okbg);border:1px solid var(--ok);color:var(--ok);
+  border-radius:8px;padding:11px;font-size:12.5px;margin:8px 0}
+table{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:6px}
+th,td{text-align:right;padding:7px 5px;border-bottom:1px solid var(--line)}
+th:first-child,td:first-child{text-align:left}
+th{color:var(--dim);font-weight:500}
+td.n{font-family:var(--mono)}
+.scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
+a{color:inherit} a.ext{text-decoration:underline;text-underline-offset:2px}
+.footer{color:var(--dim);font-size:12.5px;margin:22px 0 30px;line-height:1.65}
+.hr{height:1px;background:var(--line);margin:14px 0}
+
+/* THE DIAL. One number, the size of the page, because it is the only number that decides
+   whether to press the button. */
+.dial{text-align:center;padding:26px 14px 20px}
+.dial .n{font-family:var(--mono);font-size:62px;font-weight:700;line-height:1;
+  letter-spacing:-.03em}
+.dial .n.hot{color:var(--bad)} .dial .n.cool{color:var(--ok)}
+.dial .say{font-size:17px;font-weight:600;margin-top:10px}
+.dial .why{font-size:13px;color:var(--dim);margin-top:6px}
+@media (min-width:600px){ .dial .n{font-size:78px} }
+
+.rule{border-left:3px solid var(--eth);padding:2px 0 2px 12px;margin:12px 0}
+.rule h3{margin:0 0 4px;font-size:14px}
+.rule p{margin:0;font-size:13px;color:var(--dim)}
+.correction{border-left:3px solid var(--warn);padding:2px 0 2px 12px;margin:12px 0}
+.correction h3{margin:0 0 4px;font-size:14px;color:var(--warn)}
+.correction p{margin:0;font-size:13px}
+
+body::before{
+  content:"";position:fixed;inset:0;z-index:-3;pointer-events:none;
+  background:url("/bg.png") center center / cover no-repeat;opacity:.12}
+html::before{
+  content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;
+  background:radial-gradient(ellipse 120% 90% at 50% 38%,
+    rgba(244,245,251,.30) 0%, rgba(245,246,252,.62) 48%, rgba(248,249,253,.90) 82%, rgba(250,251,254,.96) 100%);
+}
+</style>
+</head>
+<body>
+
+<h1>$SNOOZE</h1>
+<p class="sub">You snooze, you win. <a href="/">where to buy</a> &middot;
+<a href="/checker.html">contract checker</a> &middot; <a href="/size.html">size curve</a> &middot;
+<a href="/order.html">standing order</a> &middot; <a href="/slot.html">getting a slot</a></p>
+
+<div class="card">
+  <div class="dial">
+    <div class="n" id="dialNum">—</div>
+    <div class="say" id="dialSay">Reading the pool…</div>
+    <div class="why" id="dialWhy"></div>
+  </div>
+  <div class="grid">
+    <div><label for="spot">Price now</label><input id="spot" value="1.70" inputmode="decimal"></div>
+    <div><label for="twap">24-hour average</label><input id="twap" value="1.00" inputmode="decimal"></div>
+  </div>
+  <p class="tiny dim" style="margin:9px 0 0">
+    These are read from the pool on the live site. They are editable here so you can see what
+    the dial does before you hold any. The same arithmetic runs in
+    <span class="mono">quoteSell()</span> on chain, so the number here and the number you get
+    cannot drift apart.
+  </p>
+</div>
+
+<div class="card">
+  <div class="hdr"><h2>The two rules</h2><span class="badge" id="frozenBadge">not yet frozen</span></div>
+  <div class="rule">
+    <h3>1 &middot; You sell at yesterday's price.</h3>
+    <p>If the price is above its 24-hour average and you sell today, the difference burns.
+    If it is at or below the average, you sell at today's price and nothing burns.</p>
+  </div>
+  <div class="rule">
+    <h3>2 &middot; Nobody can nuke it.</h3>
+    <p>No wallet moves more than 20% of its balance per day. Not whales, not the deployer.
+    That applies to every transfer out, so moving to a fresh wallet is throttled too.</p>
+  </div>
+  <p class="tiny dim" style="margin:10px 0 0">
+    Fixed supply, and it only falls &mdash; provided the deployer took no share of the burn.
+    The contract answers that itself: <span class="mono">supplyOnlyFalls()</span> returns
+    false if any part of the haircut is paid out instead of destroyed, so this page cannot
+    claim it by accident.
+  </p>
+</div>
+
+<div class="card">
+  <div class="hdr"><h2>What the rules do not do</h2><span class="badge warn">read this before buying</span></div>
+  <p class="tiny dim" style="margin:0 0 8px">
+    Every line here came out of running the contract, not out of writing the pitch. They are
+    the parts a buyer is most likely to get wrong.
+  </p>
+
+  <div class="correction">
+    <h3>A dump is free.</h3>
+    <p>The burn is <span class="mono">(price &minus; average) / price</span>, which is zero
+    whenever the price is at or below its average &mdash; which is exactly what a downtrend
+    looks like. Selling into a crash costs nothing. Rule 1 taxes selling into strength only.
+    "Dumpers fund the burn" is not true of the dumpers you care about; Rule 2 is the only
+    thing slowing them.</p>
+  </div>
+
+  <div class="correction">
+    <h3>Sleeping on it does not bank the spike.</h3>
+    <p>Tomorrow you are paid the lower of tomorrow's price and tomorrow's average. If the
+    price falls back overnight you get the fallen price, and the spike was never yours.
+    Waiting trades a certain haircut for an uncertain price. That can be a good trade. It is
+    not the same as "tomorrow the jump is yours".</p>
+  </div>
+
+  <div class="correction">
+    <h3>Rule 2 sets a decay rate, not a deadline.</h3>
+    <p>A wallet that moves its full 20% every day still holds 32.8% after five days and 10.7%
+    after ten. Tokens are uncapped once they arrive somewhere, and each new wallet gets its
+    own 20%, so a determined exit spreads and drips in parallel. It is slower than a nuke. It
+    is not five days and done.</p>
+    <div class="scroll"><table id="decay"><tbody></tbody></table></div>
+  </div>
+
+  <div class="correction">
+    <h3>The dial is also your instant loss if you just bought.</h3>
+    <p>Buy at a price 70% above the average and your immediate exit value is the average &mdash;
+    you are down 41% the moment the transaction confirms, and 41% is the number at the top of
+    this page. The pitch says Rule 1 stops buying the top being the dumbest trade on the chart.
+    It does the opposite: it makes the loss mechanical and immediate instead of probabilistic.
+    <b>The higher the dial, the worse a moment it is to buy</b>, not just to sell.</p>
+  </div>
+
+  <div class="correction">
+    <h3>"No lock" is not true.</h3>
+    <p>20% of what remains, every day, is geometric. A wallet holds 32.8% after five days,
+    10.7% after ten, 0.12% after a month, and never reaches zero. There is no lock-up period
+    because there is no end to it. That is a softer constraint than a cliff and it is not
+    "no lock".</p>
+  </div>
+
+  <div class="correction">
+    <h3>An unregistered venue is outside both rules.</h3>
+    <p>The haircut only fires on addresses the deployer registered as pools. Any other
+    venue &mdash; a pool nobody registered, an OTC counterparty, a wrapper contract &mdash;
+    takes tokens at no haircut. And registering is disabled by <span class="mono">freeze()</span>,
+    which is exactly what you should want the deployer to call. So either the deployer keeps
+    the power to change the rules, or new venues are permanently outside them. There is no
+    setting where both hold.</p>
+  </div>
+
+  <div class="correction">
+    <h3>Day one has no Rule 1 at all.</h3>
+    <p>A 24-hour average needs 24 hours. Until the oracle has a full window the burn reads
+    zero, so "snipers get nothing" does not hold for the first day &mdash; the day snipers
+    care about. The dial says <b>warming up</b> while that is true rather than showing a
+    reassuring 0%.</p>
+  </div>
+
+  <div class="correction">
+    <h3>A daily cap breaks things that are not attacks.</h3>
+    <p>Exchange deposits, bridges, aggregator routes, lending markets and LP withdrawals all
+    move more than 20% of a balance at once as a matter of course. They will fail, and to
+    someone who does not know the rule a failed sell looks exactly like a honeypot. Scanners
+    flag this shape for that reason.</p>
+  </div>
+</div>
+
+<div class="card">
+  <div class="hdr"><h2>What it would cost you</h2></div>
+  <div class="grid">
+    <div><label for="bag">Your bag</label><input id="bag" value="1000000" inputmode="decimal"></div>
+    <div><label for="want">You want to sell</label><input id="want" value="300000" inputmode="decimal"></div>
+  </div>
+  <div id="cost"></div>
+</div>
+
+<div class="card">
+  <div class="hdr"><h2>Before you buy anything</h2></div>
+  <p class="tiny dim" style="margin:0 0 8px">
+    This page describes a mechanism. It does not prove that the token you are about to buy
+    implements it. Those are different claims and only the second one costs money.
+  </p>
+  <ol class="tiny" style="margin:0;padding-left:20px">
+    <li>Check the address against <a href="/checker.html">the contract checker</a>. A page
+      describing good rules is not evidence the deployed bytecode has them.</li>
+    <li>Read <span class="mono">supplyOnlyFalls()</span> on chain. If it is false, the
+      deployer takes a cut of every haircut and the fixed-supply claim is not true.</li>
+    <li>Read <span class="mono">frozen()</span>. While it is false the deployer can still
+      exempt wallets from Rule 2, which makes Rule 2 a promise rather than a rule.</li>
+    <li>Read <span class="mono">burnBps()</span> yourself. If it disagrees with the number at
+      the top of this page, trust the chain and close this page.</li>
+  </ol>
+</div>
+
+<div class="footer">
+  <div class="hr"></div>
+  <p><b>This is not a novel mechanism.</b> A transfer haircut plus a maximum-transaction limit
+  is one of the most-deployed token patterns there is &mdash; it was everywhere in 2021, and
+  the reason it is out of favour is not missing tooling. It is that the same shape is what
+  honeypots are built from, and holders learned to avoid anything that can decide how much of
+  a sale reaches them. $SNOOZE is that shape with the parameters published, the admin keys
+  freezable, and the arithmetic quotable before you trade. That is a real difference. It is
+  not a different mechanism.</p>
+  <p><b>What could still go wrong.</b> The oracle is a dependency and it fails <i>open</i>: if
+  the feed is not ready the haircut reads zero and Rule 1 is simply absent. Failing closed
+  would block every sell and make this a literal honeypot, so open is the right choice, but it
+  means a dead feed silently switches the rule off and a plain 0% cannot tell you which is
+  happening. Read <span class="mono">ruleActive()</span>, not just the dial.</p>
+  <p><b>The cap governs tokens, not exposure.</b> Nothing here stops selling a wallet's key,
+  borrowing against the bag, shorting elsewhere, or depositing into a wrapper that has no
+  rules and trading that instead. Over time liquidity migrates to whatever venue is
+  unencumbered, and the encumbered one becomes a reference price. That is the structural
+  ceiling on this design and no parameter fixes it.</p>
+  <p> &middot; totalworlddomination.xyz &middot; Build <span class="mono" id="buildId">2026-09-08a</span> &middot; no analytics,
+  no trackers, no cookies. This page does not ask you to sign anything and cannot send a
+  transaction.</p>
+</div>
+
+<script>
+"use strict";
+const $=id=>document.getElementById(id);
+
+/* Mirrors Snooze.sol exactly. burnBps = (spot - twap) / spot, zero when spot <= twap, capped
+   at 90% so a broken oracle cannot confiscate a whole sale. The contract exposes the same
+   arithmetic as quoteSell(), and run-snooze.mjs asserts the two agree. */
+const MAX_BURN_BPS=9000, DAILY_BPS=2000;
+function burnBps(spot,twap,ready){
+  if(!ready) return null;                 // no 24h history yet: unknown, not zero
+  if(!(spot>0)||twap>=spot) return 0;
+  return Math.min(MAX_BURN_BPS, Math.floor((spot-twap)*10000/spot));
+}
+function quoteSell(amount,bps,devBps){
+  const haircut=Math.floor(amount*bps/10000);
+  const toDev=Math.floor(haircut*(devBps||0)/10000);
+  return {delivered:amount-haircut, burned:haircut-toDev, toDev};
+}
+/* Rule 2, as the contract applies it: 20% of the balance at the START of the window. */
+const dailyAllowance=bag=>bag*DAILY_BPS/10000;
+
+const num=(id,d)=>{const v=parseFloat($(id).value); return Number.isFinite(v)?v:d;};
+const pct=v=>v.toFixed(2)+"%";
+const fmt=v=>v>=1000?v.toLocaleString(undefined,{maximumFractionDigits:0})
+                    :v.toLocaleString(undefined,{maximumFractionDigits:4});
+
+function render(){
+  const spot=num("spot",1.7), twap=num("twap",1), ready=true;
+  const bps=burnBps(spot,twap,ready);
+
+  const n=$("dialNum"), say=$("dialSay"), why=$("dialWhy");
+  if(bps===null){
+    n.textContent="—"; n.className="n";
+    say.textContent="Warming up.";
+    why.textContent="A 24-hour average needs 24 hours. Until then there is no Rule 1 at all.";
+  } else if(bps===0){
+    n.textContent="0%"; n.className="n cool";
+    say.textContent="Selling now burns nothing.";
+    why.textContent="The price is at or below its 24-hour average, so there is no haircut. "+
+      "This is also what a downtrend looks like — the rule is not protecting you here.";
+  } else {
+    n.textContent=(bps/100).toFixed(0)+"%"; n.className="n hot";
+    say.textContent="Selling now burns "+(bps/100).toFixed(0)+"%. Sleep on it.";
+    why.textContent="The price is "+(((spot/twap)-1)*100).toFixed(0)+"% above its 24-hour "+
+      "average. Tomorrow you are paid the lower of tomorrow's price and tomorrow's average — "+
+      "which is better than this only if the price holds.";
+  }
+
+  /* the decay table, which is the honest version of "a five-day drip" */
+  const d=$("decay").querySelector("tbody"); d.innerHTML="";
+  const row=(tag,cells)=>{
+    const tr=document.createElement("tr");
+    for(const c of cells){
+      const el=document.createElement(tag);
+      if(c&&typeof c==="object"){ el.textContent=c.v; if(c.n) el.className="n"; }
+      else el.textContent=c;
+      tr.appendChild(el);
+    }
+    return tr;
+  };
+  d.appendChild(row("th",["After","One wallet still holds"]));
+  for(const day of [1,3,5,10,14,21])
+    d.appendChild(row("td",[day+(day===1?" day":" days"),
+      {v:(Math.pow(0.8,day)*100).toFixed(1)+"%",n:1}]));
+
+  /* what it would cost */
+  const bag=Math.max(0,num("bag",1000000)), want=Math.max(0,num("want",300000));
+  const allowed=dailyAllowance(bag);
+  const c=$("cost"); c.innerHTML="";
+  const box=document.createElement("div");
+  if(want>allowed){
+    box.className="badbox";
+    box.textContent="Rule 2 stops this before Rule 1 is reached. You may move "+
+      fmt(allowed)+" today — 20% of "+fmt(bag)+" — and you asked to sell "+fmt(want)+
+      ". The transaction reverts; it does not partially fill. The dial's percentage is not "+
+      "the whole cost of leaving, the cap is.";
+  } else if(bps){
+    const q=quoteSell(want,bps,0);
+    box.className=bps>=3000?"badbox":"warnbox";
+    box.textContent="Selling "+fmt(want)+" now: "+fmt(q.delivered)+" reaches the market and "+
+      fmt(q.burned)+" burns forever. Waiting until the price is back at its average would "+
+      "deliver all "+fmt(want)+" — at whatever price the market is then.";
+  } else {
+    box.className="okbox";
+    box.textContent="Selling "+fmt(want)+" now burns nothing, because the price is not above "+
+      "its average. All "+fmt(want)+" reaches the market.";
+  }
+  c.appendChild(box);
+}
+
+for(const id of ["spot","twap","bag","want"]) $(id).addEventListener("input",render);
+render();
+
+window.__SNOOZE={burnBps,quoteSell,dailyAllowance,MAX_BURN_BPS,DAILY_BPS};
+</script>
+</body>
+</html>

@@ -1,4 +1,5 @@
-// Tests for web/buy.html — the venue comparison. Drives the real page in Chromium against
+// Tests for web/index.html — the venue comparison, which is the site's landing page. It was
+// web/buy.html until the buy screen was moved to the front. Drives the real page against
 // test/mock-rpc.mjs, including a three-venue fixture with deliberately different depths.
 import { chromium } from "playwright";
 import http from "node:http";
@@ -41,7 +42,7 @@ const ctx = await browser.newContext({ viewport: { width: 375, height: 900 } });
 const page = await ctx.newPage();
 const pageErrors = [];
 page.on("pageerror", e => pageErrors.push(e.message));
-await page.goto(SITE + "/buy.html", { waitUntil: "domcontentloaded" });
+await page.goto(SITE + "/", { waitUntil: "domcontentloaded" });
 const txt = async s => (await page.textContent(s).catch(() => "")) || "";
 const use = async scn => {
   await page.evaluate(u => localStorage.setItem("laptop.rpc", u), MOCK + "/" + scn);
@@ -50,7 +51,7 @@ const use = async scn => {
 const compare = async () => { await page.click("#go"); await page.waitForTimeout(1400); };
 
 console.log("── the page connects and reads, and cannot spend money");
-const src = fs.readFileSync(path.join(ROOT, "web", "buy.html"), "utf8");
+const src = fs.readFileSync(path.join(ROOT, "web", "index.html"), "utf8");
 ok("connects to Phantom", /eth_requestAccounts/.test(src));
 ok("uses Phantom's EVM side, which is the only one that can see Base",
    /p\.ethereum/.test(src) && /window\.phantom/.test(src));

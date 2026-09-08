@@ -7,11 +7,16 @@ Two halves:
 - **`web/`** — seven pages for people who are about to buy, at
   [totalworlddomination.xyz](https://totalworlddomination.xyz). One self-contained HTML file
   each. They connect to Phantom to read your Base balances and they never ask you to sign
-  anything: `index.html` answers *is this the right contract*, `size.html` *what does my size
-  get me*, `buy.html` *which venue fills best*, `order.html` *can I commit before launch*,
-  `slot.html` *is this preorder real*, `route.html` *what should I be holding*, and
-  `launch.html` — for whoever sets the parameters, not for buyers — *what does a fee design
-  actually earn*.
+  anything. **`index.html` is the buy screen** — *which venue fills best* — and it is the
+  landing page. Then `checker.html` answers *is this the right contract*, `size.html` *what
+  does my size get me*, `order.html` *can I commit before launch*, `slot.html` *is this
+  preorder real*, `route.html` *what should I be holding*, and `launch.html` — for whoever
+  sets the parameters, not for buyers — *what does a fee design actually earn*.
+
+  The buy screen was moved to the front on request. It used to be the contract checker, and
+  that is a real trade: the checker is the anti-scam tool and it is now one click away rather
+  than the first thing a visitor sees. Every page still links to it, and the verdict's primary
+  action still points at the buy screen, so the two are one hop apart in both directions.
 - **`*.py`** — the tracing and execution tooling: find the pools, watch for the first real
   liquidity, execute a Uniswap v4 swap, execute a classic V2/V3/Aerodrome swap.
 
@@ -20,7 +25,7 @@ Two halves:
 
 ---
 
-## `web/` — the contract checker
+## `web/checker.html` — the contract checker
 
 The problem it solves: within an hour of the launch being reported, at least 14 copycat tokens
 using the LAPTOP name appeared across four chains and traded $6.9M between them. One was deployed
@@ -68,19 +73,20 @@ careful about everything it cannot answer.
 python3 -m http.server -d web 8000     # then open http://localhost:8000
 ```
 
-Or just open `web/index.html` from disk — it has no build step and no dependencies. Saving the
+Or just open any of them from disk — it has no build step and no dependencies. Saving the
 file and opening it locally removes the hosting party from the trust question entirely.
 
 Published build `2026-09-08a`:
 
 ```
-sha256(web/index.html) = 1f5aa45278541f20f77aad70d6e926dce1cd21aa85590d1f2fe6bbd54700705c
-sha256(web/size.html)  = 9e0a6f6e7ab2c0012f814802d7c554227e5dc4fec59728be1be9e656d4ec4329
-sha256(web/route.html) = e2cce3fafbac12ddeabb9870bacd0b2b64d779292eba03b944e62424b6d477a7
-sha256(web/buy.html)   = 558b6318841d0d51a27bf4fc1a5cfd924ed226cfdc237516ed6a44db0ff211c5
-sha256(web/order.html) = dbcef0b37a2e710ba4103b5f85a6df400125e869e52c029f14b17a167683e175
-sha256(web/slot.html)  = 57330d5e9e10a08ff6965f249926a1066c08a73b4110966eb46cd33c4b61af97
-sha256(web/launch.html) = fbd6f5d57f8702cac4e9ec9b68c8a1d628a561f8733bacc74d57e653a6b8af2b
+sha256(web/index.html)   = eaa83de5cd038c0f495da3076f08eb2457b75cc5722f748dacc841a8f84162c0
+sha256(web/checker.html) = 810d7f4ccca41bd4c39ff7fa7e0c2c6cc4bca78027a3a1bcfaa0579816ce6ef1
+sha256(web/size.html)    = d6dcaa05e37b62eb47b7d7c09e8c1714189c0ac1fe7de6801152ba68f787090b
+sha256(web/route.html)   = 1918c234915042687b869c7c54d9f5b918f1f60dc6aa2ba448268f19ca9cd7a1
+sha256(web/order.html)   = 9807edc55cb674887550e239b77ad8f5f52d3327fe03a5e7c5aa576962348565
+sha256(web/slot.html)    = 4bf5b2ee22170f2cfe341714edfd76f02061b0b7cddca08156407b681051375e
+sha256(web/launch.html)  = e3745a95357710991b829529d767974c5388282c1f0899560afdcd366a5eb338
+sha256(web/snooze.html)  = db91da622599c27a8b4947ba0e693027619b5164203065801514ca77597abbc3
 ```
 
 ### Tests
@@ -89,9 +95,9 @@ sha256(web/launch.html) = fbd6f5d57f8702cac4e9ec9b68c8a1d628a561f8733bacc74d57e6
 sh test/run-all.sh         # everything below, no network touched
 ```
 
-**1046 assertions across thirteen suites.**
+**1277 assertions across seventeen suites.**
 
-`test/run.mjs` — 225, drives the real page in Chromium against `test/mock-rpc.mjs`: Keccak vectors,
+`test/run.mjs` — 277, drives the real page in Chromium against `test/mock-rpc.mjs`: Keccak vectors,
 the four EIP-55 reference addresses, the v4 poolId derivation checked against a real Base pool
 id, ABI-string decoding (including a 10-character name, whose length word contains a hex
 letter, and truncated/absurd offsets), result-length discipline, and full flows for the happy
@@ -150,7 +156,28 @@ cap and its construction-time validation, the turn-off, rounding that conserves 
 freezable exemption list, and the three ramp units measured against each other for splitting
 evasion and same-block fairness.
 
-`test/run-pooled.mjs` — 65, compiles `contracts/PooledLaunchBuy.sol` and executes it against a
+`test/run-snooze.mjs` — 68, compiles `contracts/Snooze.sol` and executes both rules. Most of it
+tests the SPEC rather than the code: that a dump is free, that sleeping does not bank the
+spike, that the dial is also the buyer's instant loss, that an unregistered venue is outside
+both rules, that the oracle fails open, and that "no lock" is false.
+
+`test/run-wiring.mjs` — 35, Snooze and PooledLaunchBuy joined. Both pass alone and the
+distribution still cannot complete: `claim()` is an outbound transfer and the 20%/day cap
+applies to it. Also carries the axiomatics — the decay condition, depth-versus-appreciation,
+and what a large supply does and does not buy.
+
+`test/run-deployable.mjs` — 32, the go/no-go before a wallet is opened: every runtime under
+EIP-170 and every init code under EIP-3860 (the launchpad is the big one at 52.9% of the
+limit), every constructor run with real encoded arguments, a full `launch()` sent from an
+ordinary externally-owned account rather than from another contract, and gas measured against
+the block limit — `launch()` deploys two contracts and makes five state-changing calls in one
+transaction, and comes in at 7.2% of a 30M block. It writes `deploy/`.
+
+`test/run-launchpad.mjs` — 37, `launch()` end to end: the wiring granted before any deposit
+can arrive, the three-way distribution that could not settle by hand settling in one block,
+every admin call from every party reverting afterwards, and the parameters it refuses.
+
+`test/run-pooled.mjs` — 72, compiles `contracts/PooledLaunchBuy.sol` and executes it against a
 hostile token (fee-on-transfer, returns-false, reentrant), a router that lies about its output
 or keeps the ETH, a depositor that refuses ETH and one that reenters on receive. It reads the
 ABI and fails if a sweep, rescue, withdraw or ownership function ever appears.
@@ -232,6 +259,97 @@ the Python is right, the same arrangement `size.html` has with `test_size_math.p
 
 The page is not linked from the buyer navigation — operator tool, reachable by URL. Still a
 static file on a public site, so not secret, just not advertised.
+
+## Snooze — the launchpad
+
+The launchpad is Snooze. Every token launched on it carries the two rules, and `$SNOOZE` is
+the first ticker on it.
+
+**`contracts/SnoozeLaunchpad.sol` exists for exactly one reason,** and it is not convenience.
+`test/run-wiring.mjs` showed that a launcher who wires `Snooze` to `PooledLaunchBuy` by hand
+produces a distribution that **cannot complete**: `claim()` is an outbound transfer, so the
+20%/day cap applies, and anyone owed more than 20% of the bag is refused forever. Both
+contracts pass their own suites throughout. The launcher finds out on distribution day, with
+the money already in.
+
+`launch()` grants the exemption in the same transaction that deploys both contracts, before a
+single deposit can arrive. The bug is not documented, it is unmakeable.
+
+**Zero discretion after launch.** The launchpad holds the token's admin rights for the length
+of one transaction and gives them up inside it: register the venue, exempt the distributor,
+hand the supply to the launcher, freeze. After `launch()` returns there is no address — not
+the launcher, not the launchpad, not its deployer — that can change a pool, an exemption or a
+rule. Asserted from both sides: every admin call from every party reverts, and the launchpad's
+ABI contains no admin surface at all, with `launch` as its only state-changing function.
+
+The trade is stated rather than hidden: a venue created after the freeze is permanently
+outside the rules, because the only alternative is keeping a key that can rewrite them.
+
+**What it refuses, before the money is in.** Zero supply, a dev cut above 20% of the haircut,
+a refund window that closes before it opens or is shorter than a day, an exit fee that
+confiscates the deposit, a missing oracle. `validate()` is `pure`, so a page can check a
+proposed launch without sending anything.
+
+**`earlyStaysBetter()`** puts the decay condition on chain:
+`spot(n+1)·(10000−τ(n)) > spot(n)·(10000−τ(n+1))`. A tax that decays faster than the price
+climbs makes later buyers cheaper all-in, so waiting becomes dominant — and because the tax
+only decays *on buys*, the relief needs the buys that waiting prevents. It deadlocks. A
+launcher and a page now check that with the same arithmetic instead of a spreadsheet.
+
+**The bug was so easy to make that I made it again writing the fix.** The `Snooze` constructor
+mints to the launchpad, and the launchpad is subject to Rule 2 like everything else — so
+handing the supply on is an outbound transfer of 100% of a balance and reverts at 20%. The
+contract whose entire purpose is preventing that bug hit it on its own first transaction. It
+now exempts itself, and the exemption dies with the freeze three lines later.
+
+## `$SNOOZE` — the mechanism, and where it does not do what it says
+
+*You snooze, you win.* Two rules, in `contracts/Snooze.sol`, compiled and executed by
+`test/run-snooze.mjs`:
+
+1. **You sell at yesterday's price.** If spot is above the 24-hour average, only `twap/spot`
+   of what you send reaches the pool and the rest burns. `burnBps = (spot − twap)/spot`. At
+   spot 70% over the average that is **41%** — the number on the dial.
+2. **Nobody can nuke it.** No wallet moves more than 20% of its balance per rolling day,
+   baselined on the balance at the *start* of the window. Charging 20% of the current balance
+   each time would allow 20%, then 20% of the remaining 80%, and so on.
+
+**Three of the pitch's claims are false as written, and the tests say so rather than the
+marketing.** Each is asserted in `run-snooze.mjs` and stated on the page itself.
+
+- **A dump is free.** `burnBps` is zero whenever spot ≤ twap, which is what a downtrend *is*.
+  Selling into a crash costs nothing. Rule 1 taxes selling into strength only, so "dumpers
+  fund the burn" is not true of the dumpers that matter. Rule 2 is the only brake on a dump.
+- **Sleeping on it does not bank the spike.** Tomorrow you are paid `min(spot, twap)` again.
+  If the price fell back overnight you get the fallen price. Waiting swaps a certain haircut
+  for an uncertain price — a real trade, but not the one the slogan describes.
+- **"A five-day drip" is a decay rate, not a deadline.** A wallet moving its full 20% daily
+  still holds 32.8% after five days and 10.7% after ten. Tokens are uncapped at rest and each
+  fresh wallet gets its own 20%, so a determined exit spreads and drips in parallel.
+
+And two more the tests pin: **day one has no Rule 1 at all**, because a 24-hour average needs
+24 hours — so "snipers get nothing" fails on exactly the day snipers care about, and the dial
+shows *warming up* rather than a reassuring 0%. And the two rules **compose**: a 30% sale
+reverts on Rule 2 before Rule 1 is ever computed, so the dial's percentage is not the whole
+cost of leaving.
+
+**The dev-pay contradiction is resolved by refusing it.** Supply-only-falls and
+dev-paid-from-the-burn cannot both hold, because burnt tokens are gone. `devBps` defaults to
+zero, is capped at 20% *of the haircut* (never of the trade), and is immutable. The contract
+answers the question itself: `supplyOnlyFalls()` returns false the moment any part of the
+haircut is paid out instead of destroyed, so the page cannot claim it by accident.
+
+**It is not a novel mechanism.** A transfer haircut plus a max-transaction limit is one of the
+most-deployed token shapes there is; it was everywhere in 2021. The reason it is out of favour
+is not missing tooling — it is that the same shape is what honeypots are built from, and every
+scanner flags it. What is different here is that the parameters are published, the admin keys
+are freezable, and `quoteSell()` is the same code the transfer path runs, so the dial and the
+trade cannot drift apart. That is a real difference and it is not a different mechanism.
+
+The daily cap also breaks things that are not attacks: exchange deposits, bridges, aggregator
+routes, lending markets and LP withdrawals routinely move more than 20% of a balance at once.
+They fail, and a failed sell looks exactly like a honeypot to someone who does not know the
+rule.
 
 ## `contracts/PooledLaunchBuy.sol` — consolidate, buy once, distribute
 
@@ -435,7 +553,7 @@ little for, not as a discount.
 
 ### What it refuses to do
 
-No wallet, no signing, no network request of any kind — same rule as `buy.html`, for the same
+No wallet, no signing, no network request of any kind — same rule as the buy screen, for the same
 reason: this domain cannot defend against being cloned, and a clone that can ask for a wallet
 drains people rather than merely misleading them. It hands off to CoW Swap and 1inch with the
 LAPTOP address printed for character-by-character comparison, and **every deep link is marked
@@ -451,7 +569,7 @@ order filled, click to claim" is a message to expect and ignore. And the likelie
 launch-day order dies is not price at all: **fillers route through liquidity they have indexed,
 and a pool minutes old may not be in that set.**
 
-## `web/buy.html` — where to buy
+## `web/index.html` — where to buy, and the landing page
 
 The go-to question on launch day is not "can I swap here", it is **"which venue actually gives
 me the most LAPTOP for the size I intend"** — and nobody answers that for a new pool. Every

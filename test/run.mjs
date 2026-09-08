@@ -1,4 +1,6 @@
-// Test suite for web/index.html. Drives the real page in Chromium against test/mock-rpc.mjs.
+// Test suite for web/checker.html — the contract checker. It used to live at web/index.html
+// and at the site root; the buy screen is the landing page now and the checker moved to
+// /checker.html. Drives the real page in Chromium against test/mock-rpc.mjs.
 //   node test/run.mjs
 import { chromium } from "playwright";
 import http from "node:http";
@@ -56,7 +58,7 @@ const ctx = await browser.newContext({ viewport: { width: 375, height: 780 } });
 const page = await ctx.newPage();
 const pageErrors = [];
 page.on("pageerror", e => pageErrors.push(e.message));
-await page.goto(SITE + "/", { waitUntil: "domcontentloaded" });
+await page.goto(SITE + "/checker.html", { waitUntil: "domcontentloaded" });
 
 /* ---------------- 1. crypto + parsing (pure, no network) ---------------- */
 const T = await page.evaluate(() => {
@@ -305,7 +307,8 @@ await useScenario("happy");
 await type("0xB095274743941e953c746F9C228DA9c18Bb6ec29");
 const ctaMatch = await page.$$eval("#verdictArea a.cta", as => as.map(a => a.getAttribute("href")));
 ok("a match offers a primary action", ctaMatch.length >= 1, JSON.stringify(ctaMatch));
-ok("it leads to the venue comparison", ctaMatch.includes("/buy.html"), JSON.stringify(ctaMatch));
+ok("it leads to the venue comparison, which is now the front page",
+   ctaMatch.includes("/"), JSON.stringify(ctaMatch));
 ok("and to the size curve", ctaMatch.includes("/size.html"), JSON.stringify(ctaMatch));
 await type("0x0000000000000000000000000000000000001234");
 const ctaMiss = await page.$$eval("#verdictArea a.cta", as => as.length);
@@ -390,8 +393,8 @@ const stackOf = await page.evaluate(() => {
 // The site is about one token. Anything else named on it is either cross-promotion or a
 // chance for a reader to confuse two things, and both are out.
 console.log("── one token, and only one");
-const pages = ["index.html", "size.html", "route.html", "buy.html", "order.html", "slot.html",
-               "launch.html"];
+const pages = ["index.html", "checker.html", "size.html", "route.html", "order.html",
+               "slot.html", "launch.html", "snooze.html"];
 for (const f of pages) {
   const t = fs.readFileSync(path.join(ROOT, "web", f), "utf8");
   ok(`${f} never mentions $TWD`, !/\$TWD|%24TWD/.test(t));
@@ -428,6 +431,46 @@ console.log("── one build tag, and the README agrees with it");
     const want = require_sha(path.join(ROOT, "web", f));
     ok(`README publishes the current sha256 of ${f}`, readme.includes(want),
        `${f} is ${want}, which the README does not list`);
+  }
+}
+
+// The README's test inventory drifted twice in one afternoon: run.mjs was listed at 225 when
+// it had grown to 239, run-pooled at 65 when it was 72, and the headline total was the sum of
+// the stale numbers, so it looked self-consistent while being wrong in three places.
+//
+// Two checks live in two places because they need different things. This one needs only the
+// filesystem: every suite that exists is mentioned, and the headline is the sum of the numbers
+// printed beside them. It cannot tell whether those numbers are TRUE — only run-all.sh knows
+// that, because only run-all.sh has just run everything, and it checks there.
+console.log("── the README's test inventory adds up");
+{
+  const readme = fs.readFileSync(path.join(ROOT, "README.md"), "utf8");
+  const onDisk = fs.readdirSync(path.join(ROOT, "test"))
+    .filter(f => /^run(-[\w.-]+)?\.mjs$/.test(f) || /^test_.*\.py$/.test(f))
+    .map(f => "test/" + f);
+  ok("there are suites on disk to check", onDisk.length > 10, String(onDisk.length));
+
+  const listed = new Map();
+  for (const m of readme.matchAll(/`(test\/[\w.-]+)` \u2014 (\d+),/g))
+    listed.set(m[1], Number(m[2]));
+  for (const f of onDisk)
+    ok(`the README lists ${f} with a count`, listed.has(f),
+       "a suite exists that the README never mentions");
+  for (const f of listed.keys())
+    ok(`${f} is a suite that still exists`, onDisk.includes(f),
+       "the README lists a suite that has been deleted or renamed");
+
+  const head = readme.match(/\*\*(\d+) assertions across (\w+) suites\.\*\*/);
+  ok("the README states a headline total", !!head);
+  if (head) {
+    const sum = [...listed.values()].reduce((a, b) => a + b, 0);
+    ok("the headline total is the sum of the per-suite counts", Number(head[1]) === sum,
+       `README says ${head[1]}, its own list adds to ${sum}`);
+    const WORDS = { fourteen: 14, fifteen: 15, sixteen: 16, seventeen: 17, eighteen: 18,
+                    nineteen: 19, twenty: 20 };
+    ok("the headline suite count matches how many suites there are",
+       WORDS[head[2]] === onDisk.length,
+       `README says ${head[2]} (${WORDS[head[2]]}), there are ${onDisk.length}`);
   }
 }
 
@@ -548,8 +591,8 @@ ok("and no other token is named in the verdict",
    !/POT ?PAL/i.test(await txt("#verdictArea")));
 
 console.log("── static checks");
-const src = fs.readFileSync(path.join(ROOT, "web", "index.html"), "utf8");
-const html = fs.readFileSync(path.join(ROOT, "web", "index.html"), "utf8");
+const src = fs.readFileSync(path.join(ROOT, "web", "checker.html"), "utf8");
+const html = fs.readFileSync(path.join(ROOT, "web", "checker.html"), "utf8");
 ok("no third-party origins (C7)", !/https?:\/\/(?!basescan\.org|laptoptoken\.com|mainnet\.base\.org)[a-z0-9.-]+\//i.test(
    html.replace(/basescan\.org[^"'\s]*/g, "")), "found an external origin");
 // C2 was "no wallet code at all". The page connects now, so the line moved rather than

@@ -21,7 +21,7 @@ export function compile(files) {
     sources,
     settings: {
       optimizer: { enabled: true, runs: 200 },
-      outputSelection: { "*": { "*": ["abi", "evm.bytecode.object"] } },
+      outputSelection: { "*": { "*": ["abi", "evm.bytecode.object", "evm.deployedBytecode.object"] } },
     },
   })));
   const errors = (out.errors || []).filter(e => e.severity === "error");
@@ -70,24 +70,33 @@ export async function deploy(bytecodeHex, ctorArgsHex = "", opts = {}) {
   });
   if (r.execResult.exceptionError)
     throw new Error("deploy reverted: " + r.execResult.exceptionError.error);
-  return { evm, address: r.createdAddress };
+  // Execution gas only. It excludes the 21,000 intrinsic cost and the per-byte calldata
+  // charge a real transaction also pays, so treat it as a floor rather than a quote.
+  return { evm, address: r.createdAddress, gasUsed: r.execResult.executionGasUsed };
 }
 
 /// Run a call. Returns {ok, words, raw, revert} — a revert is a result, not a throw, so a
 /// test can assert that something reverts without wrapping every call in try/catch.
+/// `opts.raw` supplies pre-encoded argument words for signatures the minimal encoder cannot
+/// build — a struct tuple, say. The selector still comes from `sig`, so a typo in the
+/// signature still fails loudly rather than calling the fallback.
 export async function call(ctx, sig, args = [], opts = {}) {
+  const data = opts.raw !== undefined
+    ? selector(sig) + opts.raw.replace(/^0x/, "")
+    : encodeCall(sig, args);
   const r = await ctx.evm.runCall({
     caller: opts.from ? createAddressFromString(opts.from) : DEPLOYER,
     to: ctx.address, gasLimit: 10_000_000n,
-    data: hexToBytes(encodeCall(sig, args)),
+    data: hexToBytes(data),
     value: BigInt(opts.value ?? 0),
     block: { header: { number: BigInt(opts.blockNumber ?? 1),
                        timestamp: BigInt(opts.timestamp ?? 1000) } },
   });
   const raw = bytesToHex(r.execResult.returnValue);
+  const gasUsed = r.execResult.executionGasUsed;
   if (r.execResult.exceptionError)
-    return { ok: false, revert: r.execResult.exceptionError.error, raw, words: [] };
-  return { ok: true, raw, words: decodeWords(raw) };
+    return { ok: false, revert: r.execResult.exceptionError.error, raw, words: [], gasUsed };
+  return { ok: true, raw, words: decodeWords(raw), gasUsed };
 }
 
 /// Give an address a balance, so a depositor can actually send ETH.
