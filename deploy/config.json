@@ -23,8 +23,8 @@
     "name": "Snooze Bear",
     "symbol": "SNOOZE",
     "decimals": 18,
-    "_supply": "1e30 base units = 1e12 whole tokens. A units choice and nothing more: price is E/T, so supply sets the unit price and nobody's share. LAUNCH.md 3 has the arithmetic and the uint192 ceiling that is 27 orders of magnitude away.",
-    "supply": "1000000000000000000000000000000",
+    "_supply": "1e35 base units = 100 QUADRILLION whole tokens. It is a units choice and NOTHING ELSE: price is E/T, so raising supply lowers the unit price and changes nobody's share of the token. It does not make the token harder to accumulate — curve.virtualEth is the only dial that does, and its comment has the arithmetic. What a high supply does buy is that floor-division dust in the cap and in any future claim is proportionally smaller, and that a buyer's balance reads as a number rather than a decimal. The hard ceiling is the uint192 Rule 2 baseline at ~6.3e57 base units, 22 orders of magnitude above this.",
+    "supply": "100000000000000000000000000000000000",
     "_devBps": "0 keeps 'supply only falls' exactly true. Up to 2000 is a share OF THE HAIRCUT, never of the trade.",
     "devBps": 0,
     "_dev": "What goes in the constructor's `_dev`, which is NOT the same field as fees.snoozeDev. At devBps 0 the dev is paid nothing ever, and LAUNCH.md 3 asks for the zero address here so that anybody reading dev() on chain can see that at a glance — a live-looking address with no cut invites the question. Set this to fees.snoozeDev only if devBps goes above zero; the scripts refuse the combination of a non-zero devBps and a zero dev.",
@@ -32,14 +32,34 @@
   },
 
   "curve": {
-    "_virtualEth": "Sets what a comfortable buy is denominated in, NOT how deep the book is. At 3e18 a 0.1 ETH buy raises the ETH reserve 3.3% and the PRICE 6.7% — price is E/T and both sides move, so the price change is roughly double the reserve change. Measured against the compiled curve: spot 3750000 to 4001583, +6.709%.",
-    "virtualEth": "3000000000000000000",
-    "_bondTarget": "E0*(sqrt(m)-1). At E0=3 and m=10 that is 6.487 ETH of real buys.",
-    "bondTarget": "6486832980505137996",
+    "_virtualEth": [
+      "THE ONLY DIAL THAT MAKES EARLY ACCUMULATION EXPENSIVE, and it is not the supply.",
+      "",
+      "A single buy of R ETH takes exactly R/(E0+R) of everything the curve will ever sell —",
+      "the token side cancels, so the answer depends on E0 and on nothing else. At the old",
+      "E0 of 3 ETH one buyer with 1 ETH took a quarter of the float in one transaction. At 10:",
+      "",
+      "   R ETH   E0=3     E0=10    E0=25",
+      "   0.1     3.23%    0.99%    0.40%",
+      "   0.5    14.29%    4.76%    1.96%",
+      "   1      25.00%    9.09%    3.85%",
+      "   5      62.50%   33.33%   16.67%",
+      "",
+      "The cost is graduation: bonding at multiple m needs E0*(sqrt(m)-1) of REAL ETH, so a",
+      "curve that is hard to corner is also one that takes longer to bond. There is no setting",
+      "that is both. 10 ETH is the middle: a whale needs 5 ETH to reach a third of the float,",
+      "and the curve bonds at 21.6 ETH of real buys.",
+      "",
+      "It is also what a buy moves: at 10e18 a 0.1 ETH buy raises the ETH reserve 1.0% and the",
+      "PRICE 2.0% — price is E/T, both sides move, so the price change is about double."
+    ],
+    "virtualEth": "10000000000000000000",
+    "_bondTarget": "E0*(sqrt(m)-1), the REAL ETH that has to arrive before anyone can call bond(). At E0=10 and m=10 that is 21.6228 ETH. Lower it and the curve graduates sooner at a smaller multiple; m=4 would be E0 exactly, 10 ETH.",
+    "bondTarget": "21622776601683793319",
     "feeBps": 100,
     "_feeBps": "1%, charged in ETH on the way in and the way out, and paid straight to curveFeeTo. Capped at 500 by the contract.",
-    "_curveSupply": "What the curve may sell — 80% of supply. Not the total supply, and the curve never holds the rest. bondPreview()'s leftover is curveSupply/m, so at the m=10 this bondTarget encodes, 8e28 base units come back to curveFeeTo when it graduates.",
-    "curveSupply": "800000000000000000000000000000"
+    "_curveSupply": "What the curve may sell — 80% of supply. Not the total supply, and the curve never holds the rest. bondPreview()'s leftover is curveSupply/m, so at the m=10 this bondTarget encodes, 8e33 base units (8% of supply) come back to curveFeeTo when it graduates. The other 20% sits in the owner's wallet from block one, under both rules exactly like anybody else's.",
+    "curveSupply": "80000000000000000000000000000000000"
   },
 
   "gate": {

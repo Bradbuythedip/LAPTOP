@@ -122,7 +122,9 @@ export function buildSteps({ cfg, artifacts, state }) {
   const oracle = oracleDecision(cfg);
   const readBack = id => stepState(state, id).readBack || {};
 
-  const oracleAddress = oracle.ok ? oracle.address : null;
+  // The recorded address wins over the configured one: when step 1 deploys the never-ready
+  // oracle, the receipt is where the address comes from, and config.json has nothing to say.
+  const oracleAddress = readBack("oracle").address || (oracle.ok ? oracle.address : null);
   const deployerAddress = readBack("deployer").address || null;
   const tokenAddress = readBack("token").address || null;
   const saltRecord = readBack("salt");
@@ -138,10 +140,30 @@ export function buildSteps({ cfg, artifacts, state }) {
       title: "The oracle",
       what: "Record the oracle this token will point at forever, and prove it answers without " +
             "reverting while it still has no history — which is the state it will be in at launch.",
-      // Nothing is sent here, and there is deliberately no script that deploys an oracle. The
-      // only implementation in this repository is the settable mock, and a convenient button
-      // for it is exactly how it would reach Base "temporarily". There is no temporarily.
-      txs: [],
+      // One transaction, and only for the one oracle this repository can honestly provide.
+      //
+      // The first version of this step sent nothing at all, on the grounds that the only
+      // implementation here was the settable mock and a convenient button for it is how it
+      // reaches Base "temporarily". That reasoning is still right about the mock and it left
+      // the sequence unfinishable: Snooze needs an immutable oracle address and there was
+      // nowhere for it to point. contracts/SnoozeNeverReady.sol is the other answer — every
+      // function `pure`, no storage, no owner, no constructor argument, 156 bytes — so what it
+      // will answer is fixed at compile time rather than held by anybody. It costs Rule 1, and
+      // that is said on the page, in the plan, and in the note below rather than in a comment.
+      txs: [{
+        key: "deploy",
+        label: "Deploy SnoozeNeverReady",
+        build: () => ({
+          to: null, value: "0x0",
+          data: artifacts.contracts.SnoozeNeverReady.initCode,
+          about: "constructor() — no arguments, because there is nothing to configure. " +
+                 "ready() false, spot() == twap24(), all three pure.",
+        }),
+        blocked: () => oracle.ok && oracle.deployable ? null
+          : oracle.ok ? `oracle.address is already ${oracle.address} — step 1 records and ` +
+                        "verifies it, it does not deploy over it"
+                      : oracle.reason,
+      }],
       irreversible: [
         "Snooze.oracle is immutable. After step 3 nobody can change it — not you, not the " +
         "deployer, not a proxy, because there is no proxy.",
@@ -152,10 +174,17 @@ export function buildSteps({ cfg, artifacts, state }) {
       ],
       confirm: null,
       blocked: () => oracle.ok ? null : oracle.reason,
-      note: () => oracle.ok && !oracle.ruleOneEverFires ? NEVER_READY_MEANS : null,
+      note: () => oracle.ok && !oracle.ruleOneEverFires
+        ? NEVER_READY_MEANS + (oracle.deployable
+            ? " That is what contracts/SnoozeNeverReady.sol is, and it is the only oracle this " +
+              "repository contains that is safe to deploy."
+            : "")
+        : null,
+      expectAddress: () => null,
       verify: {
         target: () => oracleAddress,
-        needsAddress: "oracle.address in deploy/config.json",
+        needsAddress: "the oracle's address — deploy one with step 1, or set oracle.address " +
+                      "in deploy/config.json if it already exists",
         calls: ORACLE_VIEWS.map(sig => view(sig)),
         // Delegated to lib/oracle.mjs, which is careful about what each check actually
         // proves. The first version of this computed a blocklist in solc.mjs and never
@@ -164,8 +193,9 @@ export function buildSteps({ cfg, artifacts, state }) {
         // than no guard, because it shows a tick.
         check: (results, { code }) =>
           inspectOracle({ code, results, refuse: artifacts.refuse, choice: oracle.choice }),
-        record: (results) => ({ address: oracleAddress, choice: oracle.choice,
-                                readyAtRecord: decode(results, "ready()", readBool) }),
+        record: (results, ctx) => ({ address: (ctx && ctx.address) || oracleAddress,
+                                     choice: oracle.choice,
+                                     readyAtRecord: decode(results, "ready()", readBool) }),
       },
     },
 

@@ -1,4 +1,4 @@
-// Compile the three contracts this launch actually deploys, and pin what they compile to.
+// Compile the four contracts this launch can deploy, and pin what they compile to.
 //
 // WHY THIS EXISTS ALONGSIDE test/run-deployable.mjs. That script is the go/no-go for the
 // launchpad-era contracts — SnoozeLaunchpad, Snooze, PooledLaunchBuy, LaunchTaxRamp — and it
@@ -29,6 +29,13 @@ export const SETTER_SELECTOR = selector("set(uint256,uint256,bool)").slice(2);
 
 /// The contracts a curve launch deploys, in the order the sequence deploys them.
 ///
+/// SnoozeNeverReady is here because the alternative was worse. Snooze needs an oracle address
+/// in its constructor and it is immutable; there was no observational oracle in this repository
+/// and there still is not, so the only implementation a launch could reach was the SETTABLE mock
+/// in contracts/test/, which is a burn dial with somebody's key on it. An oracle that is
+/// provably constant — every function `pure`, no storage, no owner, 156 bytes — is a real
+/// choice, and the thing it costs is stated everywhere it appears: Rule 1 never fires.
+///
 /// SnoozeGate is NOT here, and its absence is deliberate. Its constructor wants a Merkle root
 /// over a snapshot that has not been taken, a snapshot block that does not exist yet, and a
 /// claimUntil that must be in the future at the moment it is sent — none of which can be known
@@ -36,10 +43,11 @@ export const SETTER_SELECTOR = selector("set(uint256,uint256,bool)").slice(2);
 /// to paste bytecode by hand, so it is left out until there is a step that deploys it. Note
 /// that a sealed SnoozeDeployer cannot deploy it later: the gate needs its own deployer, or
 /// the seal has to wait.
-export const DEPLOYABLE = ["SnoozeDeployer", "Snooze", "SnoozeCurve"];
+export const DEPLOYABLE = ["SnoozeNeverReady", "SnoozeDeployer", "Snooze", "SnoozeCurve"];
 
 const SOURCES = [
-  "contracts/SnoozeDeployer.sol", "contracts/Snooze.sol", "contracts/SnoozeCurve.sol",
+  "contracts/SnoozeNeverReady.sol", "contracts/SnoozeDeployer.sol", "contracts/Snooze.sol",
+  "contracts/SnoozeCurve.sol",
 ];
 /// Compiled only so its runtime bytecode can be BLOCKED. See fingerprints below.
 const REFUSED_SOURCES = ["contracts/test/SnoozeMocks.sol"];
