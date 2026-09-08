@@ -5,3 +5,4 @@ __pycache__/
 .vercel
 test/shot-*.png
 shots/
+deploy/launch-state.json

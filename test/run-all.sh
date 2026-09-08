@@ -39,6 +39,7 @@ suite "solidity: contracts/SnoozeCurve.sol (virtual liquidity, compiled and exec
 suite "solidity: contracts/SnoozeGate.sol (why you need SNOOZE to get LAPTOP)" test/run-gate.mjs node
 suite "solidity: the first launch, driven from the owner's wallet" test/run-owner.mjs node
 suite "solidity: is any of it deployable? (EIP-170/3860, real ctor args)" test/run-deployable.mjs node
+suite "solidity: the deploy sequence in deploy/scripts, sent step by step" test/run-deploy.mjs node
 suite "python: laptop_base edge cases" test/test_laptop_base.py python3
 suite "python: patched script integration" test/test_scripts.py python3
 suite "python: size-curve reference math" test/test_size_math.py python3

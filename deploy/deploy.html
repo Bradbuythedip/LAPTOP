@@ -1,0 +1,1099 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="referrer" content="no-referrer">
+<meta name="color-scheme" content="dark">
+<title>Deploy $SNOOZE — local only</title>
+<!--
+  THIS PAGE IS NOT PART OF THE SITE, AND IT CANNOT BE.
+
+  Every page in web/ is mechanically forbidden from containing eth_sendTransaction,
+  eth_sendRawTransaction, personal_sign, eth_signTypedData, signTransaction, signMessage or
+  signAndSendTransaction — test/run.mjs greps for all seven and fails the build. That grep is
+  the whole of the site's clone defence: "if a page that looks like this asks you to sign, it
+  is not ours". A page with a deploy button asks you to sign, so it cannot live there without
+  taking that property down with it.
+
+  So it lives in deploy/, which vercel.json does not publish (outputDirectory is "web"), and
+  test/run.mjs now asserts both halves: that this file is outside web/, and that it really does
+  contain a signing method — because "it had to go outside" is only true while that is a fact.
+
+  HOW TO OPEN IT. Prefer a local server:
+
+      python3 -m http.server -d deploy 8000     then http://127.0.0.1:8000/deploy.html
+
+  A file:// URL works for the page itself — artifacts.js is loaded with a classic <script src>
+  precisely so it does under file://, where fetch() of a sibling file is blocked — but most
+  wallet extensions do not inject a provider into file:// origins unless you have turned on
+  "Allow access to file URLs" for them, and some refuse to sign from there at all. If the
+  Connect button says no wallet was found, that is usually why.
+
+  AND IT IS THE CONVENIENCE, NOT THE MECHANISM. Everything here is also available from
+  `node deploy/scripts/build.mjs <step>`, which prints the same {to, data, value} for pasting
+  into any wallet. Both build from deploy/scripts/lib/steps.mjs, and test/run-deploy.mjs
+  asserts the bytes this page produces are identical to the bytes those scripts produce.
+
+  There is no key here, no endpoint here, and no URL of any kind here: every read goes through
+  the wallet's own provider, so there is nothing in this file for anyone to take.
+-->
+<style>
+:root{
+  /* The site's palette, unchanged, so this reads as the same project — the values were chosen
+     against the composited ground in web/ and tools/contrast.mjs prints the arithmetic. What
+     is different here is that red is a first-class colour rather than an error state: half
+     this page is telling you what cannot be undone. */
+  --bg:#070b16; --fg:#e9edf8; --dim:#9aa6c2;
+  --line:#26304a;
+  --edge:#7c8aaf;
+  --card:#0e1424;
+  --cardBg:rgba(255,255,255,.045);
+  --gold:#f0c040; --goldHi:#ffd970; --goldSoft:rgba(240,192,64,.14);
+  --onGold:#140f02;
+  --ok:#4fd18a; --okbg:rgba(79,209,138,.13);
+  --bad:#ff8178; --badbg:rgba(255,129,120,.13);
+  --warn:#f2c14e; --warnbg:rgba(242,193,78,.13);
+  --unk:#9aa6c2; --unkbg:rgba(154,166,194,.09);
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{background:var(--bg);color:var(--fg);
+  font:16px/1.6 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  -webkit-text-size-adjust:100%;overflow-x:hidden;
+  padding:0 16px env(safe-area-inset-bottom) 16px;max-width:760px;margin:0 auto}
+h1{font-size:21px;margin:20px 0 3px;letter-spacing:-.01em}
+h2{font-size:15px;margin:0}
+.sub{color:var(--dim);font-size:13.5px;margin:0 0 16px;line-height:1.55}
+.card{background:var(--cardBg);border:1px solid var(--line);border-radius:12px;padding:14px;margin:12px 0}
+.card.now{border-color:var(--gold);box-shadow:0 0 0 3px var(--goldSoft)}
+.card.done{opacity:.72}
+.mono{font-family:var(--mono);font-size:12.5px;word-break:break-all;line-height:1.5}
+.dim{color:var(--dim)} .tiny{font-size:12.5px;line-height:1.55}
+label{display:block;font-size:13px;color:var(--dim);margin-bottom:6px}
+input{width:100%;font-family:var(--mono);font-size:16px;padding:11px;border:1.5px solid var(--edge);
+  border-radius:9px;background:var(--card);color:var(--fg)}
+input:focus-visible{outline:2px solid var(--goldHi);outline-offset:2px}
+button:focus-visible,a:focus-visible{outline:2px solid var(--goldHi);outline-offset:2px}
+.hdr{display:flex;justify-content:space-between;align-items:center;gap:8px;
+  margin-bottom:8px;flex-wrap:wrap}
+.badge{display:inline-flex;align-items:center;gap:5px;font-size:12px;padding:4px 9px;
+  border-radius:999px;border:1px solid var(--line);background:var(--unkbg);color:var(--dim);white-space:nowrap}
+.badge.good{background:var(--okbg);border-color:var(--ok);color:var(--ok)}
+.badge.bad{background:var(--badbg);border-color:var(--bad);color:var(--bad)}
+.badge.warn{background:var(--warnbg);border-color:var(--warn);color:var(--warn)}
+.warnbox{background:var(--warnbg);border:1px solid var(--warn);color:var(--warn);
+  border-radius:8px;padding:11px;font-size:12.5px;margin:8px 0}
+.badbox{background:var(--badbg);border:1px solid var(--bad);color:var(--bad);
+  border-radius:8px;padding:11px;font-size:12.5px;margin:8px 0}
+.okbox{background:var(--okbg);border:1px solid var(--ok);color:var(--ok);
+  border-radius:8px;padding:11px;font-size:12.5px;margin:8px 0}
+.hr{height:1px;background:var(--line);margin:14px 0}
+button{font:inherit;font-size:14px;font-weight:600;padding:11px 14px;border-radius:10px;
+  border:1.5px solid var(--edge);background:var(--card);color:var(--fg);cursor:pointer}
+button.act{background:linear-gradient(180deg,var(--goldHi),var(--gold));color:var(--onGold);
+  border-color:var(--gold)}
+button.danger{border-color:var(--bad);color:var(--bad)}
+button[disabled]{opacity:.42;cursor:not-allowed}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:10px}
+ul.irr{margin:8px 0 0;padding-left:18px;font-size:12.5px;color:var(--bad);line-height:1.55}
+ul.irr li{margin-bottom:5px}
+ul.checks{list-style:none;margin:8px 0 0;padding:0;font-size:12.5px;line-height:1.6}
+ul.checks li::before{font-family:var(--mono);margin-right:7px}
+ul.checks li.y::before{content:"ok  ";color:var(--ok)}
+ul.checks li.n::before{content:"FAIL";color:var(--bad)}
+ul.checks li.n{color:var(--bad)}
+ul.checks .why{display:block;margin-left:34px;color:var(--dim)}
+pre{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:10px;
+  overflow-x:auto;font-family:var(--mono);font-size:11.5px;margin:8px 0;max-height:170px}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:2px 12px;font-size:12.5px;margin-top:8px}
+/* The trailing card is a list of headed paragraphs, and h2 has no margin so the first one
+   collided with the card's own heading. Space between them, and none above the first. */
+#after h2{margin-top:16px}
+#after h2:first-child{margin-top:10px}
+#after p{margin:4px 0 0}
+.kv div:nth-child(odd){color:var(--dim)}
+.kv div:nth-child(even){font-family:var(--mono);word-break:break-all}
+</style>
+</head>
+<body>
+
+<h1>Deploy $SNOOZE</h1>
+<p class="sub">A local page. It builds the transactions and reads the answers back; your wallet
+signs. Nothing here holds a key, and nothing here talks to any server — every read goes through
+your wallet's own provider.</p>
+
+<div class="badbox" id="notSite">
+<strong>This file must never be moved into <span class="mono">web/</span>.</strong> Every page on
+the site is checked to contain no signing or sending method, and that check is the site's whole
+clone defence — “if a page like this asks you to sign, it is not ours”. This page sends
+<span class="mono">eth_sendTransaction</span>, so putting it there would delete that property for
+all nine pages at once. <span class="mono">test/run.mjs</span> fails the build if it appears
+under <span class="mono">web/</span>.
+</div>
+
+<div class="card">
+  <div class="hdr"><h2>Wallet</h2><span class="badge" id="wBadge">not connected</span></div>
+  <div class="row">
+    <button class="act" id="wConnect">Connect wallet</button>
+    <button id="wForget" hidden>Forget</button>
+  </div>
+  <div class="kv" id="wOut" hidden></div>
+  <div class="warnbox" id="wErr" hidden></div>
+</div>
+
+<div id="launch"></div>
+
+<div class="card" id="afterCard">
+  <h2>What these six steps do not cover</h2>
+  <div id="after"></div>
+</div>
+
+<p class="sub tiny" style="margin:20px 0 30px">
+Everything on this page is also available from the command line —
+<span class="mono">node deploy/scripts/plan.mjs</span> to read the sequence,
+<span class="mono">build.mjs</span> to get the same bytes, <span class="mono">verify.mjs</span> to
+read a step back. Both are built from <span class="mono">deploy/scripts/lib/steps.mjs</span>, and
+<span class="mono">test/run-deploy.mjs</span> asserts the bytes agree.
+</p>
+
+<script src="artifacts.js"></script>
+
+<script id="calldata">
+/* ────────────────────────────────────────────────────────────────────────────────────────────
+   PURE. No DOM, no wallet, no state. Everything in this block is a function of its arguments,
+   which is what lets test/run-deploy.mjs pull the block out of this file, evaluate it in Node,
+   and assert that the bytes it produces are identical to the bytes deploy/scripts/lib/steps.mjs
+   produces for the same inputs. Two implementations of an encoder is a risk; two implementations
+   with an equality test between them is a check.
+
+   The selectors are written out rather than computed, because shipping a keccak implementation
+   to a page that does not otherwise need one is more code than it saves. Each one is asserted
+   against keccak(signature) in test/run-deploy.mjs, so a wrong nibble fails the build rather
+   than calling a fallback.
+   ──────────────────────────────────────────────────────────────────────────────────────────── */
+"use strict";
+var SNOOZE = (function(){
+  var SEL = {
+    "transfer(address,uint256)":   "0xa9059cbb",
+    "setPool(address,bool)":       "0x20bec12c",
+    "freeze()":                    "0x62a5af3b",
+    "seal()":                      "0x3fb27b85",
+    "deploy(bytes32,bytes)":       "0xcdcb760a",
+    "owner()":                     "0x8da5cb5b",
+    "sealed_()":                   "0xbf5390b9",
+    "count()":                     "0x06661abd",
+    "name()":                      "0x06fdde03",
+    "symbol()":                    "0x95d89b41",
+    "decimals()":                  "0x313ce567",
+    "totalSupply()":               "0x18160ddd",
+    "oracle()":                    "0x7dc0d1d0",
+    "dev()":                       "0x91cca3db",
+    "devBps()":                    "0x78b2c179",
+    "admin()":                     "0xf851a440",
+    "frozen()":                    "0x054f7d9c",
+    "supplyOnlyFalls()":           "0xcfd63593",
+    "balanceOf(address)":          "0x70a08231",
+    "isPool(address)":             "0x5b16ebb7",
+    "capExempt(address)":          "0xf295344f",
+    "token()":                     "0xfc0c546a",
+    "feeTo()":                     "0x017e7e58",
+    "feeBps()":                    "0x24a9d853",
+    "virtualEth()":                "0x4bd387e1",
+    "curveSupply()":               "0x2138a4c0",
+    "bondTarget()":                "0x485735c8",
+    "gateToken()":                 "0x4ee2e2d8",
+    "gateMin()":                   "0x82649de2",
+    "sold()":                      "0x02c7e7af",
+    "reserveEth()":                "0x899b1528",
+    "bonded()":                    "0xe88dc357",
+    "addressOf(bytes32,bytes32)":  "0xe68c9567",
+    "ready()":                     "0x6defbf80",
+    "spot()":                      "0x6f265b93",
+    "twap24()":                    "0xd9f6521e"
+  };
+  var strip = function(h){ return String(h == null ? "" : h).replace(/^0x/, ""); };
+
+  /* A 32-byte word from a decimal string or a bigint. Decimal strings, not numbers: the supply
+     is 1e30 base units and a JavaScript number stops being exact at 2^53, so a page that took
+     these as numbers would encode a supply that is close to the right one. */
+  function uintWord(v, bits){
+    var n = BigInt(v);
+    if(n < 0n) throw new Error("negative uint");
+    if(n >= (1n << BigInt(bits || 256))) throw new Error("does not fit in uint" + (bits || 256));
+    return n.toString(16).padStart(64, "0");
+  }
+  function addressWord(a){
+    var h = strip(a).toLowerCase();
+    /* Width-checked rather than padded. A 39-character address pasted out of a chat window is
+       the classic way to encode a constructor argument that is silently somebody else. */
+    if(!/^[0-9a-f]{40}$/.test(h)) throw new Error("not a 20-byte address: " + a);
+    return h.padStart(64, "0");
+  }
+  function bytes32Word(v){
+    var h = strip(v).toLowerCase();
+    if(!/^[0-9a-f]{64}$/.test(h)) throw new Error("not 32 bytes: " + v);
+    return h;
+  }
+  function sel(sig){
+    if(!SEL[sig]) throw new Error("no selector for " + sig);
+    return SEL[sig];
+  }
+  function callData(sig, args){ return sel(sig) + (args || ""); }
+
+  /* ABI `bytes` as head and tail. The offset is measured from the start of the ARGUMENTS, not
+     from the start of the calldata, so it does not count the four selector bytes — which is the
+     one thing a hand-rolled encoder usually gets wrong, and the reason the round trip is tested
+     by actually deploying through the real contract rather than by comparing to itself. */
+  function deployCall(salt, initCode){
+    var data = strip(initCode).toLowerCase();
+    if(!/^[0-9a-f]*$/.test(data)) throw new Error("init code is not hex");
+    if(data.length % 2) throw new Error("init code has an odd number of hex digits");
+    var pad = (64 - (data.length % 64)) % 64;
+    return sel("deploy(bytes32,bytes)") + bytes32Word(salt) + uintWord(64) +
+           uintWord(data.length / 2) + data + "0".repeat(pad);
+  }
+
+  function snoozeArgs(L, oracle){
+    return uintWord(L.token.supply) + addressWord(oracle) +
+           addressWord(L.token.dev) + uintWord(L.token.devBps);
+  }
+  function curveArgs(L, token){
+    return addressWord(token) + uintWord(L.curve.virtualEth) + uintWord(L.curve.curveSupply) +
+           uintWord(L.curve.bondTarget) + uintWord(L.curve.feeBps) + addressWord(L.curve.feeTo) +
+           addressWord(L.curve.gateToken) + uintWord(L.curve.gateMin) +
+           uintWord(L.curve.gateUntil, 64);
+  }
+  function curveInitCode(A, L, token){
+    return A.contracts.SnoozeCurve.initCode + curveArgs(L, token);
+  }
+
+  /* The transactions, keyed exactly as the command line names them: "2.deploy", "5.fund".
+     `st` carries whatever earlier steps established — oracle, deployer, token, salt, curve. */
+  function tx(key, A, L, st){
+    switch(key){
+      case "2.deploy":
+        return { to:null, from:null, value:"0x0",
+                 data: A.contracts.SnoozeDeployer.initCode + addressWord(L.owner) };
+      case "3.deploy":
+        return { to:null, from:L.owner, value:"0x0",
+                 data: A.contracts.Snooze.initCode + snoozeArgs(L, st.oracle) };
+      case "5.deploy":
+        return { to:st.deployer, from:L.owner, value:"0x0",
+                 data: deployCall(st.salt, curveInitCode(A, L, st.token)) };
+      case "5.fund":
+        return { to:st.token, from:L.owner, value:"0x0",
+                 data: callData("transfer(address,uint256)",
+                                addressWord(st.curve) + uintWord(L.curve.curveSupply)) };
+      case "5.register":
+        return { to:st.token, from:L.owner, value:"0x0",
+                 data: callData("setPool(address,bool)",
+                                addressWord(st.curve) + uintWord(1)) };
+      case "6.freeze":
+        return { to:st.token, from:L.owner, value:"0x0", data: callData("freeze()") };
+      case "6.seal":
+        return { to:st.deployer, from:L.owner, value:"0x0", data: callData("seal()") };
+      default: throw new Error("no such transaction: " + key);
+    }
+  }
+
+  /* ---- decoding, with the same discipline the site applies to a balance: a read that failed
+     is never a zero. 32 bytes is an answer; anything shorter is "could not read". ---- */
+  function words(d){
+    var b = strip(d), out = [];
+    for(var i = 0; i + 64 <= b.length; i += 64) out.push("0x" + b.slice(i, i + 64));
+    return out;
+  }
+  function readUint(d, i){
+    var w = words(d)[i || 0];
+    if(w === undefined) throw new Error("short return data");
+    return BigInt(w);
+  }
+  function readBool(d, i){ return readUint(d, i) !== 0n; }
+  function readAddress(d, i){
+    var n = readUint(d, i);
+    if(n >= (1n << 160n)) throw new Error("not an address");
+    return "0x" + n.toString(16).padStart(40, "0");
+  }
+  /* name() and symbol() are `string public constant`, and solc still returns them through the
+     ordinary dynamic encoding — offset, length, bytes. Decoding one as a bytes32 returns the
+     length prefix as if it were text, which is non-empty, which a truthiness check passes. */
+  function readString(d){
+    var b = strip(d);
+    if(b.length < 128) throw new Error("too short to be an ABI string");
+    var off = Number(BigInt("0x" + b.slice(0, 64)));
+    if(!Number.isSafeInteger(off) || off * 2 + 64 > b.length) throw new Error("bad string offset");
+    var len = Number(BigInt("0x" + b.slice(off * 2, off * 2 + 64)));
+    if(!Number.isSafeInteger(len) || (off + 32 + len) * 2 > b.length) throw new Error("bad string length");
+    var raw = b.slice((off + 32) * 2, (off + 32 + len) * 2), s = "";
+    for(var i = 0; i < raw.length; i += 2) s += String.fromCharCode(parseInt(raw.substr(i, 2), 16));
+    return s;
+  }
+  var same = function(a, b){
+    return /^0x[0-9a-fA-F]{40}$/.test(String(a || "")) &&
+           /^0x[0-9a-fA-F]{40}$/.test(String(b || "")) &&
+           String(a).toLowerCase() === String(b).toLowerCase();
+  };
+  var ZERO = "0x" + "0".repeat(40);
+  /* The settable mock's set(uint256,uint256,bool). Its presence in a runtime is disqualifying
+     whoever compiled it — a recompile changes the metadata tail and therefore the hash of the
+     whole runtime, but it cannot take the function out of the dispatcher. */
+  var SETTER = "64482f79";
+
+  return { SEL:SEL, sel:sel, callData:callData, uintWord:uintWord, addressWord:addressWord,
+           bytes32Word:bytes32Word, deployCall:deployCall, snoozeArgs:snoozeArgs,
+           curveArgs:curveArgs, curveInitCode:curveInitCode, tx:tx,
+           words:words, readUint:readUint, readBool:readBool, readAddress:readAddress,
+           readString:readString, same:same, ZERO:ZERO, SETTER:SETTER, strip:strip };
+})();
+if(typeof module !== "undefined" && module.exports) module.exports = SNOOZE;
+</script>
+
+<script>
+"use strict";
+/* The page: wallet, rendering, sending, reading back. Everything that decides WHAT bytes go out
+   is in the block above; this decides when you are allowed to send them. */
+var $ = function(id){ return document.getElementById(id); };
+var A = window.__SNOOZE, L = A && A.launch;
+var CHAIN_HEX = L ? "0x" + L.chainId.toString(16) : "0x2105";
+
+var W = { prov:null, addr:null, chain:null };
+var ST = load();
+
+/* Progress lives in this browser, not in deploy/launch-state.json — a page cannot write a file,
+   and pretending otherwise would give two records that disagree. Every send prints the
+   record.mjs line that keeps the command line's copy in step, and both are only ever written
+   after a read from the chain agreed. */
+function load(){
+  try{
+    var raw = localStorage.getItem("snooze.deploy." + (L ? L.chainId : 0));
+    var s = raw ? JSON.parse(raw) : {};
+    return { oracle:s.oracle||null, deployer:s.deployer||null, token:s.token||null,
+             salt:s.salt||null, initCodeHash:s.initCodeHash||null, predicted:s.predicted||null,
+             curve:s.curve||null, verified:s.verified||{}, sent:s.sent||{} };
+  }catch(e){
+    return { oracle:null, deployer:null, token:null, salt:null, initCodeHash:null,
+             predicted:null, curve:null, verified:{}, sent:{} };
+  }
+}
+function save(){
+  try{ localStorage.setItem("snooze.deploy." + L.chainId, JSON.stringify(ST)); }catch(e){}
+}
+
+/* ------------------------------------------------------------------------------- the steps */
+
+var NEVER_READY = "Rule 1 never fires. No sale is ever haircut, at any price, on any day — " +
+  "$SNOOZE is an ordinary ERC-20 with a 20%/day cap on selling into the curve, and nothing else.";
+
+function chosenOracle(){
+  if(ST.oracle) return ST.oracle;
+  if(L && L.oracle && /^0x[0-9a-fA-F]{40}$/.test(L.oracle.address || "")) return L.oracle.address;
+  return null;
+}
+
+function STEPS(){
+  var o = chosenOracle();
+  return [
+  { n:1, id:"oracle", title:"The oracle",
+    what:"Record the oracle this token will point at forever, and prove it answers without " +
+         "reverting while it still has no history — which is the state it will be in at launch.",
+    field:{ key:"oracle", label:"The deployed oracle's address",
+            placeholder:"0x…", value:o || "" },
+    txs:[],
+    irreversible:[
+      "Snooze.oracle is immutable. After step 3 nobody can change it — not you, not the deployer, not a proxy, because there is no proxy.",
+      "A settable oracle is a dial that sets every sale's burn to anything up to 90%, held by whoever holds its key, forever. contracts/test/SnoozeMocks.sol:MockOracle is that, and this page refuses it by looking at the deployed bytecode.",
+      "A reverting oracle is a permanent honeypot: ready() runs inside every sell, so sells revert while buys work, and the address cannot be changed."
+    ],
+    blocked: function(){
+      if(!L.oracle.choice)
+        return 'deploy/config.json has oracle.choice = "". Choose "observational" or ' +
+               '"never-ready" and write it down before anything is built — there is no default, ' +
+               "because both are real choices and one of them is a different token.";
+      return o ? null : "no oracle address yet";
+    },
+    note: function(){ return L.oracle.choice === "never-ready" ? NEVER_READY : null; },
+    reads: function(){ return o ? [
+      { sig:"ready()",   to:o, data:SNOOZE.callData("ready()") },
+      { sig:"spot()",    to:o, data:SNOOZE.callData("spot()") },
+      { sig:"twap24()",  to:o, data:SNOOZE.callData("twap24()") }
+    ] : []; },
+    code: function(){ return o; },
+    check: oracleChecks,
+    record: function(){ ST.oracle = o; }
+  },
+
+  { n:2, id:"deployer", title:"SnoozeDeployer",
+    what:"CREATE2, locked to " + (L ? L.owner : "") + ". Anyone may send this transaction — the " +
+         "owner is the constructor argument, not the sender — but only that owner can deploy " +
+         "anything from it afterwards.",
+    txs:[{ key:"2.deploy", label:"Deploy SnoozeDeployer",
+           about:"constructor(address _owner = " + (L ? L.owner : "") + ")" }],
+    irreversible:[
+      "owner is immutable: there is no transferOwnership and no renounce, because both are ways for an address you checked to become one you did not."
+    ],
+    blocked: function(){ return null; },
+    addrKey:"deployer",
+    reads: function(){ return ST.deployer ? [
+      { sig:"owner()",   to:ST.deployer, data:SNOOZE.callData("owner()") },
+      { sig:"sealed_()", to:ST.deployer, data:SNOOZE.callData("sealed_()") },
+      { sig:"count()",   to:ST.deployer, data:SNOOZE.callData("count()") }
+    ] : []; },
+    code: function(){ return ST.deployer; },
+    check: function(r, code){
+      var c = [];
+      push(c, hasCode(code), "there is code at the address the deployment created");
+      addrIs(c, r, "owner()", L.owner);
+      boolIs(c, r, "sealed_()", false, "sealed_() is false, so it can still deploy");
+      numIs(c, r, "count()", "0", "count() is 0 — nothing has been deployed from it yet");
+      return c;
+    }
+  },
+
+  { n:3, id:"token", title:"Snooze, from your own wallet",
+    what:"An ordinary deployment, sent by you. NOT through SnoozeDeployer, and that is measured " +
+         "rather than argued — see below.",
+    txs:[{ key:"3.deploy", label:"Deploy Snooze",
+           about:function(){ return "constructor(supply=" + L.token.supply + ", oracle=" +
+             (chosenOracle() || "?") + ", dev=" + L.token.dev + ", devBps=" + L.token.devBps + ")"; } }],
+    irreversible:[
+      "oracle is written into the token's immutable storage. Nobody can change it afterwards, including you.",
+      "devBps is immutable. At zero, supplyOnlyFalls() is true and every haircut is destroyed rather than paid out; above zero it returns false and the contract says so on chain.",
+      "dev is immutable.",
+      "totalSupply is fixed at construction. There is no mint.",
+      "admin is msg.sender, so it is your wallet only because you sent this yourself. It is the one address that can register the curve as a pool in step 5, before freeze()."
+    ],
+    confirm:"the oracle address and devBps are immutable and I have checked both",
+    blocked: function(){
+      if(!ST.verified.oracle) return "step 1 has not been verified yet";
+      return null;
+    },
+    note: function(){
+      return "Sent from your wallet, not through SnoozeDeployer. Snooze's constructor does " +
+        "`admin = msg.sender` and `balanceOf[msg.sender] = supply`, so deploying it through the " +
+        "deployer would mint the whole supply to a contract with no transfer and no rescue, and " +
+        "hand admin to that same contract — which has no function that could call setPool, so " +
+        "neither Snooze rule could ever fire. The ground address goes to the curve in step 5 " +
+        "instead.";
+    },
+    addrKey:"token",
+    reads: function(){ return ST.token ? [
+      { sig:"name()",        to:ST.token, data:SNOOZE.callData("name()") },
+      { sig:"symbol()",      to:ST.token, data:SNOOZE.callData("symbol()") },
+      { sig:"decimals()",    to:ST.token, data:SNOOZE.callData("decimals()") },
+      { sig:"totalSupply()", to:ST.token, data:SNOOZE.callData("totalSupply()") },
+      { sig:"oracle()",      to:ST.token, data:SNOOZE.callData("oracle()") },
+      { sig:"dev()",         to:ST.token, data:SNOOZE.callData("dev()") },
+      { sig:"devBps()",      to:ST.token, data:SNOOZE.callData("devBps()") },
+      { sig:"admin()",       to:ST.token, data:SNOOZE.callData("admin()") },
+      { sig:"frozen()",      to:ST.token, data:SNOOZE.callData("frozen()") },
+      { sig:"supplyOnlyFalls()", to:ST.token, data:SNOOZE.callData("supplyOnlyFalls()") },
+      { sig:"balanceOf(owner)",  to:ST.token,
+        data:SNOOZE.callData("balanceOf(address)", SNOOZE.addressWord(L.owner)) }
+    ] : []; },
+    code: function(){ return ST.token; },
+    check: function(r, code){
+      var c = [];
+      push(c, hasCode(code), "there is code at the token's address");
+      strIs(c, r, "name()", L.token.name);
+      strIs(c, r, "symbol()", L.token.symbol);
+      numIs(c, r, "decimals()", String(L.token.decimals));
+      numIs(c, r, "totalSupply()", L.token.supply);
+      addrIs(c, r, "oracle()", chosenOracle());
+      addrIs(c, r, "dev()", L.token.dev);
+      numIs(c, r, "devBps()", String(L.token.devBps));
+      boolIs(c, r, "supplyOnlyFalls()", L.token.devBps === 0);
+      addrIs(c, r, "admin()", L.owner,
+             "admin() is your wallet, so setPool is callable in step 5");
+      numIs(c, r, "balanceOf(owner)", L.token.supply,
+            "the whole supply is at your address, which is what funds the curve");
+      boolIs(c, r, "frozen()", false,
+             "frozen() is false, so the curve can still be registered");
+      return c;
+    }
+  },
+
+  { n:4, id:"salt", title:"The vanity salt",
+    what:"Ground on the command line, because it is a few million keccaks and a browser is the " +
+         "wrong place for that. It has to be last: the curve's constructor arguments contain the " +
+         "token's address, so there was nothing to grind against until step 3 landed.",
+    cmd: function(){ return "node deploy/scripts/grind.mjs"; },
+    field:{ key:"salt", label:"The salt grind.mjs found", placeholder:"0x…" },
+    field2:{ key:"predicted", label:"The address it predicts", placeholder:"0x…" },
+    txs:[],
+    irreversible:[],
+    blocked: function(){ return ST.verified.token ? null : "step 3 has not been verified yet"; },
+    offline:true,
+    check: function(){
+      var c = [];
+      push(c, !!ST.salt && /^0x[0-9a-f]{64}$/i.test(ST.salt), "a 32-byte salt has been entered");
+      push(c, !!ST.predicted && /^0x[0-9a-f]{40}$/i.test(ST.predicted),
+           "an address has been entered");
+      if(ST.predicted)
+        push(c, ST.predicted.toLowerCase().slice(-L.vanity.suffix.length) === L.vanity.suffix,
+             "it ends …" + L.vanity.suffix, ST.predicted);
+      /* The page cannot recompute keccak(0xff, deployer, salt, initCodeHash) — it ships no
+         keccak, deliberately. The third, independent derivation is the chain's own: step 5
+         asserts the deployment landed exactly here, and addressOf computed it on chain before
+         it existed. grind.mjs already did the second one. */
+      push(c, true, "the derivation is checked twice more: by grind.mjs when it found this, " +
+                    "and by the chain in step 5");
+      return c;
+    }
+  },
+
+  { n:5, id:"curve", title:"SnoozeCurve, at the ground address",
+    what:"Three transactions, and the order is load-bearing: deploy the curve through the " +
+         "deployer, send it the allocation it may sell, and only then register it as the pool.",
+    txs:[
+      { key:"5.deploy", label:"Deploy SnoozeCurve",
+        about:function(){ return "deploy(salt, SnoozeCurve + args) → " + (ST.predicted || "?") +
+          ". Only " + L.owner + " may send it; SnoozeDeployer.deploy reverts NotOwner otherwise."; },
+        after:function(){ return "curve"; } },
+      { key:"5.fund", label:"Send the curve its allocation",
+        about:function(){ return "transfer(" + (ST.curve || "?") + ", " + L.curve.curveSupply + ")"; },
+        needs:function(){ return ST.curve ? null : "the curve's address is not known yet"; } },
+      { key:"5.register", label:"Register the curve as the pool",
+        about:function(){ return "setPool(" + (ST.curve || "?") + ", true) — this is what switches " +
+          "BOTH Snooze rules on. _move() fires the haircut and the daily cap on the same " +
+          "condition, isPool[to] && !capExempt[from], so until this lands the token has neither."; },
+        /* Read from the chain, not asserted in a comment. Once isPool[curve] is true a transfer
+           INTO the curve is a sell: Rule 2 rejects the whole float, and a retry at the cap
+           SUCCEEDS while Rule 1 burns part of it. The curve then holds a fraction of what it was
+           meant to and its parameters are already immutable. */
+        needs:function(){ return ST.fundedOk ? null :
+          "the curve must already hold its whole allocation. Verify step 5 after funding — " +
+          "after setPool, a transfer into the curve is a sell and part of it burns."; } }
+    ],
+    irreversible:[
+      "feeTo is immutable. There is no setFeeTo: a fee address that can be repointed later is an admin key with a different name.",
+      "virtualEth, curveSupply, bondTarget and feeBps are all immutable. How much real money it takes to graduate is fixed here and cannot be tuned afterwards.",
+      "The gate halves are immutable. This curve has no gate, because there is no SNOOZE to hold before SNOOZE exists.",
+      "Tokens sent to the curve are the curve's. There is no rescue, sweep or withdraw.",
+      "setPool also sets capExempt for the curve, permanently, so the curve can pay buyers out. That is required — without it nobody could buy more than 20% of its float a day.",
+      "bond() is permissionless AND the caller names the destination. The first stranger to call it once reserveEth passes bondTarget receives the whole raise and the pool's token side, at an address they chose. Nothing on this page can prevent that."
+    ],
+    confirm:"the curve parameters and the fee address are immutable and I have checked them",
+    blocked: function(){ return ST.verified.salt ? null : "step 4 has not been verified yet"; },
+    addrKey:"curve",
+    reads: function(){ return ST.curve ? [
+      { sig:"token()",       to:ST.curve, data:SNOOZE.callData("token()") },
+      { sig:"feeTo()",       to:ST.curve, data:SNOOZE.callData("feeTo()") },
+      { sig:"feeBps()",      to:ST.curve, data:SNOOZE.callData("feeBps()") },
+      { sig:"virtualEth()",  to:ST.curve, data:SNOOZE.callData("virtualEth()") },
+      { sig:"curveSupply()", to:ST.curve, data:SNOOZE.callData("curveSupply()") },
+      { sig:"bondTarget()",  to:ST.curve, data:SNOOZE.callData("bondTarget()") },
+      { sig:"gateToken()",   to:ST.curve, data:SNOOZE.callData("gateToken()") },
+      { sig:"gateMin()",     to:ST.curve, data:SNOOZE.callData("gateMin()") },
+      { sig:"sold()",        to:ST.curve, data:SNOOZE.callData("sold()") },
+      { sig:"reserveEth()",  to:ST.curve, data:SNOOZE.callData("reserveEth()") },
+      { sig:"bonded()",      to:ST.curve, data:SNOOZE.callData("bonded()") },
+      { sig:"token.balanceOf(curve)", to:ST.token,
+        data:SNOOZE.callData("balanceOf(address)", SNOOZE.addressWord(ST.curve)) },
+      { sig:"token.isPool(curve)", to:ST.token,
+        data:SNOOZE.callData("isPool(address)", SNOOZE.addressWord(ST.curve)) },
+      { sig:"token.capExempt(curve)", to:ST.token,
+        data:SNOOZE.callData("capExempt(address)", SNOOZE.addressWord(ST.curve)) }
+    ] : []; },
+    code: function(){ return ST.curve; },
+    check: function(r, code){
+      var c = [];
+      push(c, hasCode(code), "there is code at the curve's address", ST.curve || "");
+      push(c, SNOOZE.same(ST.curve, ST.predicted),
+           "and it is exactly the address addressOf promised before it existed",
+           ST.predicted ? "promised " + ST.predicted : "no predicted address recorded");
+      push(c, String(ST.curve || "").toLowerCase().slice(-L.vanity.suffix.length) === L.vanity.suffix,
+           "the address ends …" + L.vanity.suffix, ST.curve || "");
+      addrIs(c, r, "token()", ST.token);
+      addrIs(c, r, "feeTo()", L.curve.feeTo);
+      numIs(c, r, "feeBps()", String(L.curve.feeBps));
+      numIs(c, r, "virtualEth()", L.curve.virtualEth);
+      numIs(c, r, "curveSupply()", L.curve.curveSupply);
+      numIs(c, r, "bondTarget()", L.curve.bondTarget);
+      addrIs(c, r, "gateToken()", L.curve.gateToken || SNOOZE.ZERO);
+      numIs(c, r, "gateMin()", L.curve.gateMin);
+      numIs(c, r, "sold()", "0", "sold() is 0 — nothing has traded yet");
+      numIs(c, r, "reserveEth()", "0", "reserveEth() is 0");
+      boolIs(c, r, "bonded()", false);
+      numIs(c, r, "token.balanceOf(curve)", L.curve.curveSupply,
+            "the curve actually holds every token it is allowed to sell");
+      boolIs(c, r, "token.isPool(curve)", true,
+             "isPool(curve) is true, so both Snooze rules are on");
+      boolIs(c, r, "token.capExempt(curve)", true,
+             "capExempt(curve) is true, so the curve can pay buyers out");
+      /* The gate that unlocks 5.register, recorded from a read rather than from having sent
+         the funding transaction. */
+      try{
+        ST.fundedOk = SNOOZE.readUint(r["token.balanceOf(curve)"].data) >= BigInt(L.curve.curveSupply);
+      }catch(e){ ST.fundedOk = false; }
+      save();
+      return c;
+    }
+  },
+
+  { n:6, id:"lock", title:"Freeze the token, seal the deployer",
+    what:"Two one-way doors. After these there is no address on this launch that can change a " +
+         "pool, an exemption, or deploy anything else — including yours.",
+    txs:[
+      { key:"6.freeze", label:"freeze() the token",
+        about:function(){ return "freeze() — setPool and setCapExempt revert with Frozen() for " +
+          "every caller from here on. Until this lands, admin can exempt itself from Rule 2, " +
+          "which makes Rule 2 a promise rather than a rule."; } },
+      { key:"6.seal", label:"seal() the deployer",
+        about:function(){ return "seal() — deploy() reverts with IsSealed for every caller, forever."; } }
+    ],
+    irreversible:[
+      "There is no unfreeze. No venue created after this is ever inside either rule, and there is no call that adds one — liquidity that migrates to a wrapper or an unregistered pair trades untaxed and effectively uncapped. That is the trade.",
+      "There is no unseal. Nothing can ever be deployed from this SnoozeDeployer again.",
+      "If SnoozeGate is part of this launch, it needs its own deployer afterwards — a sealed one cannot deploy it."
+    ],
+    confirm:"freezing and sealing cannot be undone and nothing else needs deploying",
+    blocked: function(){ return ST.verified.curve ? null : "step 5 has not been verified yet"; },
+    reads: function(){ return ST.deployer && ST.token ? [
+      { sig:"sealed_()",     to:ST.deployer, data:SNOOZE.callData("sealed_()") },
+      { sig:"count()",       to:ST.deployer, data:SNOOZE.callData("count()") },
+      { sig:"token.frozen()",to:ST.token,    data:SNOOZE.callData("frozen()") }
+    ] : []; },
+    code: function(){ return ST.deployer; },
+    check: function(r){
+      var c = [];
+      boolIs(c, r, "token.frozen()", true, "the token is frozen");
+      boolIs(c, r, "sealed_()", true, "the deployer is sealed");
+      var n = null;
+      try{ n = SNOOZE.readUint(r["count()"].data); }catch(e){}
+      push(c, n !== null && n >= 1n,
+           "count() records what it deployed, so the set is enumerable without logs",
+           n === null ? "could not be read" : n + " deployed");
+      return c;
+    }
+  }];
+}
+
+var AFTER = [
+  ["bond() is a race you can lose",
+   "SnoozeCurve.bond(pool) is permissionless and the CALLER chooses where the ETH and the token " +
+   "side go. It becomes callable the instant reserveEth reaches bondTarget, and whoever calls it " +
+   "first takes the raise — measured against these exact parameters, a stranger calling " +
+   "bond(theirOwnAddress) receives all of reserveEth and the whole pool allocation. Nothing in " +
+   "these scripts can prevent it; the fix is a contract change that pins the pool at " +
+   "construction. Until then, either watch for the target and be first, or accept the race — " +
+   "and do not let anyone find out about it after they have bought."],
+  ["The site still points at nothing",
+   "web/index.html holds const POOL = \"\" and const TOKEN = \"\". Filling them in changes those " +
+   "files, which changes their hashes, which node tools/stamp.mjs republishes in the README."],
+  ["Nothing is verified on Basescan",
+   "solc 0.8.36, optimizer on, 200 runs, flattened. The curve was created BY A CONTRACT, so it " +
+   "is verified at its own address with its own re-encoded constructor arguments — " +
+   "deploy/artifacts.json lists them in order."],
+  ["A holder cannot sell 100% of a position back to the curve",
+   "quoteSell rounds the gross up against reserveEth by one wei at the boundary, so selling " +
+   "exactly `sold` reverts with an arithmetic panic while `sold - 1` succeeds. A rounding edge, " +
+   "not a lost balance — but it looks like a honeypot to whoever hits it first, so say it first."],
+  ["This is the curve launch, not the launchpad one",
+   "deploy/README.md and LAUNCH.md 4 describe deploying SnoozeLaunchpad and calling launch(). " +
+   "That path needs a venue answering 0x1930789c and LAUNCH.md 2.2 records that nothing on Base " +
+   "does. This is the other path: the curve is its own venue."]
+];
+
+/* ------------------------------------------------------------------------ check helpers */
+
+function hasCode(code){ return !!code && code !== "0x" && code !== ""; }
+function push(list, ok, name, why){ list.push({ ok:!!ok, name:name, why:why || "" }); }
+function got(r, sig, fn){
+  var x = r && r[sig];
+  if(!x || !x.ok) return null;
+  try{ return fn(x.data); }catch(e){ return null; }
+}
+function numIs(c, r, sig, want, name){
+  var v = got(r, sig, SNOOZE.readUint);
+  var ok = v !== null && v === BigInt(want);
+  push(c, ok, name || (sig + " is " + want), v === null ? "could not be read" : ok ? "" : "it is " + v);
+}
+function addrIs(c, r, sig, want, name){
+  var v = got(r, sig, SNOOZE.readAddress);
+  var ok = SNOOZE.same(v, want);
+  push(c, ok, name || (sig + " is " + want), v === null ? "could not be read" : ok ? "" : "it is " + v);
+}
+function boolIs(c, r, sig, want, name){
+  var v = got(r, sig, SNOOZE.readBool);
+  push(c, v === want, name || (sig + " is " + want),
+       v === null ? "could not be read" : "it is " + v);
+}
+function strIs(c, r, sig, want){
+  var v = got(r, sig, SNOOZE.readString);
+  push(c, v === want, sig + ' is "' + want + '"',
+       v === null ? "could not be read" : v === want ? "" : 'it is "' + v + '"');
+}
+
+/* Step 1's guard, which is the one that has to refuse rather than warn. What each half proves
+   is written down beside it: bytecode can show that something IS the repo's settable mock, and
+   that it HAS a setter, and it cannot show that something is ownerless. */
+function oracleChecks(r, code){
+  var c = [], runtime = SNOOZE.strip(code || "").toLowerCase();
+  push(c, runtime.length > 0, "there is a contract at the oracle address",
+       runtime.length ? "" : "no code. Every call to an address with no code succeeds and " +
+       "returns empty, so an oracle that is not there reads as one that works.");
+  if(!runtime.length) return c;
+  var mock = A.refuse && A.refuse.MockOracle;
+  if(mock){
+    push(c, !sameRuntime(mock.runtime, runtime),
+         "it is not contracts/test/SnoozeMocks.sol:MockOracle",
+         "compared with the compiler metadata tail stripped, so a rebuild does not sneak past");
+    push(c, runtime.indexOf(SNOOZE.SETTER) < 0,
+         "it has no set(uint256,uint256,bool) in its dispatcher",
+         "a setter is a burn dial with a different name; this cannot prove the absence of " +
+         "every setter, only of that one, so read the oracle's verified source too");
+  }
+  ["ready()","spot()","twap24()"].forEach(function(sig){
+    var x = r[sig];
+    push(c, !!x && x.ok, sig + " returns without reverting",
+         x && x.error ? x.error : (x && x.ok ? "" :
+         "a revert here is a permanent honeypot: ready() runs inside every sell"));
+    if(x && x.ok){
+      var okd = true;
+      try{ sig === "ready()" ? SNOOZE.readBool(x.data) : SNOOZE.readUint(x.data); }
+      catch(e){ okd = false; }
+      push(c, okd, sig + " returns a full 32-byte word",
+           okd ? "" : "short return data — an address with no code answers every call like this");
+    }
+  });
+  var ready = got(r, "ready()", SNOOZE.readBool);
+  push(c, ready === false,
+       "ready() is false, which is what an oracle with no history behind it is",
+       ready === true ? "it is already ready before 24 hours of history can exist" :
+       ready === null ? "ready() could not be read" : "");
+  return c;
+}
+/* Solidity's CBOR metadata tail ends with its own two-byte length. Stripping it makes two
+   builds of the same source comparable; a tail that does not parse is left alone, which makes
+   the comparison stricter rather than looser. */
+function sameRuntime(a, b){
+  return strip2(a) === strip2(b);
+  function strip2(h){
+    h = SNOOZE.strip(h).toLowerCase();
+    if(h.length < 8) return h;
+    var n = parseInt(h.slice(-4), 16);
+    if(!isFinite(n)) return h;
+    var bytes = (n + 2) * 2;
+    return bytes >= h.length ? h : h.slice(0, h.length - bytes);
+  }
+}
+
+/* ------------------------------------------------------------------------------- wallet */
+
+function evmProvider(){
+  var p = window.phantom;
+  if(p && p.ethereum) return p.ethereum;
+  var e = window.ethereum;
+  if(!e) return null;
+  if(Array.isArray(e.providers)) return e.providers[0] || null;
+  return e;
+}
+function phantomSolanaOnly(){
+  var p = window.phantom;
+  return !!(p && p.solana && !p.ethereum) && !evmProvider();
+}
+function wSet(text, cls, err){
+  var b = $("wBadge"); b.className = "badge" + (cls ? " " + cls : ""); b.textContent = text;
+  var e = $("wErr"); e.hidden = !err; e.textContent = err || "";
+}
+function wFail(msg){ wSet("not connected", "bad", msg); return false; }
+
+async function connect(){
+  wSet("connecting…", "");
+  var prov = evmProvider();
+  if(!prov){
+    if(phantomSolanaOnly())
+      return wFail("Phantom is here but only its Solana side is on. This is Base, which is EVM — " +
+        "turn on Ethereum in Phantom → Settings → Active Networks, then reload.");
+    return wFail("No wallet provider found. If you opened this from a file:// URL, most " +
+      "extensions do not inject one there: either allow file URLs for your wallet, or serve " +
+      "the folder locally — python3 -m http.server -d deploy 8000");
+  }
+  var accts;
+  try{ accts = await prov.request({ method:"eth_requestAccounts" }); }
+  catch(e){
+    return wFail(e && e.code === 4001
+      ? "You declined the connection. Nothing was shared and nothing was sent."
+      : "The wallet refused the connection: " + ((e && (e.message || e.reason)) || "no reason given"));
+  }
+  if(!Array.isArray(accts) || !accts.length) return wFail("Connected but returned no account.");
+  W.prov = prov; W.addr = accts[0];
+  try{
+    var ch = await prov.request({ method:"eth_chainId" });
+    W.chain = /^0x[0-9a-fA-F]+$/.test(ch) ? Number(BigInt(ch)) : null;
+  }catch(e){ W.chain = null; }
+  if(W.chain !== null && W.chain !== L.chainId){
+    try{
+      await prov.request({ method:"wallet_switchEthereumChain", params:[{ chainId:CHAIN_HEX }] });
+      W.chain = L.chainId;
+    }catch(e){ /* declined, or the chain is not added — reported below, never forced */ }
+  }
+  render();
+  return true;
+}
+function forget(){
+  W = { prov:null, addr:null, chain:null };
+  wSet("not connected", "", "Forgotten here. To revoke the connection itself, use your " +
+       "wallet's own connected-sites list.");
+  render();
+}
+
+async function ethCall(to, data){
+  if(!W.prov) return { ok:false, error:"no wallet connected" };
+  try{
+    var r = await W.prov.request({ method:"eth_call", params:[{ to:to, data:data }, "latest"] });
+    return { ok:true, data:r };
+  }catch(e){ return { ok:false, error:(e && (e.message || e.reason)) || "reverted" }; }
+}
+async function getCode(addr){
+  if(!W.prov || !addr) return "0x";
+  try{ return await W.prov.request({ method:"eth_getCode", params:[addr, "latest"] }); }
+  catch(e){ return "0x"; }
+}
+async function receipt(hash){
+  try{ return await W.prov.request({ method:"eth_getTransactionReceipt", params:[hash] }); }
+  catch(e){ return null; }
+}
+
+/* ---------------------------------------------------------------------------- rendering */
+
+function el(tag, cls, text){
+  var e = document.createElement(tag);
+  if(cls) e.className = cls;
+  if(text != null) e.textContent = text;
+  return e;
+}
+function val(f){ return typeof f === "function" ? f() : f; }
+
+function render(){
+  var onChain = W.chain === (L ? L.chainId : -1);
+  if(W.addr){
+    wSet(onChain ? "connected" : "wrong network", onChain ? "good" : "warn", "");
+    $("wConnect").hidden = true; $("wForget").hidden = false;
+    var kv = $("wOut"); kv.hidden = false; kv.innerHTML = "";
+    var rows = [["Address", W.addr],
+                ["Chain", W.chain === null ? "could not read"
+                  : (onChain ? "chain " + W.chain : "chain " + W.chain + " — not this launch's")],
+                ["Is it the owner?", SNOOZE.same(W.addr, L.owner) ? "yes"
+                  : "NO — steps 3, 5 and 6 must be sent by " + L.owner]];
+    rows.forEach(function(r){ kv.appendChild(el("div", null, r[0]));
+                              kv.appendChild(el("div", null, r[1])); });
+  }else{
+    $("wConnect").hidden = false; $("wForget").hidden = true; $("wOut").hidden = true;
+  }
+
+  var root = $("launch"); root.innerHTML = "";
+  if(!A || !L){
+    var e = el("div", "badbox");
+    e.textContent = "artifacts.js did not load. Run: node deploy/scripts/artifacts.mjs — and " +
+      "if you opened this over file:// with the file missing, the page cannot tell you which.";
+    root.appendChild(e); return;
+  }
+
+  STEPS().forEach(function(step){ root.appendChild(stepCard(step)); });
+
+  var after = $("after"); after.innerHTML = "";
+  AFTER.forEach(function(p){
+    after.appendChild(el("h2", null, p[0]));
+    after.appendChild(el("p", "sub tiny", p[1]));
+  });
+}
+
+function stepCard(step){
+  var done = !!ST.verified[step.id];
+  var blocked = step.blocked();
+  var card = el("div", "card" + (done ? " done" : (!blocked ? " now" : "")));
+
+  var hdr = el("div", "hdr");
+  hdr.appendChild(el("h2", null, step.n + ". " + step.title));
+  hdr.appendChild(el("span", "badge" + (done ? " good" : blocked ? "" : " warn"),
+                     done ? "verified" : blocked ? "waiting" : "next"));
+  card.appendChild(hdr);
+  card.appendChild(el("p", "sub tiny", step.what));
+
+  var note = step.note && step.note();
+  if(note) card.appendChild(el("div", "warnbox", note));
+
+  if(blocked) card.appendChild(el("div", "tiny dim", blocked));
+
+  if(step.cmd) card.appendChild(el("pre", null, val(step.cmd)));
+
+  [step.field, step.field2].forEach(function(f){
+    if(!f) return;
+    var wrap = el("div", null);
+    wrap.style.marginTop = "10px";
+    var lab = el("label", null, f.label); lab.setAttribute("for", "f-" + f.key);
+    var inp = el("input");
+    inp.id = "f-" + f.key; inp.placeholder = f.placeholder || "";
+    inp.value = ST[f.key] || f.value || "";
+    inp.addEventListener("change", function(){
+      ST[f.key] = inp.value.trim(); ST.verified[step.id] = false; save(); render();
+    });
+    wrap.appendChild(lab); wrap.appendChild(inp); card.appendChild(wrap);
+  });
+
+  if(step.irreversible.length){
+    card.appendChild(el("div", "tiny", "Cannot be undone by anybody, including you:"));
+    var ul = el("ul", "irr");
+    step.irreversible.forEach(function(t){ ul.appendChild(el("li", null, t)); });
+    card.appendChild(ul);
+  }
+
+  /* The confirmation, which names what it is confirming. A checkbox saying "I understand"
+     is a click; typing the sentence is the smallest thing that requires reading it. */
+  var confirmOk = !step.confirm;
+  if(step.confirm && !done){
+    var w = el("div", null); w.style.marginTop = "10px";
+    var lab = el("label", null, "Type this to enable the buttons: " + step.confirm);
+    lab.setAttribute("for", "c-" + step.id);
+    var inp = el("input"); inp.id = "c-" + step.id; inp.placeholder = step.confirm;
+    inp.addEventListener("input", function(){
+      var ok = inp.value.trim() === step.confirm;
+      card.querySelectorAll("button[data-tx]").forEach(function(b){
+        b.disabled = !!blocked || !ok || !W.addr || !!b.dataset.needs;
+      });
+    });
+    w.appendChild(lab); w.appendChild(inp); card.appendChild(w);
+    confirmOk = false;
+  }
+
+  var row = el("div", "row");
+  step.txs.forEach(function(tx){
+    var needs = tx.needs && tx.needs();
+    var b = el("button", "act", tx.label);
+    b.dataset.tx = tx.key;
+    if(needs) b.dataset.needs = needs;
+    b.disabled = !!blocked || !confirmOk || !W.addr || !!needs;
+    b.addEventListener("click", function(){ send(step, tx, card); });
+    row.appendChild(b);
+    if(needs) card.appendChild(el("div", "tiny dim", needs));
+  });
+  var v = el("button", null, done ? "Re-read from the chain" : "Verify");
+  v.disabled = !!blocked || (!W.addr && !step.offline);
+  v.addEventListener("click", function(){ verify(step, card); });
+  row.appendChild(v);
+  card.appendChild(row);
+
+  var out = el("div"); out.id = "out-" + step.id; card.appendChild(out);
+  if(ST.sent[step.id]){
+    var pre = el("pre", null, Object.keys(ST.sent[step.id]).map(function(k){
+      return k + "  " + ST.sent[step.id][k] +
+             "\nnode deploy/scripts/record.mjs " + k + " " + ST.sent[step.id][k];
+    }).join("\n"));
+    card.appendChild(pre);
+  }
+  return card;
+}
+
+async function send(step, tx, card){
+  var out = $("out-" + step.id); out.innerHTML = "";
+  var built;
+  try{
+    built = SNOOZE.tx(tx.key, A, L, { oracle:chosenOracle(), deployer:ST.deployer,
+                                      token:ST.token, salt:ST.salt, curve:ST.curve });
+  }catch(e){ out.appendChild(el("div", "badbox", "cannot build it: " + e.message)); return; }
+
+  var pre = el("pre", null,
+    "from   " + (built.from || "(anyone)") +
+    "\nto     " + (built.to || "(contract creation)") +
+    "\nvalue  " + built.value +
+    "\ndata   " + ((built.data.length) / 2) + " bytes\n\n0x" + SNOOZE.strip(built.data));
+  out.appendChild(pre);
+
+  if(built.from && !SNOOZE.same(built.from, W.addr)){
+    out.appendChild(el("div", "badbox",
+      "This must be sent by " + built.from + " and your wallet is " + W.addr + "."));
+    return;
+  }
+  if(W.chain !== L.chainId){
+    out.appendChild(el("div", "badbox", "Your wallet is not on chain " + L.chainId + "."));
+    return;
+  }
+  var params = { from:W.addr, data:"0x" + SNOOZE.strip(built.data), value:built.value };
+  if(built.to) params.to = built.to;
+  var hash;
+  try{ hash = await W.prov.request({ method:"eth_sendTransaction", params:[params] }); }
+  catch(e){
+    out.appendChild(el("div", "badbox",
+      "The wallet did not send it: " + ((e && (e.message || e.reason)) || "declined")));
+    return;
+  }
+  ST.sent[step.id] = ST.sent[step.id] || {};
+  ST.sent[step.id][tx.key] = hash;
+  save();
+  out.appendChild(el("div", "okbox", "sent " + hash + " — waiting for a receipt"));
+
+  /* Poll for the receipt rather than assume. A creation receipt is also where the address
+     comes from: an address typed by hand verifies just as happily against somebody else's
+     deployment of the same contract with the same constructor argument. */
+  for(var i = 0; i < 120; i++){
+    await new Promise(function(r){ setTimeout(r, 2500); });
+    var rc = await receipt(hash);
+    if(!rc) continue;
+    if(rc.status !== "0x1"){
+      out.appendChild(el("div", "badbox",
+        "That transaction FAILED (status " + rc.status + "). Nothing was deployed, and the gas " +
+        "is spent. Read the revert on a block explorer before resending."));
+      return;
+    }
+    if(rc.contractAddress && (tx.after ? tx.after() : step.addrKey)){
+      ST[tx.after ? tx.after() : step.addrKey] = rc.contractAddress;
+      save();
+      out.appendChild(el("div", "okbox", "created " + rc.contractAddress));
+    }else{
+      out.appendChild(el("div", "okbox", "mined in block " + Number(BigInt(rc.blockNumber))));
+    }
+    render();
+    return;
+  }
+  out.appendChild(el("div", "warnbox", "no receipt after five minutes. It may still be pending."));
+}
+
+async function verify(step, card){
+  var out = $("out-" + step.id); out.innerHTML = "";
+  var results = {}, code = "0x";
+  if(!step.offline){
+    var reads = step.reads ? step.reads() : [];
+    if(!reads.length){
+      out.appendChild(el("div", "warnbox",
+        "nothing to read yet — this step needs an address first"));
+      return;
+    }
+    for(var i = 0; i < reads.length; i++)
+      results[reads[i].sig] = await ethCall(reads[i].to, reads[i].data);
+    code = await getCode(step.code());
+  }
+  var list = step.check(results, code);
+  var ul = el("ul", "checks");
+  var bad = 0;
+  list.forEach(function(c){
+    if(!c.ok) bad++;
+    var li = el("li", c.ok ? "y" : "n", c.name);
+    if(c.why && (!c.ok || /^0x/.test(c.why))) li.appendChild(el("span", "why", c.why));
+    ul.appendChild(li);
+  });
+  out.appendChild(ul);
+  ST.verified[step.id] = bad === 0;
+  if(bad === 0 && step.record) step.record();
+  save();
+  out.appendChild(el("div", bad ? "badbox" : "okbox", bad
+    ? bad + " of " + list.length + " failed. This step is NOT verified, so nothing after it " +
+      "can be sent."
+    : "all " + list.length + " passed."));
+  render();
+}
+
+$("wConnect").addEventListener("click", connect);
+$("wForget").addEventListener("click", forget);
+var p0 = evmProvider();
+if(p0 && p0.on){
+  p0.on("accountsChanged", function(a){ if(!a || !a.length) forget();
+                                        else { W.addr = a[0]; render(); } });
+  p0.on("chainChanged", function(){ if(W.addr) connect(); });
+}
+render();
+</script>
+</body>
+</html>

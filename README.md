@@ -96,9 +96,9 @@ sha256(web/snooze.html)  = 853fd2c8e91db008592707307be8c0a45bc3229c3ed0d78efbf59
 sh test/run-all.sh         # everything below, no network touched
 ```
 
-**1741 assertions across twenty-two suites.**
+**1927 assertions across twenty-three suites.**
 
-`test/run.mjs` — 353, drives the real page in Chromium against `test/mock-rpc.mjs`: Keccak vectors,
+`test/run.mjs` — 368, drives the real page in Chromium against `test/mock-rpc.mjs`: Keccak vectors,
 the four EIP-55 reference addresses, the v4 poolId derivation checked against a real Base pool
 id, ABI-string decoding (including a 10-character name, whose length word contains a hex
 letter, and truncated/absurd offsets), result-length discipline, and full flows for the happy
@@ -240,6 +240,23 @@ limit), every constructor run with real encoded arguments, a full `launch()` sen
 ordinary externally-owned account rather than from another contract, and gas measured against
 the block limit — `launch()` deploys two contracts and makes five state-changing calls in one
 transaction, and comes in at 7.2% of a 30M block. It writes `deploy/`.
+
+`test/run-deploy.mjs` — 171, the deployment sequence in `deploy/scripts` sent step by step into
+an in-process EVM, using the exact bytes `build.mjs` prints and `deploy/deploy.html` sends. It is
+an execution rather than a grep because that is what found the thing that decides the shape of
+the whole sequence: **`Snooze` deployed through `SnoozeDeployer` mints the entire supply to the
+deployer contract and makes that contract the admin** — the constructor does
+`balanceOf[msg.sender] = supply` and `admin = msg.sender`, and through CREATE2 `msg.sender` is
+the deployer, whose ABI has no transfer, no rescue and no way to call `setPool`. The supply
+would be unrecoverable and neither Snooze rule could ever fire, since `_move` gates the haircut
+and the daily cap on the same `isPool[to] && !capExempt[from]`. So the suite measures that
+outcome, and then drives the sequence that works: token from the owner's wallet, ground address
+to the curve, fund before `setPool` (measured: the other order does not revert, it burns), then
+`freeze()` and `seal()`, and finally a real buy that settles with `burnBps()` at 5000. It also
+pins the two halves that keep the deploy button out of `web/`, checks every selector the page
+hardcodes against keccak of its signature (nineteen of thirty-six were wrong when first
+written), and asserts all seven transactions are byte-identical between the page and the
+scripts.
 
 `test/run-launchpad.mjs` — 37, `launch()` end to end: the wiring granted before any deposit
 can arrive, the three-way distribution that could not settle by hand settling in one block,
