@@ -466,7 +466,7 @@ tbody tr:last-child td{border-bottom:0}
   <ol class="howto">
     <li>Connect a wallet on Base.</li>
     <li>Check the curve's address in <a class="ext" href="/checker.html">the checker</a>.</li>
-    <li>Call <code>buy</code> on it with ETH. A plain send reverts.</li>
+    <li id="buyHow3">Call <code>buy</code> on its Write Contract tab. A plain send reverts.</li>
   </ol>
   <div class="ca" id="buyCaRow" hidden>
     <span class="k">the curve</span>
@@ -474,8 +474,8 @@ tbody tr:last-child td{border-bottom:0}
     <button class="copy" id="buyCopy" type="button">copy</button>
   </div>
   <a class="cta" id="buyCta" href="#how" hidden>Buy on the curve</a>
-  <p class="tiny dim" style="margin:10px 0 0">Nothing is deployed yet. This page reads and never
-  signs.</p>
+  <p class="tiny dim" style="margin:10px 0 0" id="buyFoot">Nothing is deployed yet. This page
+  reads and never signs.</p>
 </div>
 
 <section class="card live" id="live">
@@ -967,15 +967,41 @@ const SNOOZE_TOKEN = "";
 const GATE_MIN_TEXT = "$SNOOZE";   // set to the real minimum once the curve is deployed
 
 (function(){
-  const badge = $("buyBadge"), cta = $("buyCta"), row = $("buyCaRow"), addr = $("buyAddr");
+  const badge = $("buyBadge"), cta = $("buyCta"), row = $("buyCaRow"), addr = $("buyAddr"),
+        foot = $("buyFoot"), how3 = $("buyHow3");
   if(!badge) return;
   if(SNOOZE_CURVE){
     badge.textContent = "live"; badge.className = "badge good";
     addr.textContent = SNOOZE_CURVE;
     row.hidden = false;
     cta.hidden = false;
-    cta.href = "https://basescan.org/address/" + SNOOZE_CURVE;
+    /* The WRITE CONTRACT tab, not the address page, and the difference is the whole feature.
+       One is somewhere to read about a contract; the other is where a person with a wallet and
+       no command line actually calls buy(uint256 minOut, address to) with ETH in the value
+       field. This site never signs — that promise is on all nine pages and test/run.mjs fails
+       the build if any of them breaks it — so the signature happens on an origin the visitor
+       already expects to sign on, rather than here. */
+    cta.href = "https://basescan.org/address/" + SNOOZE_CURVE + "#writeContract";
     cta.rel = "noopener noreferrer";
+    foot.textContent = "This page reads and never signs.";
+    /* AND THEN THE CURVE CLOSES. buy() is `if (bonded) revert AlreadyBonded()` — the first line
+       of it — so the moment somebody calls bond() this button starts sending people at a
+       function that reverts, which is the worst kind of broken because the page still looks
+       right. One eth_call decides it, and it is read rather than assumed.
+
+       What it does NOT do is point at Uniswap. bond(pool) hands the ETH and the tokens to an
+       address the CALLER names and creates no pool of any kind — read the function. So where
+       $SNOOZE trades after graduation is a fact about what somebody did, not something this
+       page is entitled to claim. A token page that shows whatever pool exists is the honest
+       shape of that, and it shows nothing if nobody made one. */
+    one("eth_call", [{ to: SNOOZE_CURVE, data: "0xe88dc357" }, "latest"]).then(r => {
+      if(!r.ok || typeof r.data !== "string" || r.data.length < 66) return;
+      if(BigInt(r.data.slice(0, 66)) !== 1n) return;
+      badge.textContent = "bonded"; badge.className = "badge";
+      cta.textContent = "See where it trades";
+      cta.href = "https://dexscreener.com/base/" + (SNOOZE_TOKEN || SNOOZE_CURVE);
+      how3.textContent = "The curve has closed. It trades wherever the pool was made.";
+    }).catch(() => {});
   }else{
     badge.textContent = "not deployed"; badge.className = "badge warn";
     row.hidden = true;
