@@ -174,8 +174,10 @@ a.cta.sub2{border-color:var(--edge)}
   </div>
   <div class="rule">
     <h3>2 &middot; Nobody can nuke it.</h3>
-    <p>No wallet moves more than 20% of its balance per day, whales included. That applies to
-    every transfer out, so moving to a fresh wallet is throttled too. One address is exempt
+    <p>No wallet <i>sells</i> more than 20% of its balance per day, whales included. Splitting
+    across fresh wallets does not help: five wallets holding a fifth each sell 20% of a fifth,
+    which is the same 20%. It used to cap every transfer, which capped nothing extra and broke
+    every router, deposit address and swap widget on Base. One address is exempt
     &mdash; the launcher's, which cannot seed the pool without it &mdash; and the same flag
     also skips the haircut, so that wallet is outside <i>both</i> rules and stays that way
     after <span class="mono">freeze()</span>. Read

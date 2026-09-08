@@ -100,17 +100,17 @@ console.log("── 'sleep on it and the jump is yours' is only true if the jump
      110n * E / 100n < 2n * E);
 }
 
-console.log("── rule 2: the daily cap");
+console.log("── rule 2: the daily cap, which now measures sells rather than every transfer");
 {
   const x = await world();
   await give(x, A, 1000n * E);
   const r = await call(x.tok, "remainingToday(address)", [A]);
-  eq("a fresh wallet may move 20% of its bag", r.words[0], 200n * E);
+  eq("a fresh wallet may sell 20% of its bag", r.words[0], 200n * E);
 
-  const okMove = await call(x.tok, "transfer(address,uint256)", [B, 200n * E],
+  const okSell = await call(x.tok, "transfer(address,uint256)", [POOL, 200n * E],
     { from: A, timestamp: 2000 });
-  ok("moving exactly 20% is allowed", okMove.ok, okMove.revert);
-  const over = await call(x.tok, "transfer(address,uint256)", [B, 1n],
+  ok("selling exactly 20% is allowed", okSell.ok, okSell.revert);
+  const over = await call(x.tok, "transfer(address,uint256)", [POOL, 1n],
     { from: A, timestamp: 2000 });
   ok("one wei more is not", !over.ok);
 
@@ -119,20 +119,72 @@ console.log("── rule 2: the daily cap");
   const r2 = await call(x.tok, "remainingToday(address)", [A]);
   eq("and the day's allowance does not refill as the balance falls", r2.words[0], 0n);
 
-  const next = await call(x.tok, "transfer(address,uint256)", [B, 160n * E],
+  const next = await call(x.tok, "transfer(address,uint256)", [POOL, 160n * E],
     { from: A, timestamp: 2000 + DAY });
   ok("a day later the window resets", next.ok, next.revert);
-  const tooMuch = await call(x.tok, "transfer(address,uint256)", [B, 1n],
+  const tooMuch = await call(x.tok, "transfer(address,uint256)", [POOL, 1n],
     { from: A, timestamp: 2000 + DAY });
   ok("baselined on the new, smaller balance", !tooMuch.ok);
 }
+
+// THE REASON THE CAP MOVED. It used to apply to every outbound transfer, which is 20% of a
+// balance that includes the amount being sent — so a contract receiving N and forwarding N
+// needed four times the trade parked permanently. Every router, aggregator and wallet swap
+// widget is that shape, and they reverted on BUYS as well as sells.
+console.log("── and therefore the token can be routed, deposited and swept");
+{
+  const x = await world();
+  const SETTLER = "0x0000000000000000000000000000000000005e77";
+  const BUYER = "0x00000000000000000000000000000000000000b9";
+  await give(x, POOL, 100_000n * E);
+
+  // A buy routed through a settler that holds no inventory of its own.
+  const inLeg = await call(x.tok, "transfer(address,uint256)", [SETTLER, 1000n * E],
+    { from: POOL, timestamp: 2000 });
+  ok("the pool can pay a settler", inLeg.ok, inLeg.revert);
+  const outLeg = await call(x.tok, "transfer(address,uint256)", [BUYER, 1000n * E],
+    { from: SETTLER, timestamp: 2000 });
+  ok("and the settler can forward the whole lot to the buyer", outLeg.ok, outLeg.revert);
+  eq("who receives all of it, because a buy is not a sell",
+     (await call(x.tok, "balanceOf(address)", [BUYER])).words[0], 1000n * E);
+
+  // A deposit address being swept clean, which is 100% of a balance every time.
+  const DEP = "0x00000000000000000000000000000000000d3901";
+  await call(x.tok, "transfer(address,uint256)", [DEP, 500n * E], { from: POOL, timestamp: 2000 });
+  const sweep = await call(x.tok, "transfer(address,uint256)", [BUYER, 500n * E],
+    { from: DEP, timestamp: 2000 });
+  ok("a deposit address can be emptied in one go", sweep.ok, sweep.revert);
+  eq("leaving nothing stranded",
+     (await call(x.tok, "balanceOf(address)", [DEP])).words[0], 0n);
+
+  // And the thing the wide rule was for is still true, because it never depended on the width:
+  // the cap is split-invariant. One wallet with B sells 0.2B a day; n wallets holding B/n each
+  // sell 0.2B/n, which sums to the same 0.2B. Splitting was never an evasion.
+  const W = i => "0x" + (0x77000n + BigInt(i)).toString(16).padStart(40, "0");
+  await give(x, A, 1000n * E);
+  let split = 0n;
+  for (let i = 0; i < 5; i++) {
+    await call(x.tok, "transfer(address,uint256)", [W(i), 200n * E],
+      { from: A, timestamp: 4000 });
+    const s = await call(x.tok, "transfer(address,uint256)", [POOL, 40n * E],
+      { from: W(i), timestamp: 4000 });
+    if (s.ok) split += 40n * E;
+    const more = await call(x.tok, "transfer(address,uint256)", [POOL, 1n],
+      { from: W(i), timestamp: 4000 });
+    ok(`split wallet ${i} is capped at its own 20%, not exempted by being fresh`, !more.ok);
+  }
+  eq("five wallets holding a fifth each sell exactly what one wallet could have",
+     split, 200n * E);
+}
+
 {
   const x = await world();
   await give(x, A, 1000n * E);
   // The rule has to bind the deployer too or it is not a rule.
   await call(x.tok, "setCapExempt(address,bool)", [DEPLOYER, 0], { from: DEPLOYER });
   const dep = (await call(x.tok, "balanceOf(address)", [DEPLOYER])).words[0];
-  const big = await call(x.tok, "transfer(address,uint256)", [A, dep], { from: DEPLOYER, timestamp: 3000 });
+  const big = await call(x.tok, "transfer(address,uint256)", [POOL, dep],
+    { from: DEPLOYER, timestamp: 3000 });
   ok("the deployer is capped like everyone else", !big.ok);
 }
 

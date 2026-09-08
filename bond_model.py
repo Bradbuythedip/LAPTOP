@@ -12,7 +12,7 @@ number pulling in opposite directions, and that is easy to get wrong in prose.
 
     python3 bond_model.py
 """
-from math import sqrt
+from math import sqrt, ceil
 
 # ---------------------------------------------------------------------------- the curve
 
@@ -136,6 +136,56 @@ if __name__ == "__main__":
           "  somebody now has to spend before the token graduates. There is no setting that\n"
           "  is deep AND quick, and 'slippage is never an issue' is a promise about the left\n"
           "  half of this table that gets paid for in the right half.\n")
+
+    print("── the number of trades it takes, in which E0 cancels\n")
+    # A buy of dE at reserve E costs exactly dE/E, so a "ticket" sized to cost x costs x at any
+    # E0. The number of such tickets to bond is R/(x*E0) = (sqrt(m)-1)/x — E0 is not in it.
+    print(f"  {'impact per buy':>16} {'buys to bond at 10x':>22}   (at ANY virtual ETH)")
+    for x in (0.005, 0.01, 0.02, 0.05):
+        n = (sqrt(10) - 1) / x
+        # The simulator can only stop on a whole ticket, so it lands on ceil(n) — and a
+        # fixed-size ticket costs LESS than x once the reserve has grown, which is why it is
+        # the ceiling and not more. The point is that the count does not move with E0.
+        counts = []
+        for E0 in (1.0, 3.0, 25.0):
+            sim = simulate(E0, 1e9, 10, 0.0, step=x * E0)
+            counts.append(round(sim["gross"] / (x * E0)))
+        check(f"{x*100:.1f}% tickets: the count is ceil((sqrt(10)-1)/x)",
+              counts[0], ceil(n), 1e-12)
+        check(f"{x*100:.1f}% tickets: and it is the same at E0 = 1, 3 and 25",
+              len(set(counts)), 1, 1e-12)
+        print(f"  {x*100:15.1f}% {n:21.1f}")
+    print("\n  E0 is not in that formula. Buying everyone half the slippage exactly doubles\n"
+          "  the raise and leaves the number of trades untouched. So E0 does not buy depth —\n"
+          "  it sets what a comfortable ticket is denominated in, and nothing else. 'Deep\n"
+          "  enough that slippage is never an issue' is a choice of units, not of depth.\n")
+
+    print("── the cliff at graduation, which is the opposite of what everyone expects\n")
+    print(f"  {'m':>5} {'curve depth':>13} {'pool depth':>12} {'slippage gets':>15}"
+          f" {'pool holds':>12}")
+    for m in (2, 4, 10, 25, 100):
+        curve, pool = sqrt(m), sqrt(m) - 1
+        check(f"m={m}: the seeded pool is shallower than the curve it replaced",
+              curve / pool, sqrt(m) / (sqrt(m) - 1), 1e-12)
+        print(f"  {m:5} {curve:11.3f}E0 {pool:10.3f}E0 {curve/pool:14.3f}x"
+              f" {(sqrt(m)-1)/m*100:11.2f}%")
+    print("\n  Slippage IMPROVES all the way up the curve — dE/(E0+R) with R rising — and then\n"
+          "  jumps 46% worse the moment the token becomes publicly tradeable, because only the\n"
+          "  REAL ETH goes into the pool and the virtual part does not. Graduation is the worst\n"
+          "  moment in the lifecycle and it is the one that gets announced.\n"
+          "  Pool depth as a share of supply is maximised at m = 4, at 25%.\n")
+
+    print("── what the leftover is worth, which is not what it marks at\n")
+    for m in (4, 10, 25):
+        check(f"m={m}: T0/m marked at the closing price is exactly E0", (1.0/m) * m, 1.0)
+        realisable = 1 - 1 / sqrt(m)
+        print(f"  m={m:>3}: marks at 1.000 E0, fetches {realisable:.3f} E0 if sold into the"
+              f" pool it just seeded,")
+        print(f"        and taking it leaves the price at {realisable**2*100:.1f}% of"
+              f" graduation")
+    print("\n  Marking it at the closing price is circular — the curve set that price itself.\n"
+          "  launch_model.py already refuses the same move for tax revenue. Report the\n"
+          "  leftover in TOKENS.\n")
 
     print("── the fee, and what it costs in time-to-bond\n")
     E0, T0 = 3.0, 1e9

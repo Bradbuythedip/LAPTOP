@@ -211,15 +211,21 @@ console.log("── depth costs speed, with the numbers rather than the adjectiv
   ok("the trade-off is stated as a trade-off", /Depth costs speed/i.test(body));
   const rows = await page.$$eval("table tbody tr", rs =>
     rs.map(r => [...r.querySelectorAll("td")].map(c => c.textContent.trim())));
-  ok("three virtual-ETH settings are tabulated", rows.length === 3, JSON.stringify(rows));
-  // Checked against bond_model.py's closed form, not against the copy that quotes it.
+  ok("three slippage settings are tabulated", rows.length === 3, JSON.stringify(rows));
+  // Against bond_model.py's closed form, not against the copy that quotes it. The count is
+  // ceil((sqrt(10)-1)/x) and E0 is not in it — which is the whole point of the card.
   for (const r of rows) {
-    const E0 = Number(r[0]), want = E0 * (Math.sqrt(10) - 1);
-    const got = Number(String(r[3]).replace(/[^\d.]/g, ""));
-    ok(`${E0} virtual ETH bonds at E0*(sqrt(10)-1) = ${want.toFixed(1)} ETH`,
-       Math.abs(got - want) < 0.15, `the page says ${got}`);
+    const x = Number(String(r[0]).replace("%", "")) / 100;
+    const want = Math.ceil((Math.sqrt(10) - 1) / x);
+    ok(`a ${r[0]} buy needs ceil((sqrt(10)-1)/x) = ${want} of them to bond`,
+       Number(r[1]) === want, `the page says ${r[1]}`);
+    ok(`and the count is identical at 3 and at 25 virtual ETH`,
+       Number(r[2]) === want && Number(r[3]) === want, JSON.stringify(r));
   }
-  ok("and it says outright that no row is both", /no row that is both/i.test(body));
+  ok("and it says outright that virtual ETH does not buy depth",
+     /does not buy depth/i.test(body));
+  ok("the cliff at graduation is disclosed, since it runs the wrong way",
+     /worse at bonding/i.test(body));
 }
 
 console.log("── every word that needs defining has one attached to it");
