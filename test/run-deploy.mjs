@@ -1300,6 +1300,12 @@ console.log("── the commands themselves: a refusal, never a stack trace");
      r.status === 1 && /--nonce/.test(r.stderr) && clean(r), r.stderr.trim());
   r = run([P, "--nonce", "-1"], predEnv);
   ok("and a nonsense nonce is refused rather than encoded", r.status === 1 && clean(r));
+  // The most likely thing to go wrong at this command: a wrong or blocked SNOOZE_RPC. It threw
+  // an unhandled rejection and printed a Node stack trace at somebody who only needed to be
+  // told to fix an environment variable — which every other command here already refuses to do.
+  r = run([P], { ...predEnv, SNOOZE_RPC: "http://127.0.0.1:1/x" });
+  ok("an unreachable endpoint is a refusal here too, not a stack trace",
+     r.status === 1 && clean(r) && /--nonce/.test(r.stderr), (r.stderr || "").slice(0, 300));
 
   r = run([P, "--nonce", "5"], predEnv);
   const wantToken = ABI.toChecksum(ABI.createAddress(raw.owner, 6));

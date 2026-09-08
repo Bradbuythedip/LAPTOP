@@ -34,7 +34,7 @@ import { curveInitCode, curveInitCodeHash } from "./lib/steps.mjs";
 import { createAddress, create2Address, toChecksum, sameAddress } from "./lib/abi.mjs";
 import { oracleDecision } from "./lib/config.mjs";
 import { isVerified, stepState, PREDICTION_PATH } from "./lib/state.mjs";
-import { NO_ENDPOINT } from "./lib/rpc.mjs";
+import { NO_ENDPOINT, redact } from "./lib/rpc.mjs";
 import { ROOT } from "./lib/solc.mjs";
 
 const args = process.argv.slice(2);
@@ -68,8 +68,18 @@ if (stated !== null) {
 } else {
   if (!rpc) die(NO_ENDPOINT + "\n\nOr state the wallet's nonce yourself: --nonce <n>. It is the " +
                 "transaction count on Basescan, and it is public.");
-  await rpc.requireChain(chainId);
-  nonce = await rpc.nonce(cfg.owner);
+  // Caught, because everything else in this directory refuses with a sentence and an endpoint
+  // that 403s or times out is the most likely thing to go wrong here — an unhandled rejection
+  // would print a Node stack trace at somebody who only needs to be told to fix SNOOZE_RPC.
+  // redact() again on the way out: fetch attaches the full URL, key and all, to a network
+  // error's cause, and this is a message being printed to a terminal that keeps logs.
+  try {
+    await rpc.requireChain(chainId);
+    nonce = await rpc.nonce(cfg.owner);
+  } catch (e) {
+    die(redact(e.message) + "\n\nThe nonce is public — it is the transaction count on " +
+        "Basescan — so this command also runs with no endpoint at all: --nonce <n>.");
+  }
   nonceFrom = `read from ${rpc.label} at "latest"`;
 }
 
