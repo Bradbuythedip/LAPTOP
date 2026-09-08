@@ -79,7 +79,7 @@ file and opening it locally removes the hosting party from the trust question en
 Published build `2026-09-08a`:
 
 ```
-sha256(web/index.html)   = 34645c4f8389440e458fec68f2f0bfacf83ed0000e3423b027cff7910360ef80
+sha256(web/index.html)   = f6ed0d739a18df4eec33315ab5f4d2fbcdd5845552b224654a752b7214ad6e1e
 sha256(web/buy.html)     = 3cd6f11114f5f0cbf9696d4153c5349a4c6999326db3e932c185c476f045e8b7
 sha256(web/checker.html) = 42bdeb0c23f1c05b576f1da1da4eb1dda1ce8b4997cb3e69f6d4899e9907e3bf
 sha256(web/size.html)    = 02a2028a2536c5d9764fe38c85e43c02ec3cd7587122b6e462ab0414c304b5f3
