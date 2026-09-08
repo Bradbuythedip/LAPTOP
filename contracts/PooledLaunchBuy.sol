@@ -31,10 +31,23 @@ interface ILaunchRouter {
 ///     anyone's permission.
 ///   - There is no upgrade path, no delegatecall, no selfdestruct, no proxy.
 ///
-/// What remains is code risk, not counterparty risk. That is a real reduction and it is not
-/// zero: an unaudited contract holding pooled funds is how people lose everything, and this
-/// one has been compiled and executed against an in-process EVM only. It has never been on a
-/// testnet, never been audited, and must not hold real money on that basis.
+/// WHAT THIS STILL DOES NOT PROTECT YOU FROM, stated here rather than buried, because an
+/// adversarial review found it and it is the honest limit of the design:
+///
+///   THE DEPLOYER CHOOSES THE ROUTER AND THE TOKEN. `execute()` hands the entire pooled
+///   balance to `router`. A deployer who points `router` at a contract they control takes
+///   every deposit and hands back a `token` they also control. No amount of internal
+///   discipline fixes that — the contract cannot make its deployer honest.
+///
+///   What it CAN do, and does, is make the two addresses immutable and public before anybody
+///   deposits. So the check is external and it is on the depositor: read `router()` and
+///   `token()`, confirm they are the real router and the real token, and only then send
+///   money. A contract that could swap them later would remove even that.
+///
+/// What remains after that is code risk, not counterparty risk. That is a real reduction and
+/// it is not zero: an unaudited contract holding pooled funds is how people lose everything,
+/// and this one has been compiled and executed against an in-process EVM only. It has never
+/// been on a testnet, never been audited, and must not hold real money on that basis.
 contract PooledLaunchBuy {
     /// Immutable, because a parameter someone can change after deposits open is a parameter
     /// that will be changed after deposits open.
@@ -139,6 +152,12 @@ contract PooledLaunchBuy {
     function execute(uint256 minOut) external {
         if (executed) revert AlreadyDone();
         if (block.timestamp < executeAfter) revert NotYet();
+        // The buy window CLOSES at refundAfter. Without this the refund promise was a lie:
+        // execute() could be called at any later time and convert everyone's refundable ETH
+        // into tokens, so "unconditional refund after the deadline" was only true until
+        // somebody chose otherwise. The two windows must not overlap in the other direction
+        // either, which is why the constructor requires refundAfter > executeAfter.
+        if (block.timestamp >= refundAfter) revert WindowClosed();
         // If every depositor has exited, the contract still holds their forfeited fees, and
         // buying with those would mint tokens that NOBODY can claim — claim() divides by
         // totalDeposited, and refund() is closed once executed is set. The ETH would be
@@ -156,15 +175,15 @@ contract PooledLaunchBuy {
         executed = true;
 
         uint256 before = IERC20(token).balanceOf(address(this));
-        uint256 reported = router.swapExactETHForTokens{value: amount}(token, minOut, address(this));
+        router.swapExactETHForTokens{value: amount}(token, minOut, address(this));
         uint256 actual = IERC20(token).balanceOf(address(this)) - before;
 
-        // Trust the balance, not the return value. A token with a transfer tax delivers less
-        // than the router reports, and crediting the reported figure would let the last
-        // claimers find the cupboard bare.
+        // The balance delta is the only evidence. The router's return value is discarded
+        // entirely: an over-reporting router would let the last claimers find the cupboard
+        // bare, and an UNDER-reporting one would strand the difference forever, which an
+        // earlier version of this line did by taking min(actual, reported).
         if (actual == 0 || actual < minOut) revert SwapFailed();
-        tokensReceived = actual < reported ? actual : reported;
-        if (tokensReceived > actual) tokensReceived = actual;
+        tokensReceived = actual;
 
         emit Executed(msg.sender, amount, tokensReceived);
     }
@@ -208,6 +227,13 @@ contract PooledLaunchBuy {
     /// than a rescue function and a better one than a rescue function that can be pointed at
     /// the operator's wallet. A contract that can rescue can rug.
 
-    /// @notice Rejects bare ETH so nobody's send is silently unaccounted for.
-    receive() external payable { revert NothingHere(); }
+    /// @notice Accepts ETH only from the router, which is how a real router returns change.
+    /// @dev Rejecting unconditionally looked safer and was not: any router that refunds
+    ///      unspent ETH would make execute() revert every time, bricking the round. Everyone
+    ///      else is still rejected so no stranger's send goes silently unaccounted for.
+    ///      Change that lands here is spent by the next execute or refunded pro-rata, since
+    ///      claims are sized off totalDeposited and not off the balance.
+    receive() external payable {
+        if (msg.sender != address(router)) revert NothingHere();
+    }
 }

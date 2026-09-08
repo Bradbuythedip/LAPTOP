@@ -282,6 +282,66 @@ console.log("── the lifecycle has no state where money is stuck");
      !!bare.execResult.exceptionError);
 }
 
+console.log("── the refund promise must outrank the buy, not the other way round");
+{
+  // Found by adversarial review. execute() originally had no upper time bound, so it could be
+  // called at ANY time after executeAfter — including long after refundAfter — and convert
+  // everyone's refundable ETH into tokens. "Unconditional refund after the deadline" was
+  // therefore only true until somebody decided otherwise. This is the assertion that pins it.
+  const x = await world();
+  await call(x.pool, "deposit()", [], { from: A, value: 2n * ETH, timestamp: T_OPEN });
+  const late = await call(x.pool, "execute(uint256)", [0], { from: C, timestamp: T_REFUND });
+  ok("no buy once the refund window has opened", !late.ok);
+  const later = await call(x.pool, "execute(uint256)", [0], { from: C, timestamp: T_REFUND + 100000 });
+  ok("and not at any later time either", !later.ok);
+  const r = await call(x.pool, "refund()", [], { from: A, timestamp: T_REFUND });
+  ok("so the refund is genuinely unconditional", r.ok, r.revert);
+
+  const x2 = await world();
+  await call(x2.pool, "deposit()", [], { from: A, value: 2n * ETH, timestamp: T_OPEN });
+  const inWindow = await call(x2.pool, "execute(uint256)", [0], { from: C, timestamp: T_EXEC });
+  ok("but the buy still works inside its own window", inWindow.ok, inWindow.revert);
+}
+
+console.log("── the router's word is not evidence");
+{
+  // An UNDER-reporting router used to strand the difference forever, because tokensReceived
+  // took min(actual, reported). The balance delta is the only thing that can be checked.
+  const x = await world();
+  await call(at(x, x.rtr.address), "setLie(uint256)", [1]);   // reports ~0.01% of the truth
+  await call(x.pool, "deposit()", [], { from: A, value: 2n * ETH, timestamp: T_OPEN });
+  await call(x.pool, "execute(uint256)", [0], { from: A, timestamp: T_EXEC });
+  const got = (await call(x.pool, "tokensReceived()")).words[0];
+  const held = (await call(at(x, x.tok.address), "balanceOf(address)",
+    [x.pool.address.toString()])).words[0];
+  eq("an under-reporting router strands nothing: credit is the balance delta", got, held);
+  await call(x.pool, "claim()", [], { from: A, timestamp: T_EXEC });
+  const balA = (await call(at(x, x.tok.address), "balanceOf(address)", [A])).words[0];
+  eq("so the sole depositor receives everything that arrived", balA, held);
+}
+
+console.log("── a router that returns change does not brick the round");
+{
+  // receive() used to revert unconditionally, which looked safer and was not: any real router
+  // that refunds unspent ETH would make execute() revert every time.
+  const x = await world();
+  await fund(x.evm, x.rtr.address.toString(), 10n * ETH);
+  const fromRouter = await x.evm.runCall({
+    caller: x.rtr.address, to: x.pool.address, gasLimit: 200000n, value: ETH,
+    data: new Uint8Array(0),
+    block: { header: { number: 1n, timestamp: BigInt(T_EXEC) } },
+  });
+  ok("the router may return change", !fromRouter.execResult.exceptionError,
+     String(fromRouter.execResult.exceptionError));
+  const fromStranger = await x.evm.runCall({
+    caller: createAddressFromString(A), to: x.pool.address, gasLimit: 200000n, value: ETH,
+    data: new Uint8Array(0),
+    block: { header: { number: 1n, timestamp: BigInt(T_OPEN) } },
+  });
+  ok("but a stranger's bare send is still rejected",
+     !!fromStranger.execResult.exceptionError);
+}
+
 console.log("── the everyone-left case, where the fee has nobody to belong to");
 {
   // If every depositor exits early, totalDeposited is 0 but the contract still holds the
