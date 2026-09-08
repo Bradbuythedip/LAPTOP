@@ -56,6 +56,8 @@ button.act{
 button.act:hover{border-color:var(--fg)}
 button.act:disabled{opacity:.45;cursor:default}
 #inerr{color:var(--bad);font-size:12.5px;margin-top:7px;display:none}
+.badbox{background:var(--badbg);border:1px solid var(--bad);color:var(--bad);
+  border-radius:8px;padding:11px;font-size:12.5px;margin:8px 0}
 
 /* ---- verdict ---- */
 #verdictArea{display:none;margin:12px 0}
@@ -147,6 +149,15 @@ a.cta.sub2{background:transparent;color:var(--fg);border-color:var(--line);font-
 Read-only. No wallet, ever. &middot; <a href="/buy.html">where to buy &rarr;</a> &middot;
 <a href="/size.html">size curve</a> &middot; <a href="/order.html">standing order</a> &middot;
 <a href="/slot.html">getting a slot</a> &middot; <a href="/route.html">get ready</a></p>
+
+<div class="card">
+  <div class="badbox" style="margin:0">
+    <b>This page never asks you to connect a wallet, and never will.</b> It reads public chain
+    state and compares two strings. It cannot move your money, and neither can anything
+    pretending to be it. If a page at this address ever asks you to connect a wallet or approve
+    a transaction, it is not this page &mdash; close it.
+  </div>
+</div>
 
 <!-- FR1 / DP1 : reference provenance, always visible -->
 <div class="card">
@@ -274,7 +285,7 @@ Read-only. No wallet, ever. &middot; <a href="/buy.html">where to buy &rarr;</a>
   <span class="mono">totalworlddomination.xyz</span>, compare the reference address shown above
   against laptoptoken.com yourself, and use “Change the reference address” if they disagree.
   Saving this file and opening it locally removes the hosting party from the question entirely.</p>
-  <p> &middot; totalworlddomination.xyz &middot; Build <span class="mono" id="buildId">2026-09-07a</span> · no analytics, no trackers, no cookies,
+  <p> &middot; totalworlddomination.xyz &middot; Build <span class="mono" id="buildId">2026-09-08a</span> · no analytics, no trackers, no cookies,
   no third-party requests. The address you paste is never sent anywhere unless you turn on the relay.</p>
 </div>
 
