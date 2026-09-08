@@ -43,17 +43,25 @@ const set = async (id, v) => {
   await page.waitForTimeout(60);
 };
 
-console.log("── it cannot take custody, and makes no request");
+console.log("── it cannot take custody, and originates nothing on load");
 const external = requests.filter(u => !u.startsWith(SITE));
-ok("no request leaves the origin", external.length === 0, external.join(", "));
+ok("no request leaves the origin on load", external.length === 0, external.join(", "));
 ok("no fetch, XHR or websocket anywhere", !/\bfetch\s*\(|XMLHttpRequest|WebSocket/.test(src));
-ok("no wallet connection", !/window\.ethereum|eth_requestAccounts|WalletConnect|walletconnect/i.test(src));
-ok("no signing of any kind", !/signTypedData|_signTypedData|personal_sign|eth_sign|privateKey|mnemonic/i.test(src));
-ok("no transaction construction", !/eth_sendRawTransaction|sendTransaction|ContractFactory/i.test(src));
-ok("states it will never ask for a wallet", (await txt("body")).includes("never will"));
+ok("the ceiling arithmetic still needs no wallet",
+   /feeFloor|minCeiling/.test(src) && !/\bfetch\s*\(/.test(src));
+ok("connects to Phantom when asked", /eth_requestAccounts/.test(src));
+ok("uses Phantom's EVM side — the Solana one cannot see Base",
+   /p\.ethereum/.test(src) && /window\.phantom/.test(src));
+ok("no signing of any kind",
+   !/signTypedData|_signTypedData|personal_sign|signTransaction|privateKey|mnemonic/i.test(src));
+ok("no transaction construction",
+   !/eth_sendRawTransaction|eth_sendTransaction|ContractFactory/i.test(src));
+ok("says it does not ask you to sign", (await txt("body")).includes("does not ask you to sign"));
+ok("says outright it cannot place the order",
+   (await txt("body")).includes("cannot place an order"));
 ok("names the deposit pitch it will never make",
    (await txt("body")).includes("reserve your allocation"));
-ok("tells the reader a wallet prompt here means it is not this page",
+ok("still tells the reader a deposit request means it is not this page",
    (await txt("body")).includes("close it"));
 
 console.log("── the promise it refuses to make");

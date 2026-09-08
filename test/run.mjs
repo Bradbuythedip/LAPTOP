@@ -429,16 +429,108 @@ console.log("── one build tag, and the README agrees with it");
   }
 }
 
-console.log("── the one rule, on every page");
+// The site now asks for a wallet, so "we never prompt" is gone as a clone defence, and the
+// rule that replaces it has to be one that stays true: this connects and reads, and never
+// asks you to sign. Worth stating only if it is enforced, so the enforcement is mechanical —
+// no signing or sending method may appear in any page — rather than a promise in prose.
+console.log("── connects and reads, never signs");
+const ALLOWED_RPC = ["eth_requestAccounts","eth_chainId","eth_getBalance","eth_call",
+  "eth_accounts","eth_blockNumber","eth_getCode","eth_getStorageAt","eth_getLogs"];
+const SIGNING = /eth_sendTransaction|eth_sendRawTransaction|personal_sign|eth_signTypedData|signTransaction|signMessage|signAndSendTransaction/;
 const decode = t => t.replace(/&mdash;/g, "\u2014").replace(/&ldquo;|&rdquo;/g, '"')
                      .replace(/&middot;/g, "\u00b7").replace(/\s+/g, " ");
 for (const f of pages) {
   const t = decode(fs.readFileSync(path.join(ROOT, "web", f), "utf8"));
-  ok(`${f} promises it will never ask for a wallet`,
-     /never asks you to connect a wallet, and never will|does not ask for a wallet and never will|no wallet connection/i.test(t));
-  ok(`${f} tells the reader what a page that does ask for one is`,
-     /asks you to connect a wallet or approve a\s+transaction, it is not this page \u2014 close it/i.test(t),
-     "the close-it rule is missing or worded differently");
+  ok(`${f} says it does not ask you to sign`,
+     /does not ask you to sign anything/i.test(t),
+     "the connect-and-read promise is missing or worded differently");
+  const raw = fs.readFileSync(path.join(ROOT, "web", f), "utf8");
+  ok(`${f} contains no signing or sending method`, !SIGNING.test(raw),
+     `found ${(raw.match(SIGNING) || [])[0]}`);
+  const methods = [...new Set(raw.match(/\beth_[a-zA-Z]+/g) || [])];
+  const unexpected = methods.filter(m => !ALLOWED_RPC.includes(m));
+  ok(`${f} asks only for the read methods it needs`, unexpected.length === 0,
+     `unexpected: ${unexpected.join(", ")}`);
+  ok(`${f} reaches for Phantom's EVM provider, not its Solana one`,
+     !/window\.phantom/.test(raw) || /p\.ethereum/.test(raw),
+     "a page touching window.phantom must use its .ethereum side — Solana cannot see Base");
+  ok(`${f} no longer claims it will never ask for a wallet`,
+     !/never asks you to connect a wallet, and never will|does not ask for a wallet and never will/i.test(t),
+     "a page still carries the old promise it can no longer keep");
+  ok(`${f} no longer tells the reader a wallet prompt means it is a clone`,
+     !/asks you to connect a wallet or approve a\s+transaction, it is not this page \u2014 close it/i.test(t),
+     "the old close-it rule now points at this page's own prompt");
+}
+
+// The failure a customer actually hits: Phantom installed, Solana side only, LAPTOP on Base.
+// "No wallet found" would be a lie there, and the lie costs them a bridge to the wrong chain.
+console.log("── Phantom: the Solana/EVM split");
+{
+  const w = await page.evaluate(() => {
+    const W = window.__WALLET, out = {};
+    const set = v => {
+      delete window.phantom; delete window.ethereum;
+      if (v) for (const k of Object.keys(v)) window[k] = v[k];
+    };
+    set(null);                                    out.none = !!W.wPhantomEvm();
+    set({ phantom: { solana: {} } });
+    out.solOnly = W.wPhantomSolanaOnly();
+    out.solOnlyProvider = !!W.wPhantomEvm();
+    set({ phantom: { solana: {}, ethereum: { tag: "evm" } } });
+    out.both = (W.wPhantomEvm() || {}).tag;
+    out.bothNotSolOnly = W.wPhantomSolanaOnly();
+    set({ ethereum: { isPhantom: true, tag: "injected" } });
+    out.injected = (W.wPhantomEvm() || {}).tag;
+    set({ ethereum: { providers: [{ tag: "other" }, { isPhantom: true, tag: "multi" }] } });
+    out.multi = (W.wPhantomEvm() || {}).tag;
+    set({ ethereum: { isMetaMask: true } });      out.notPhantom = !!W.wPhantomEvm();
+    set(null);
+    return out;
+  });
+  ok("no wallet at all is not mistaken for Phantom", w.none === false);
+  ok("Solana-only Phantom is detected as such", w.solOnly === true);
+  ok("and yields no EVM provider rather than a broken one", w.solOnlyProvider === false);
+  ok("Phantom with both sides gives the EVM one", w.both === "evm");
+  ok("and is not reported as Solana-only", w.bothNotSolOnly === false);
+  ok("Phantom injected as window.ethereum is found", w.injected === "injected");
+  ok("Phantom is found inside a multi-provider array", w.multi === "multi");
+  ok("another wallet is not treated as Phantom", w.notPhantom === false);
+}
+
+// A balance is money on screen. Rounding it into something the wallet disagrees with, and
+// turning a failed read into a zero, are the two ways this lies.
+console.log("── balances: formatting and read discipline");
+{
+  const b = await page.evaluate(async () => {
+    const W = window.__WALLET;
+    const call = r => W.wRead32({ request: async () => r }, "0x0", "0x0");
+    return [
+      W.wUnits(0n, 18, 6), W.wUnits(10n ** 18n, 18, 6), W.wUnits(1n, 18, 6),
+      W.wUnits(1234567890123456789n, 18, 6), W.wUnits(10n ** 6n * 25n, 6, 2),
+      W.wUnits(999999n, 6, 2),
+      String(await call("0x" + "0".repeat(64))),
+      String(await call("0x")),
+      String(await call("0x" + "0".repeat(62))),
+      String(await call("0x" + "0".repeat(63) + "5")),
+      String(await call(null)),
+      String(await W.wRead32({ request: async () => { throw new Error("reverted"); } },
+                             "0x0", "0x0")),
+    ];
+  });
+  const [zero, one, dust, mixed, usdc, usdcTrim,
+         w32, bare, short, five, nonStr, threw] = b;
+  ok("zero formats as 0", zero === "0");
+  ok("1e18 wei is 1 ETH", one === "1");
+  ok("1 wei rounds down to 0 at six places, it does not vanish into an error", dust === "0");
+  ok("a mixed balance keeps exactly six places", mixed === "1.234567", mixed);
+  ok("USDC uses six decimals", usdc === "25", usdc);
+  ok("a trailing-zero USDC balance trims", usdcTrim === "0.99", usdcTrim);
+  ok("32 zero bytes is the number zero, an answer", w32 === "0");
+  ok("bare 0x is could-not-read, never zero", bare === "null");
+  ok("short data is could-not-read, never zero", short === "null");
+  ok("a full word decodes", five === "5");
+  ok("a non-string reply is could-not-read", nonStr === "null");
+  ok("a revert is could-not-read, never zero", threw === "null");
 }
 
 const bodyText = await txt("body");
@@ -458,8 +550,12 @@ const src = fs.readFileSync(path.join(ROOT, "web", "index.html"), "utf8");
 const html = fs.readFileSync(path.join(ROOT, "web", "index.html"), "utf8");
 ok("no third-party origins (C7)", !/https?:\/\/(?!basescan\.org|laptoptoken\.com|mainnet\.base\.org)[a-z0-9.-]+\//i.test(
    html.replace(/basescan\.org[^"'\s]*/g, "")), "found an external origin");
-ok("no window.ethereum / wallet code (C2)", !/window\.ethereum|eth_requestAccounts|personal_sign|eth_sendTransaction/.test(html));
-ok("no private key handling (C2)", !/privateKey|mnemonic|signTransaction/i.test(html));
+// C2 was "no wallet code at all". The page connects now, so the line moved rather than
+// vanished: it may ask for an account and read, and it may not sign or send. The cross-page
+// block above enforces that for all six; this keeps the constraint stated where C2 was.
+ok("connects to a wallet (C2)", /eth_requestAccounts/.test(html));
+ok("but cannot sign or send (C2)", !SIGNING.test(html));
+ok("no private key handling (C2)", !/privateKey|mnemonic/i.test(html));
 ok("single self-contained file (C1)", !/<script[^>]+src=/i.test(html) && !/<link[^>]+stylesheet/i.test(html));
 ok("verdict vocabulary is literals only (C6)",
    (html.match(/MATCHES PUBLISHED CONTRACT|MATCHES YOUR REFERENCE|DOES NOT MATCH|NO CONTRACT AT THIS ADDRESS|CANNOT VERIFY/g) || []).length > 0);

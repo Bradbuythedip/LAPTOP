@@ -45,6 +45,14 @@ button.act:disabled{opacity:.45;cursor:default}
 .badge.warn{background:var(--warnbg);border-color:var(--warn);color:var(--warn)}
 .badbox{background:var(--badbg);border:1px solid var(--bad);color:var(--bad);
   border-radius:8px;padding:11px;font-size:12.5px;margin:8px 0}
+
+/* ---- wallet ---- */
+.wtab{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:10px}
+.wtab td{padding:5px 0;border-bottom:1px solid var(--line);vertical-align:top}
+.wtab td:first-child{color:var(--dim);width:34%}
+.wtab td:last-child{font-family:var(--mono);word-break:break-all}
+.wnote{font-size:12px;color:var(--warn);margin-top:8px}
+#wErr{margin-top:9px;color:var(--bad)}
 .hdr{display:flex;justify-content:space-between;align-items:center;gap:8px;
   margin-bottom:8px;flex-wrap:wrap}
 .hdr h2{font-size:13.5px;margin:0;font-weight:600}
@@ -104,17 +112,24 @@ a.cta.sub2{background:transparent;color:var(--fg);border-color:var(--line);font-
 
 <h1>LAPTOP size curve</h1>
 <p class="sub">What each size actually gets you, after slippage and fee, from a real pool.
-Read-only. No wallet. <a href="/">← checker</a> &middot; <a href="/buy.html">where to buy</a> &middot;
+Read-only. <a href="/">← checker</a> &middot; <a href="/buy.html">where to buy</a> &middot;
 <a href="/order.html">standing order</a> &middot;
 <a href="/slot.html">getting a slot</a> &middot; <a href="/route.html">get ready</a></p>
 
-<div class="card">
-  <div class="badbox" style="margin:0">
-    <b>This page never asks you to connect a wallet, and never will.</b> It reads pool state and
-    does arithmetic. It cannot move your money, and neither can anything pretending to be it.
-    If a page at this address ever asks you to connect a wallet or approve a transaction, it is
-    not this page &mdash; close it.
+<div class="card" id="walletCard">
+  <div class="hdr">
+    <h2>Your wallet</h2>
+    <span class="badge" id="wBadge">not connected</span>
   </div>
+  <p class="tiny dim">This page prices a size against a real pool. Connecting lets it read your
+  address and your Base balances, so the sizes below can be compared against what you actually
+  hold. It does not ask you to sign anything and cannot send a transaction.</p>
+  <div class="btnrow">
+    <button class="act" id="wConnect">Connect Phantom</button>
+    <button class="act" id="wDisconnect" style="display:none">Forget</button>
+  </div>
+  <div id="wOut" style="display:none"></div>
+  <div id="wErr" class="tiny" style="display:none"></div>
 </div>
 
 <div class="card">
@@ -600,7 +615,175 @@ $("paste").addEventListener("click",async()=>{
     $("poolErr").style.display="block"; }
 });
 
+/* ======================= Phantom, on Base =======================
+   LAPTOP is on Base — chain 8453, which is EVM. Phantom ships two wallets in
+   one extension: window.phantom.solana and window.phantom.ethereum. They hold
+   different keys and see different chains, and the Solana one cannot see Base
+   at all. Reaching for the wrong provider is the failure a customer actually
+   hits, so it is named rather than reported as "no wallet found".
+
+   This connects and reads. It never asks for a signature and sends no
+   transaction: no transaction-sending or message-signing method appears
+   anywhere in this file, and a test asserts exactly that by parsing every
+   method name the page mentions. */
+const W_BASE_HEX="0x2105", W_BASE_ID=8453;
+const W_USDC="0x833589fcd6edb6e08f4c7c32d4f71b54bda02913";
+let W_PROV=null, W_ADDR=null, W_CHAIN=null, W_BAL={eth:null,usdc:null};
+
+function wPhantomEvm(){
+  const p=window.phantom;
+  if(p&&p.ethereum) return p.ethereum;
+  const e=window.ethereum;
+  if(e&&e.isPhantom) return e;
+  if(e&&Array.isArray(e.providers)) return e.providers.find(x=>x&&x.isPhantom)||null;
+  return null;
+}
+function wPhantomSolanaOnly(){
+  const p=window.phantom;
+  return !!(p&&p.solana&&!p.ethereum)&&!wPhantomEvm();
+}
+function wMsg(e){ return (e&&(e.message||e.reason))||"no reason given"; }
+function wShort(a){ return a.slice(0,6)+"…"+a.slice(-4); }
+
+/* Integer formatting, so a balance is never rounded into something the wallet
+   itself would disagree with. */
+function wUnits(v,dec,places){
+  const neg=v<0n; if(neg) v=-v;
+  const d=10n**BigInt(dec);
+  const frac=(v%d).toString().padStart(dec,"0").slice(0,places).replace(/0+$/,"");
+  return (neg?"-":"")+(v/d).toString()+(frac?"."+frac:"");
+}
+
+function wSet(badge,cls,txt){
+  const b=$("wBadge");
+  if(b){ b.className="badge"+(cls?" "+cls:""); b.textContent=badge; }
+  const e=$("wErr");
+  if(e){ e.style.display=txt?"block":"none"; e.textContent=txt||""; }
+}
+function wFail(txt){ wSet("not connected","bad",txt); return false; }
+
+/* A read that fails is never a zero. 32 bytes is an answer; anything shorter, a
+   revert, or a throw is "could not read" — the same discipline this page applies
+   to its own RPC, applied to the wallet's node too. */
+async function wRead32(prov,to,data){
+  let r;
+  try{ r=await prov.request({method:"eth_call",params:[{to,data},"latest"]}); }
+  catch(e){ return null; }
+  if(typeof r!=="string"||!/^0x[0-9a-fA-F]{64}$/.test(r)) return null;
+  return BigInt(r);
+}
+
+async function wBalances(prov,addr){
+  const out={eth:null,usdc:null};
+  try{
+    const r=await prov.request({method:"eth_getBalance",params:[addr,"latest"]});
+    if(typeof r==="string"&&/^0x[0-9a-fA-F]{1,64}$/.test(r)) out.eth=BigInt(r);
+  }catch(e){}
+  out.usdc=await wRead32(prov,W_USDC,
+    "0x70a08231"+addr.slice(2).toLowerCase().padStart(64,"0"));
+  return out;
+}
+
+function wRender(){
+  const out=$("wOut");
+  if(!out) return;
+  if(!W_ADDR){ out.style.display="none"; out.innerHTML=""; return; }
+  const onBase=W_CHAIN===W_BASE_ID;
+  const rows=[
+    ["Address",W_ADDR],
+    ["Chain", onBase?"Base (8453)"
+      :(W_CHAIN===null?"could not read":"chain "+W_CHAIN+" — not Base")],
+    ["ETH", W_BAL.eth===null?"could not read":wUnits(W_BAL.eth,18,6)],
+    ["USDC", W_BAL.usdc===null?"could not read":wUnits(W_BAL.usdc,6,2)],
+  ];
+  const t=document.createElement("table"); t.className="wtab";
+  for(const [k,v] of rows){
+    const tr=document.createElement("tr");
+    const a=document.createElement("td"); a.textContent=k;
+    const b=document.createElement("td"); b.textContent=v;
+    if(v==="could not read") b.style.color="var(--dim)";
+    tr.appendChild(a); tr.appendChild(b); t.appendChild(tr);
+  }
+  out.innerHTML=""; out.appendChild(t);
+  if(!onBase){
+    const n=document.createElement("div"); n.className="wnote";
+    n.textContent="This wallet is not on Base. Switch networks in Phantom before buying "+
+      "anything, or you are reading the wrong chain.";
+    out.appendChild(n);
+  }
+  out.style.display="block";
+  const d=$("wDisconnect"); if(d) d.style.display="";
+}
+
+async function wConnect(){
+  wSet("connecting…","");
+  const prov=wPhantomEvm();
+  if(!prov){
+    if(wPhantomSolanaOnly())
+      return wFail("Phantom is here, but only its Solana side is switched on. LAPTOP is on "+
+        "Base, which is EVM — Phantom's Solana keys cannot hold it or see it. Turn on "+
+        "Ethereum in Phantom → Settings → Active Networks, then reload this page.");
+    if(window.ethereum)
+      return wFail("A wallet is installed, but it is not Phantom. This button only talks to "+
+        "Phantom; use that wallet's own interface instead.");
+    return wFail("Phantom was not detected. Install it, or open this page inside Phantom's "+
+      "in-app browser.");
+  }
+  let accts;
+  try{ accts=await prov.request({method:"eth_requestAccounts"}); }
+  catch(e){
+    return wFail(e&&e.code===4001
+      ? "You declined the connection in Phantom. Nothing was shared and nothing was sent."
+      : "Phantom refused the connection: "+wMsg(e));
+  }
+  if(!Array.isArray(accts)||!accts.length||typeof accts[0]!=="string")
+    return wFail("Phantom connected but returned no account.");
+  W_PROV=prov; W_ADDR=accts[0];
+
+  W_CHAIN=null;
+  try{
+    const c=await prov.request({method:"eth_chainId"});
+    if(typeof c==="string"&&/^0x[0-9a-fA-F]+$/.test(c)) W_CHAIN=Number(BigInt(c));
+  }catch(e){}
+  if(W_CHAIN!==null&&W_CHAIN!==W_BASE_ID){
+    try{
+      await prov.request({method:"wallet_switchEthereumChain",params:[{chainId:W_BASE_HEX}]});
+      W_CHAIN=W_BASE_ID;
+    }catch(e){ /* declined, or Base not added — reported in the table, never forced */ }
+  }
+  W_BAL=await wBalances(prov,W_ADDR);
+  wSet(wShort(W_ADDR),W_CHAIN===W_BASE_ID?"good":"warn","");
+  wRender();
+  return true;
+}
+
+function wForget(){
+  /* Phantom exposes no revoke a page can call, so this drops only what this page
+     holds. The connection itself is revoked in Phantom, and the message says so. */
+  W_PROV=null; W_ADDR=null; W_CHAIN=null; W_BAL={eth:null,usdc:null};
+  wSet("not connected","","Forgotten here. To revoke the connection itself, use "+
+    "Phantom → Settings → Connected apps.");
+  wRender();
+  const d=$("wDisconnect"); if(d) d.style.display="none";
+}
+
+function wInit(){
+  const c=$("wConnect"); if(c) c.addEventListener("click",wConnect);
+  const d=$("wDisconnect"); if(d) d.addEventListener("click",wForget);
+  const p=wPhantomEvm();
+  if(p&&p.on){
+    p.on("accountsChanged",a=>{
+      if(!a||!a.length) wForget();
+      else { W_ADDR=a[0]; wSet(wShort(W_ADDR),W_CHAIN===W_BASE_ID?"good":"warn",""); wRender(); }
+    });
+    p.on("chainChanged",()=>{ if(W_ADDR) wConnect(); });
+  }
+}
+wInit();
+
 window.__SIZE={v2Out,v3Out,spotFromSqrt,spotPrice,slippage,buildCurve,decodeText,KNOWN_QUOTES,LAPTOP};
+window.__WALLET={wPhantomEvm,wPhantomSolanaOnly,wUnits,wRead32,wBalances,connect:wConnect,
+  forget:wForget,BASE_ID:W_BASE_ID,USDC:W_USDC,get addr(){return W_ADDR;},get chain(){return W_CHAIN;}};
 </script>
 </body>
 </html>

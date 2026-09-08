@@ -53,9 +53,16 @@ const useScn = async scn => {
 };
 
 console.log("── it sells nothing and holds nothing");
-ok("no wallet connection", !/window\.ethereum|eth_requestAccounts|WalletConnect/i.test(src));
-ok("no signing", !/signTypedData|personal_sign|eth_sign\b|privateKey|mnemonic/i.test(src));
-ok("no transaction sending", !/eth_sendRawTransaction|sendTransaction/i.test(src));
+ok("connects to Phantom when asked", /eth_requestAccounts/.test(src));
+ok("uses Phantom's EVM side — the Solana one cannot see Base",
+   /p\.ethereum/.test(src) && /window\.phantom/.test(src));
+ok("no signing", !/signTypedData|personal_sign|signTransaction|privateKey|mnemonic/i.test(src));
+ok("no transaction sending", !/eth_sendRawTransaction|eth_sendTransaction/i.test(src));
+// Connecting is the move a fake preorder needs you to make, so this page has to be explicit
+// that its own connect button buys you nothing.
+ok("says connecting has nothing to do with getting a slot",
+   /nothing to do with getting a slot/i.test(body));
+ok("says it does not ask you to sign", /does not ask you to sign anything/i.test(body));
 ok("no deposit address is offered anywhere",
    !/send (?:your )?(?:funds|eth|money) to/i.test(body));
 ok("says outright it has no slots to give", /has no slots to give/i.test(body));

@@ -300,7 +300,11 @@ await readPool();
 const sw = await page.evaluate(() => document.documentElement.scrollWidth);
 ok("no horizontal scroll at 375px", sw <= 375, "scrollWidth=" + sw);
 const html = fs.readFileSync(path.join(ROOT, "web", "size.html"), "utf8");
-ok("no wallet code", !/window\.ethereum|eth_sendTransaction|privateKey/.test(html));
+ok("connects to Phantom when asked", /eth_requestAccounts/.test(html));
+ok("uses Phantom's EVM side — the Solana one cannot see Base",
+   /p\.ethereum/.test(html) && /window\.phantom/.test(html));
+ok("cannot sign or send",
+   !/eth_sendTransaction|eth_sendRawTransaction|personal_sign|signTypedData|signTransaction|privateKey/.test(html));
 ok("self-contained, no external scripts or styles",
    !/<script[^>]+src=/i.test(html) && !/<link[^>]+stylesheet/i.test(html));
 ok("no page errors during the run", pageErrors.length === 0, pageErrors.join("; "));
