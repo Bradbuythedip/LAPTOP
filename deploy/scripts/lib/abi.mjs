@@ -145,6 +145,42 @@ export function create2Address(deployer, salt, initCodeHash) {
   return "0x" + hex(keccak256(bytes(pre))).slice(24);
 }
 
+/// The OTHER address derivation, the one nobody grinds: a plain CREATE lands at
+/// keccak(rlp([sender, nonce]))[12:]. No salt, no init code — the bytes being deployed do not
+/// enter into it at all, which is why the token's address is knowable before the token is
+/// compiled and why it CANNOT be chosen. Two consequences this deployment lives on:
+///
+///   1. Every address in the sequence except the curve's is a function of the owner's wallet
+///      and its nonce, so deploy/scripts/predict.mjs can print all of them before a wei is
+///      spent — and the curve's follows, because its constructor argument is the token.
+///   2. A nonce is consumed by ANY transaction from that wallet, including one that reverts
+///      and one sent by hand from a phone. Predict, then send only the planned transactions.
+///
+/// RLP, inline, for the one shape needed: a 20-byte string and a small integer in a list.
+export function createAddress(sender, nonce) {
+  const a = strip(sender).toLowerCase();
+  if (!/^[0-9a-f]{40}$/.test(a)) throw new Error("not a 20-byte address: " + sender);
+  const n = BigInt(nonce);
+  if (n < 0n) throw new Error("a nonce cannot be negative: " + nonce);
+
+  // A single byte below 0x80 is its own encoding, and ZERO IS THE EMPTY STRING 0x80 rather
+  // than 0x00 — the one case that is wrong in most hand-rolled RLP and the one that matters
+  // here, because a freshly funded wallet deploying its first contract is at nonce 0.
+  let nHex;
+  if (n === 0n) nHex = "80";
+  else if (n < 0x80n) nHex = n.toString(16).padStart(2, "0");
+  else {
+    let h = n.toString(16);
+    if (h.length % 2) h = "0" + h;
+    if (h.length / 2 > 8) throw new Error("nonce is absurd: " + nonce);
+    nHex = (0x80 + h.length / 2).toString(16) + h;
+  }
+
+  const payload = "94" + a + nHex;                 // 0x80+20 = 0x94, the 20-byte string header
+  const list = (0xc0 + payload.length / 2).toString(16) + payload;   // always under 56 bytes
+  return "0x" + hex(keccak256(bytes(list))).slice(24);
+}
+
 /* ---------------------------------------------------------------------- checksums */
 
 /// EIP-55. Printed everywhere an address is shown, because the whole point of a checksummed

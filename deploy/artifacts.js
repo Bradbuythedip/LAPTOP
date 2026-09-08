@@ -1596,7 +1596,7 @@ window.__SNOOZE = {
       "gateUntil": "0"
     },
     "vanity": {
-      "suffix": "ba5ed",
+      "suffix": "8453",
       "target": "curve",
       "contract": "SnoozeCurve"
     },

@@ -5,7 +5,7 @@ never be undone, waits for you to send it from your own wallet, and then reads t
 off the chain before it will build the next one.
 
 **Nothing here holds a key, asks for one, or can send anything.** There is no `--send` and no
-signer; the RPC client's method allowlist has seven read methods and no sending method at all,
+signer; the RPC client's method allowlist has eight read methods and no sending method at all,
 and `test/run-deploy.mjs` greps this directory for every signing method by name. There is no
 wallet library either — no ethers, web3 or viem in `package.json`. (`ethereum-cryptography` is a
 dependency and it *could* sign; nothing here imports anything from it but `keccak`, which is what
@@ -131,6 +131,32 @@ node deploy/scripts/verify.mjs 2                  # read it back; this is what u
 node deploy/scripts/grind.mjs                     # step 4
 ```
 
+## Before you spend anything: all four addresses
+
+```
+node deploy/scripts/predict.mjs                 # read the wallet's nonce off the chain
+node deploy/scripts/predict.mjs --nonce 7       # or state it; no endpoint needed
+node deploy/scripts/predict.mjs --nonce 7 --grind   # and find the curve's salt now
+```
+
+A plain `CREATE` lands at `keccak(rlp([sender, nonce]))[12:]` — the deployed bytes do not enter
+into it. The oracle, `SnoozeDeployer` and `Snooze` are all plain `CREATE`s from the owner's
+wallet, so all three addresses are arithmetic on one public number. And the curve follows: its
+constructor argument is the token, so a predicted token is a predictable init code, a
+predictable hash, and a CREATE2 salt that can be ground today instead of mid-launch.
+
+So the **token address**, which is the one a buyer pastes and the one a listing wants, is
+knowable before a wei is spent.
+
+**One thing invalidates it: a nonce is consumed by any transaction from that wallet**, including
+one that reverts. Predict from a wallet you then leave alone. If it does drift, nothing silently
+goes wrong — step 4 recomputes the init-code hash from the token that really landed and discards
+a salt ground against a different one, and re-grinding four characters is about a second.
+
+`predict.mjs` refuses outright if `gate.gateMin` is above zero: `gateUntil` is resolved from the
+clock at build time, so with a gate on the curve's init code — and its address — change every
+second, and there is nothing stable to predict.
+
 `record.mjs` takes the address from the transaction receipt rather than from you. An address
 typed by hand verifies just as happily against somebody else's deployment of the same contract
 with the same constructor argument — a `SnoozeDeployer` owned by you is a thing any stranger can
@@ -138,6 +164,24 @@ deploy — and against a typo that happens to land on one.
 
 Steps 3, 5 and 6 refuse to build until you repeat back a phrase naming what becomes permanent.
 The phrase is not a formality: it is the smallest thing that requires reading the list above it.
+
+## After: putting the addresses on the site
+
+```
+node tools/publish.mjs             # say what it would write, change nothing
+node tools/publish.mjs --write     # write it, then re-hash the pages in the README
+```
+
+`web/index.html` holds its addresses in four `const` lines, and the last manual step of a launch
+used to be pasting two of them in. That is the step where a launch publishes an address off by
+one character, above the words "send ETH here".
+
+So nothing is pasted. The addresses come out of `deploy/launch-state.json`, which is only ever
+written after a read-back agreed, and before a byte of the page changes they are read off the
+chain once more: code at both, `symbol()` is what the config says, `curve.token()` is that token
+— which is what catches somebody else's deployment of the same contract — and `isPool(curve)` is
+true, so both Snooze rules actually fire on the curve the page is about to point at. A constant
+that already holds a *different* address is a refusal, not an overwrite.
 
 ## The oracle
 

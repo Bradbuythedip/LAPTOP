@@ -17,6 +17,15 @@ import { ROOT } from "./solc.mjs";
 
 export const STATE_PATH = process.env.SNOOZE_STATE || path.join(ROOT, "deploy", "launch-state.json");
 
+/// The other run file, and the two are deliberately different things. launch-state.json records
+/// what HAS happened and is only ever written after a read-back agreed; predicted.json records
+/// what is expected to happen — addresses derived from a wallet nonce that has not been spent
+/// yet — and is written by deploy/scripts/predict.mjs before anything exists. Nothing reads the
+/// prediction as fact: grind.mjs takes a salt out of it only after recomputing the init-code
+/// hash from the token that really landed and finding it identical. Both are gitignored.
+export const PREDICTION_PATH =
+  process.env.SNOOZE_PREDICTION || path.join(ROOT, "deploy", "predicted.json");
+
 const EMPTY = { chainId: null, owner: null, steps: {} };
 
 /// Bound to one chain and one owner, and refuses to be read on another.

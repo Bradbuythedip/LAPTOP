@@ -22,7 +22,7 @@
 // `console.error(err)` in a caller is enough to publish the key to a terminal log.
 const ALLOWED = new Set(["eth_chainId", "eth_blockNumber", "eth_call", "eth_getCode",
                          "eth_getBalance", "eth_getTransactionReceipt",
-                         "eth_getTransactionByHash"]);
+                         "eth_getTransactionByHash", "eth_getTransactionCount"]);
 
 /// Base, and the testnet LAUNCH.md calls the highest-value step in the whole document.
 /// Anything else is refused: every address in deploy/config.json is a Base address, and
@@ -107,6 +107,21 @@ export class Rpc {
   async blockNumber() {
     const r = await this.send("eth_blockNumber");
     if (!r.ok) throw new Error("eth_blockNumber: " + r.error);
+    return Number(BigInt(r.result));
+  }
+
+  /// How many transactions this wallet has already sent. The eighth read method, added for one
+  /// job: a plain CREATE lands at keccak(rlp([sender, nonce])), so this number is the whole
+  /// difference between "the token's address after you deploy it" and "the token's address,
+  /// today, before you spend anything". deploy/scripts/predict.mjs is the only caller.
+  ///
+  /// "latest" and not "pending" deliberately. A pending count includes transactions the node
+  /// has seen and not mined, which on Base is a set that can still be replaced or dropped —
+  /// predicting off it produces an address that changes when a stuck transaction is cancelled.
+  /// The count that a deployment actually uses is the mined one, so that is the one read here.
+  async nonce(addr) {
+    const r = await this.send("eth_getTransactionCount", [addr, "latest"]);
+    if (!r.ok) throw new Error("eth_getTransactionCount: " + r.error);
     return Number(BigInt(r.result));
   }
 

@@ -6,3 +6,4 @@ __pycache__/
 test/shot-*.png
 shots/
 deploy/launch-state.json
+deploy/predicted.json

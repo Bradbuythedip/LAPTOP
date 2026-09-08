@@ -1090,6 +1090,86 @@ console.log("── the page's encoder against the scripts', on this launch's re
     ok(`the page also carries "${item.title}"`, page.includes(item.title));
 }
 
+/* ──────────────────────────────── every address, before the wallet has spent anything ────── */
+// deploy/scripts/predict.mjs makes one claim: all four addresses are knowable in advance, so a
+// contract address can go on a Dexscreener submission or a pinned post days before a wei is
+// spent. It is only worth making if the EVM agrees, and a contract address published wrong is
+// not a thing that can be taken back — so this deploys the whole sequence a SECOND time, from
+// a wallet nobody has touched, having written down every address FIRST, and compares.
+//
+// The derivation is easy to get subtly wrong in a way that passes on the numbers you tried:
+// nonce 0 RLP-encodes as the empty string 0x80, not as 0x00, so a hand-rolled encoder is
+// usually correct from nonce 1 and wrong for the very first contract a fresh wallet deploys.
+console.log("── the addresses are knowable before the wallet has spent anything");
+{
+  // The canonical vectors first, because "it agrees with the EVM in this file" and "it agrees
+  // with Ethereum" are different claims and only the second one survives a change of client.
+  const V = "0x6ac7ea33f8831ea9dcc53393aaa88b25a785dbf0";
+  const known = ["0xcd234a471b72ba2f1ccf0a70fcaba648a5eecd8d",
+                 "0x343c43a37d37dff08ae8c4a11544c718abb4fcf8",
+                 "0xf778b86fa74e846c4f0a1fbd1335fe81c00a0c91",
+                 "0xfffd933a0bc612844eaf0c6fe3e5b8e9b6c1d19c"];
+  ok("createAddress matches the canonical RLP vectors, nonce 0 included",
+     known.every((w, i) => ABI.createAddress(V, i) === w),
+     known.map((w, i) => `${i}: ${ABI.createAddress(V, i)}`).join(" "));
+  ok("and nonce 0 is not the same address as nonce 1, which 0x00 instead of 0x80 would make it",
+     ABI.createAddress(V, 0) !== ABI.createAddress(V, 1));
+  // 0x80 and above stop being their own encoding and take a length prefix. A wallet reaches
+  // 128 transactions in an afternoon, so this is the ordinary case, not an edge one.
+  ok("a nonce of 128 crosses RLP's single-byte boundary and still produces an address",
+     /^0x[0-9a-f]{40}$/.test(ABI.createAddress(V, 128)) &&
+     ABI.createAddress(V, 128) !== ABI.createAddress(V, 127));
+  let threw = false;
+  try { ABI.createAddress(V, -1); } catch { threw = true; }
+  ok("and a negative nonce is refused rather than encoded as something", threw);
+
+  // Now the real thing. A wallet at nonce 0, three predictions, then the actual deployments.
+  const W = "0x" + "d7".repeat(20);
+  await fund(evm, W, 1000n * E);
+  const said = { oracle: ABI.createAddress(W, 0), deployer: ABI.createAddress(W, 1),
+                 token: ABI.createAddress(W, 2) };
+
+  const gotOracle = (await deploy(ART.contracts.SnoozeNeverReady.initCode, "", { evm, from: W }))
+                      .address.toString();
+  ok("the oracle landed where it was predicted, before it was compiled into a transaction",
+     ABI.sameAddress(gotOracle, said.oracle), `${gotOracle} vs ${said.oracle}`);
+  const gotDeployer = (await deploy(ART.contracts.SnoozeDeployer.initCode,
+                                    ABI.addressWord(W), { evm, from: W })).address.toString();
+  ok("and so did SnoozeDeployer", ABI.sameAddress(gotDeployer, said.deployer),
+     `${gotDeployer} vs ${said.deployer}`);
+  const gotToken = (await deploy(ART.contracts.Snooze.initCode, snoozeArgs(cfg, gotOracle),
+                                 { evm, from: W })).address.toString();
+  ok("and so did the token — the address a buyer pastes, known two transactions early",
+     ABI.sameAddress(gotToken, said.token), `${gotToken} vs ${said.token}`);
+
+  // And the curve, which is the whole point: its constructor argument is the token, so a
+  // predicted token is a predictable init code, a predictable hash, and a salt that can be
+  // ground now rather than in the middle of a launch.
+  const initHash = curveInitCodeHash(ART, cfg, said.token);
+  let salt = null, at = null;
+  for (let i = 1; i < 200000; i++) {
+    const trial = "0x" + i.toString(16).padStart(64, "0");
+    const a = ABI.create2Address(said.deployer, trial, initHash);
+    if (a.toLowerCase().endsWith("ed")) { salt = trial; at = a; break; }
+  }
+  ok("a salt for the curve can be ground against the PREDICTED token, before it exists", !!salt);
+  const made = await raw(gotDeployer, ABI.encodeDeployCall(salt, curveInitCode(ART, cfg, said.token)), W);
+  ok("and the curve really lands there when it is finally deployed", made.ok &&
+     ABI.sameAddress(ABI.readAddress(made.raw), at),
+     made.ok ? `${ABI.readAddress(made.raw)} vs ${at}` : made.err);
+
+  // THE FAILURE THIS IS ALL EXPOSED TO, measured rather than warned about. A nonce is consumed
+  // by any transaction from the wallet, so one stray approval between the prediction and the
+  // launch moves the token — and a salt ground for the old token is a salt for an address the
+  // deployment never reaches. grind.mjs compares init-code hashes for exactly this reason, so
+  // what is checked here is that the two hashes really do differ.
+  const strayed = ABI.createAddress(W, 4);
+  ok("one extra transaction from the wallet moves the token to a different address",
+     !ABI.sameAddress(strayed, said.token));
+  ok("and the curve's init-code hash moves with it, which is what step 4 compares",
+     curveInitCodeHash(ART, cfg, strayed) !== initHash);
+}
+
 /* ─────────────────────────────────────────────────────────────────── the gate on advancing ── */
 console.log("── a step that has not been read back blocks the one after it");
 {
@@ -1198,6 +1278,177 @@ console.log("── the commands themselves: a refusal, never a stack trace");
   r = run([B, "5.register"]);
   ok("a step behind an unverified one refuses whichever transaction is named",
      r.status === 1 && /has not been verified/.test(r.stderr), r.stderr.trim());
+
+  /* ---- predict.mjs and the salt it lets step 4 skip ---- */
+  // Spawned rather than imported: predict.mjs does its work at module top level, so importing
+  // it would run a prediction as a side effect — which is also why PREDICTION_PATH lives in
+  // lib/state.mjs and not in the script that writes to it.
+  const P = "deploy/scripts/predict.mjs", G = "deploy/scripts/grind.mjs";
+  const predPath = path.join(tmp, "predicted.json");
+  // The confirm-gate block above left a state file with two steps verified in it, and a
+  // verified step contributes its RECORDED address and spends no nonce — which is correct and
+  // is also not the situation being tested here. Predicting starts from nothing.
+  fs.rmSync(statePath, { force: true });
+  // Two characters instead of the configured four, for the same reason step 4's own test grinds
+  // ...ed: the search is identical at any length and 65,536 keccaks are not a test's to spend.
+  raw.vanity = { ...raw.vanity, suffix: "ed" };
+  fs.writeFileSync(cfgPath, JSON.stringify(raw, null, 2));
+  const predEnv = { SNOOZE_PREDICTION: predPath };
+
+  r = run([P], predEnv);
+  ok("predict.mjs with neither an endpoint nor a nonce refuses and says what to pass instead",
+     r.status === 1 && /--nonce/.test(r.stderr) && clean(r), r.stderr.trim());
+  r = run([P, "--nonce", "-1"], predEnv);
+  ok("and a nonsense nonce is refused rather than encoded", r.status === 1 && clean(r));
+  // The most likely thing to go wrong at this command: a wrong or blocked SNOOZE_RPC. It threw
+  // an unhandled rejection and printed a Node stack trace at somebody who only needed to be
+  // told to fix an environment variable — which every other command here already refuses to do.
+  r = run([P], { ...predEnv, SNOOZE_RPC: "http://127.0.0.1:1/x" });
+  ok("an unreachable endpoint is a refusal here too, not a stack trace",
+     r.status === 1 && clean(r) && /--nonce/.test(r.stderr), (r.stderr || "").slice(0, 300));
+
+  r = run([P, "--nonce", "5"], predEnv);
+  const wantToken = ABI.toChecksum(ABI.createAddress(raw.owner, 6));
+  ok("predict.mjs prints the token's address from the wallet's nonce alone",
+     r.status === 0 && r.stdout.includes(wantToken), (r.stderr || r.stdout).slice(0, 300));
+  ok("with the oracle already on chain counted as spending no nonce",
+     r.stdout.includes(ABI.toChecksum(ABI.createAddress(raw.owner, 5))) &&
+     r.stdout.includes("no nonce spent"));
+  ok("and it says outright that nothing was sent",
+     /nothing was sent/.test(r.stdout) && !fs.existsSync(predPath));
+  ok("and names the one thing that invalidates it",
+     /nothing else in between/.test(r.stdout), r.stdout.slice(-400));
+
+  // The configuration under which none of this is possible. gateUntil is resolved from the
+  // clock at build time, so with a gate on, the curve's init code — and its address — change
+  // every second. Refusing is the only honest answer; producing an address would not be.
+  const gated = { ...raw, gate: { ...raw.gate, gateToken: raw.owner, gateMin: "1" } };
+  const gatedPath = path.join(tmp, "gated.json");
+  fs.writeFileSync(gatedPath, JSON.stringify(gated, null, 2));
+  r = run([P, "--nonce", "5"], { ...predEnv, SNOOZE_CONFIG: gatedPath });
+  ok("predict.mjs refuses outright when the gate makes the curve's address time-dependent",
+     r.status === 1 && /every second/.test(r.stderr) && clean(r), r.stderr.trim());
+
+  r = run([P, "--nonce", "5", "--grind"], predEnv);
+  ok("predict.mjs --grind finds a salt against the predicted token and writes it down",
+     r.status === 0 && fs.existsSync(predPath), (r.stderr || r.stdout).slice(0, 300));
+  const pred = JSON.parse(fs.readFileSync(predPath, "utf8"));
+  ok("and the curve address it recorded really is that CREATE2 derivation",
+     ABI.sameAddress(pred.curve, ABI.create2Address(pred.deployer, pred.salt, pred.initCodeHash)) &&
+     pred.curve.toLowerCase().endsWith("ed"), JSON.stringify(pred).slice(0, 200));
+  ok("and it is labelled a prediction rather than a deployment", /PREDICTION/.test(pred._note));
+
+  // Step 4 with the launch actually at the point the prediction assumed: the salt is reused,
+  // and the two independent derivations grind.mjs runs on every salt still have to agree.
+  const verified = (address) => ({ status: "verified", readBack: { address } });
+  fs.writeFileSync(statePath, JSON.stringify({
+    chainId: raw.chainId, owner: raw.owner,
+    steps: { oracle: verified(raw.oracle.address),
+             deployer: verified(ABI.createAddress(raw.owner, 5)),
+             token: verified(ABI.createAddress(raw.owner, 6)) } }));
+  r = run([G], predEnv);
+  ok("grind.mjs reuses the salt when the token landed where the prediction said",
+     r.status === 0 && /reusing the salt/.test(r.stdout), (r.stderr || r.stdout).slice(0, 400));
+  ok("and it lands on the address the prediction published",
+     r.stdout.includes(ABI.toChecksum(pred.curve)), r.stdout.slice(0, 400));
+
+  // And the case the reuse exists to survive: a prediction ground against something else.
+  // Discarded and re-ground, not used — an address nobody will ever deploy to is worse than
+  // a few seconds of grinding.
+  fs.writeFileSync(predPath, JSON.stringify({ ...pred, initCodeHash: "0x" + "11".repeat(32) }));
+  fs.writeFileSync(statePath, JSON.stringify({
+    chainId: raw.chainId, owner: raw.owner,
+    steps: { oracle: verified(raw.oracle.address),
+             deployer: verified(ABI.createAddress(raw.owner, 5)),
+             token: verified(ABI.createAddress(raw.owner, 6)) } }));
+  r = run([G], predEnv);
+  ok("a prediction ground against different numbers is discarded, not used",
+     r.status === 0 && /different numbers/.test(r.stdout) && !/reusing the salt/.test(r.stdout),
+     (r.stderr || r.stdout).slice(0, 400));
+
+  // A step already sent contributes what it landed at, so this same command is a prediction
+  // before a launch and a statement of fact during one — and never disagrees with itself about
+  // a step that has happened.
+  fs.writeFileSync(statePath, JSON.stringify({
+    chainId: raw.chainId, owner: raw.owner,
+    steps: { deployer: { status: "verified",
+                         readBack: { address: "0x00000000000000000000000000000000000000bb" } } } }));
+  r = run([P, "--nonce", "5"], predEnv);
+  ok("a step already deployed contributes its real address and spends no nonce",
+     r.status === 0 && /0x00000000000000000000000000000000000000[bB]{2}/.test(r.stdout) &&
+     r.stdout.includes(ABI.toChecksum(ABI.createAddress(raw.owner, 5))) &&
+     /deployed and verified/.test(r.stdout), (r.stderr || r.stdout).slice(0, 400));
+  fs.rmSync(statePath, { force: true });
+
+  /* ---- tools/publish.mjs: the last manual step, made not manual ---- */
+  // It lives in tools/ and it is tested here because what it reads is the launch state, and
+  // the failure it exists to prevent is a deployment failure: a page that says "send ETH here"
+  // above an address that is one character off. Everything else in this repository can be
+  // corrected in the next block.
+  const P2 = "tools/publish.mjs";
+  const pagePath = path.join(tmp, "index.html");
+  const pubState = path.join(tmp, "published.json");
+  const TOK = ABI.toChecksum(ABI.createAddress(raw.owner, 6));
+  const CRV = ABI.toChecksum("0x" + "77".repeat(19) + "ed");
+  const freshPage = () => fs.copyFileSync(path.join(ROOT, "web", "index.html"), pagePath);
+  const pubEnv = () => ({ SNOOZE_STATE: pubState, SNOOZE_PAGE: pagePath });
+  const withSteps = (steps) => fs.writeFileSync(pubState,
+    JSON.stringify({ chainId: raw.chainId, owner: raw.owner, steps }));
+
+  freshPage();
+  withSteps({ token: verified(TOK) });
+  r = run([P2, "--offline", "--write"], pubEnv());
+  ok("publish.mjs refuses while the curve is unverified, and says which step",
+     r.status === 1 && /step 5 \(curve\)/.test(r.stderr) && clean(r), r.stderr.trim());
+  ok("and it did not touch the page on the way out",
+     fs.readFileSync(pagePath, "utf8") === R("web/index.html"));
+
+  withSteps({ token: verified(TOK), curve: verified(CRV) });
+  r = run([P2], pubEnv());
+  ok("with no endpoint and no --offline it refuses rather than publishing unchecked",
+     r.status === 1 && /--offline/.test(r.stderr) && clean(r), r.stderr.trim());
+
+  r = run([P2, "--offline"], pubEnv());
+  ok("a dry run prints both addresses, checksummed",
+     r.status === 0 && r.stdout.includes(TOK) && r.stdout.includes(CRV),
+     (r.stderr || r.stdout).slice(0, 300));
+  ok("and writes nothing until it is asked to",
+     /nothing was written/.test(r.stdout) &&
+     fs.readFileSync(pagePath, "utf8") === R("web/index.html"));
+
+  r = run([P2, "--offline", "--write"], pubEnv());
+  const published = fs.readFileSync(pagePath, "utf8");
+  ok("--write fills the constants the page reads its addresses out of", r.status === 0 &&
+     new RegExp(`^const SNOOZE_CURVE = "${CRV}";$`, "m").test(published) &&
+     new RegExp(`^const SNOOZE_TOKEN = "${TOK}";$`, "m").test(published) &&
+     new RegExp(`^const TOKEN = "${TOK}";`, "m").test(published),
+     (r.stderr || r.stdout).slice(0, 300));
+  ok("and leaves the LAPTOP launch's own constants alone, which are not this sequence's",
+     /^const POOL {2}= "";/m.test(published) && /^const LAPTOP_CURVE = "";$/m.test(published));
+  ok("and the checksummed form is what landed, not the lower-case one the state holds",
+     published.includes(CRV) && !published.includes(CRV.toLowerCase()));
+
+  r = run([P2, "--offline", "--write"], pubEnv());
+  ok("running it twice is not an error and not a second edit", r.status === 0 &&
+     /already/.test(r.stdout) && fs.readFileSync(pagePath, "utf8") === published);
+
+  // Republishing a page over a DIFFERENT live address is a much bigger event than filling in a
+  // blank, and it should not look the same. A launch that moved has to say so in a commit.
+  withSteps({ token: verified(TOK), curve: verified(ABI.toChecksum("0x" + "12".repeat(20))) });
+  r = run([P2, "--offline", "--write"], pubEnv());
+  ok("it refuses to quietly point a live page at a different curve",
+     r.status === 1 && /already/.test(r.stderr) && clean(r), r.stderr.trim());
+  ok("and the page still says what it said", fs.readFileSync(pagePath, "utf8") === published);
+
+  // The read client grew an eighth method for this. It is a read, and the point of an
+  // allowlist is that nobody has to take that on trust — so the SET is what is read here,
+  // not the file, whose header names the send methods in prose in order to disclaim them.
+  const allowed = (R("deploy/scripts/lib/rpc.mjs")
+                    .match(/const ALLOWED = new Set\(\[[^\]]*\]\)/) || [""])[0];
+  ok("the endpoint client can count a wallet's transactions",
+     /eth_getTransactionCount/.test(allowed), allowed);
+  ok("and its read set still contains nothing that could send one",
+     allowed.length > 0 && !/send|sign/i.test(allowed), allowed);
 
   fs.rmSync(tmp, { recursive: true, force: true });
 }
