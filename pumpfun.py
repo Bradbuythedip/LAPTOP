@@ -64,6 +64,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+import zlib
 from pathlib import Path
 
 VERSION = "1.1.0"
@@ -2449,6 +2450,93 @@ def cmd_table(args):
     return 0
 
 
+def anchor_idl_address(program: str) -> str:
+    """Where an Anchor program keeps its own IDL, on chain.
+
+    A PDA over no seeds gives a base; the IDL account is that base with the seed "anchor:idl",
+    which is a plain sha256 rather than a PDA derivation — createWithSeed, not
+    findProgramAddress.
+    """
+    base = find_program_address([], program)
+    return b58encode(hashlib.sha256(b58decode(base) + b"anchor:idl"
+                                    + b58decode(program)).digest())
+
+
+def fetch_idl(rpc, program: str) -> dict:
+    """The IDL the DEPLOYED program published, not the one a docs repo has.
+
+    This exists because they disagreed. pump.fun's public IDL was last committed in May and
+    the program running on mainnet returned error 6074, which that file's table stops short
+    of at 6071 — so the account lists it describes cannot be trusted either. An IDL read from
+    the chain is the program's own account of itself.
+
+    Layout: an 8-byte discriminator, the authority, a u32 length, then zlib-compressed JSON.
+    """
+    addr = anchor_idl_address(program)
+    v = rpc.account(addr)
+    if v is None:
+        raise RuntimeError("%s publishes no IDL account (%s does not exist)" % (program, addr))
+    raw = base64.b64decode(v["data"][0])
+    if len(raw) < 44:
+        raise RuntimeError("the IDL account at %s is too short to be one" % addr)
+    n = int.from_bytes(raw[40:44], "little")
+    body = raw[44:44 + n]
+    if len(body) < n:
+        raise RuntimeError("the IDL account at %s claims %d bytes and holds %d"
+                           % (addr, n, len(body)))
+    try:
+        return json.loads(zlib.decompress(body))
+    except Exception as e:
+        raise RuntimeError("the IDL at %s did not decompress as one: %s" % (addr, e)) from None
+
+
+def cmd_idl(args):
+    """Read a program's IDL off the chain, and say what an error code or instruction means.
+
+    The docs repo lags the deployment. That is not a complaint about pump.fun — it is a
+    reason not to build a transaction from a file in a repo and assume it matches the program
+    that will execute it.
+    """
+    rpc = Rpc()
+    idl = fetch_idl(rpc, args.address)
+    errs = {e["code"]: e for e in idl.get("errors", [])}
+    print()
+    print("  program     %s" % args.address)
+    print("  idl account %s" % anchor_idl_address(args.address))
+    print("  instructions %d, errors %d (%d–%d)"
+          % (len(idl.get("instructions", [])), len(errs),
+             min(errs) if errs else 0, max(errs) if errs else 0))
+    if args.out:
+        Path(args.out).write_text(json.dumps(idl, indent=2))
+        print("  written     %s" % args.out)
+    if args.error is not None:
+        e = errs.get(args.error)
+        print()
+        if e is None:
+            print("  %d is not an error this program declares." % args.error)
+        else:
+            print("  %d  %s" % (args.error, e["name"]))
+            if e.get("msg"):
+                print("      %s" % e["msg"])
+    if args.instruction:
+        for ix in idl.get("instructions", []):
+            if ix["name"] == args.instruction:
+                print()
+                print("  %s  discriminator %s"
+                      % (ix["name"], bytes(ix["discriminator"]).hex()))
+                for n, a in enumerate(ix["accounts"]):
+                    bits = "".join(("w" if a.get("writable") else "-",
+                                    "s" if a.get("signer") else "-",
+                                    "?" if a.get("optional") else "-"))
+                    print("    %2d. %-36s %s" % (n, a["name"], bits))
+                print("    args: %s" % ", ".join(a["name"] for a in ix["args"]))
+                break
+        else:
+            print("\n  %s is not an instruction this program declares." % args.instruction)
+    print()
+    return 0
+
+
 def cmd_program(args):
     """What an unidentified program id actually is, from the chain and nothing else.
 
@@ -2820,6 +2908,12 @@ def build_parser():
                         "drop, which is exactly what happened the first time")
     s.add_argument("--yes", action="store_true")
     s.set_defaults(fn=cmd_table)
+    s = sub.add_parser("idl", help="a program's IDL, read from the chain rather than a repo")
+    s.add_argument("address")
+    s.add_argument("--out", help="write the whole IDL here")
+    s.add_argument("--error", type=int, help="explain this error code")
+    s.add_argument("--instruction", help="show this instruction's accounts, in order")
+    s.set_defaults(fn=cmd_idl)
     s = sub.add_parser("program", help="what an unidentified program id is, from the chain")
     s.add_argument("address")
     s.set_defaults(fn=cmd_program)

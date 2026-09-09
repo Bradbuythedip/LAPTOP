@@ -151,6 +151,8 @@ ok("and the help says where the endpoint comes from", "SOLANA_RPC" in HELP.getva
 
 print("── no child wallets and no self-trading, and not as an omission")
 SRC = (ROOT / "pumpfun.py").read_text()
+import hashlib as _hashlib
+import json
 ALL_FLAGS = set(re.findall(r'add_argument\("(--[a-z-]+)"', SRC))
 ok("there is no flag for a wallet fleet, a bundle, or volume",
    not (ALL_FLAGS & {"--wallets", "--bundle", "--fleet", "--volume", "--wash",
@@ -1237,6 +1239,65 @@ ok("and none is set when none was asked for",
            if _s2.program_of(i) == P.COMPUTE_BUDGET))
 ok("table pays one by default rather than nothing",
    P.build_parser().parse_args(["table", "--keypair", "k"]).priority_fee > 0)
+
+# ── the IDL the program itself publishes
+#
+# The buy was built from pump.fun's public IDL, last committed in May. The deployed program
+# returned error 6074 and that file's table stops at 6071 — so the account lists in it cannot
+# be trusted either. An Anchor program keeps its own IDL on chain; that one is the program's
+# account of itself and is what this reads.
+print("── a program's IDL, read from the chain rather than from a repo")
+import zlib as _zlib
+
+ok("the IDL account is derived with createWithSeed, not findProgramAddress",
+   P.anchor_idl_address(P.PUMP_PROGRAM)
+   == P.b58encode(_hashlib.sha256(
+       P.b58decode(P.find_program_address([], P.PUMP_PROGRAM)) + b"anchor:idl"
+       + P.b58decode(P.PUMP_PROGRAM)).digest()))
+ok("and it is a different address for a different program",
+   P.anchor_idl_address(P.PUMP_PROGRAM) != P.anchor_idl_address(P.PUMP_FEE_PROGRAM))
+
+
+def _idl_account(obj, trunc=0, junk=False):
+    body = _zlib.compress(json.dumps(obj).encode())
+    if junk:
+        body = b"not zlib at all"
+    n = len(body) + trunc
+    return (bytes(8) + P.b58decode(SYS_ADDR) + n.to_bytes(4, "little") + body)
+
+
+class IdlRpc(P.Rpc):
+    def __init__(self, raw):
+        self.raw = raw
+        self.url = "https://fake.invalid"
+
+    @property
+    def host(self):
+        return "fake.invalid"
+
+    def account(self, addr, commitment="confirmed"):
+        if self.raw is None:
+            return None
+        import base64 as b
+        return {"data": [b.b64encode(self.raw).decode(), "base64"], "executable": False,
+                "owner": SYS_ADDR, "lamports": 1}
+
+
+_doc = {"instructions": [{"name": "buy", "discriminator": [1] * 8, "accounts": [], "args": []}],
+        "errors": [{"code": 6074, "name": "SomethingNew", "msg": "a thing the repo lacks"}]}
+_got = P.fetch_idl(IdlRpc(_idl_account(_doc)), P.PUMP_PROGRAM)
+ok("a published IDL decompresses to the document the program stored",
+   _got["errors"][0]["name"] == "SomethingNew", _got)
+ok("a program with no IDL account says so rather than returning nothing",
+   _raises(lambda: P.fetch_idl(IdlRpc(None), P.PUMP_PROGRAM), RuntimeError))
+ok("an account whose length header overruns its data is refused, not truncated",
+   _raises(lambda: P.fetch_idl(IdlRpc(_idl_account(_doc, trunc=500)), P.PUMP_PROGRAM),
+           RuntimeError))
+ok("and one that is not compressed JSON is refused",
+   _raises(lambda: P.fetch_idl(IdlRpc(_idl_account(_doc, junk=True)), P.PUMP_PROGRAM),
+           RuntimeError))
+ok("an account too short to be an IDL at all is refused",
+   _raises(lambda: P.fetch_idl(IdlRpc(bytes(10)), P.PUMP_PROGRAM), RuntimeError))
 
 # ── methods that do not exist
 #
