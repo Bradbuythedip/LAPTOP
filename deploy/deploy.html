@@ -1264,8 +1264,15 @@ async function send(step, tx, card){
   var out = $("out-" + step.id); out.innerHTML = "";
   var built;
   try{
+    /* EVERY key tx() reads, and `pair` was missing from here alone. It was added to ST, to
+       the progress record, to step 5's reads and to tx()'s own switch — and not to the one
+       object that call actually receives, so "Register the pool the curve made" died on
+       `not a 20-byte address: undefined` with the curve funded and unregistered. Found on a
+       live launch. test/run-deploy.mjs now compares this literal against what tx() destructures
+       so a key can never again exist everywhere except at the call site. */
     built = SNOOZE.tx(tx.key, A, L, { oracle:chosenOracle(), deployer:ST.deployer,
-                                      token:ST.token, salt:ST.salt, curve:ST.curve });
+                                      token:ST.token, salt:ST.salt, curve:ST.curve,
+                                      pair:ST.pair });
   }catch(e){ out.appendChild(el("div", "badbox", "cannot build it: " + e.message)); return; }
 
   var pre = el("pre", null,

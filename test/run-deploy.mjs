@@ -1192,6 +1192,21 @@ console.log("── the page's encoder against the scripts', on this launch's re
     for (const tx of step.txs) pairs.push([`${step.n}.${tx.key}`, step, tx]);
   ok("every transaction the scripts define has a twin on the page", pairs.length === 10,
      String(pairs.length));
+
+  // THE GAP THAT LET A LIVE LAUNCH STALL. The twin check below passes `st` built HERE, so it
+  // proved tx() encodes correctly and said nothing about what the page hands it. `pair` was
+  // added to ST, to the progress record, to step 5's reads and to tx()'s switch — and not to
+  // the object literal at the call site, so "Register the pool the curve made" threw
+  // "not a 20-byte address: undefined" with 80% of the supply already in the curve.
+  {
+    const src = R("deploy/deploy.html");
+    const body = (src.match(/function tx\(key, A, L, st\)\{[\s\S]*?\n  \}/) || [""])[0];
+    const reads = [...new Set([...body.matchAll(/\bst\.([A-Za-z_]\w*)/g)].map(m => m[1]))];
+    const literal = (src.match(/SNOOZE\.tx\(tx\.key, A, L, \{[\s\S]*?\}\)/) || [""])[0];
+    const missing = reads.filter(k => !new RegExp(`\\b${k}\\s*:`).test(literal));
+    ok(`the page hands tx() every key it reads (${reads.join(", ")})`, missing.length === 0,
+       "missing at the call site: " + missing.join(", "));
+  }
   for (const [key, , tx] of pairs) {
     const mine = tx.build();
     let theirs = null, err = "";
