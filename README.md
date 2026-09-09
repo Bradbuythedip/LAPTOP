@@ -139,6 +139,25 @@ initialise.
 It is all removed rather than left to rot into false claims about a token that works differently.
 It is in the git history if it is ever wanted.
 
+## The artwork has one source
+
+**`web/token.jpg` is the artwork.** Replace that file and nothing else, then:
+
+```
+pip install Pillow          # this one tool needs it; the test suite does not
+python3 tools/art.py --write
+```
+
+It regenerates all seven derived images — `snooze.png`, `hero.png`, the four WebP sizes and
+`icon.png` — from that one file. `web/bg.webp` is the background, a different image, and is not
+touched.
+
+**Do not upload over one of the derived files.** That is how the site ends up showing a
+different picture from the token, and comparing those two pictures is exactly the check a
+careful buyer performs against a copycat. `token.jpg` is also what the launch pins to IPFS,
+byte for byte, so the source and the token image are the same file rather than two files that
+agree today. `test/run.sh` compares them pixel-wise and fails on a mismatch.
+
 ## Keys never go in this directory
 
 `pumpfun.py` writes a launch record beside your keypair, and **it contains the mint's secret
@@ -160,7 +179,7 @@ This was a real hole until it was tested for: `launch-*.json` was not ignored, a
 sh test/run.sh
 ```
 
-**143 assertions, no network touched, nothing to install** (plus the script's own 33-check
+**175 assertions, no network touched, nothing to install** (plus the script's own 33-check
 `selftest`, which is what a downloaded copy can run on its own). They cover the arithmetic against
 RFC 8032 and published base58 vectors, every way a keypair file is refused, the transaction
 decoder against transactions built byte by byte, the publish flow end-to-end against the real

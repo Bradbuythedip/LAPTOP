@@ -109,6 +109,7 @@ def launch_args(keypair, **over):
     a = type("A", (), {})()
     a.keypair, a.dev_buy, a.headroom, a.dry_run = keypair, 1.0, 0.5, True
     a.reserve = 0.03
+    a.yes = True
     a.mint_keypair = a.grind = None
     a.name, a.symbol = "Snooze Bear", "SNOOZE"
     a.description = (ROOT / "description.txt").read_text().strip()
@@ -306,6 +307,30 @@ ok("LAUNCH.md keeps the launch keypair out of the tree",
 ok("and the ground mint too", "cd ~/.snooze && solana-keygen grind" in LM)
 ok("and says why rather than just where", "scraped in minutes" in LM)
 
+print("── the launch image and the site show the SAME picture")
+LAUNCH_IMG = ROOT / "web" / "token.jpg"
+ok("the launch image exists", LAUNCH_IMG.is_file())
+ok("LAUNCH.md points --image at it", "--image ./web/token.jpg" in (ROOT / "LAUNCH.md").read_text())
+try:
+    from PIL import Image
+except ImportError:
+    # The suite promises "nothing to install", so this one is skipped rather than failed when
+    # Pillow is absent. Everything else here runs on the standard library alone.
+    ok("(pixel comparison skipped — Pillow not installed)", True)
+else:
+    def _sig(path, n=16):
+        im = Image.open(path).convert("RGB").resize((n, n), Image.LANCZOS)
+        return list(im.tobytes())
+    def _diff(a, b):
+        return sum(abs(x - y) for x, y in zip(a, b)) / (len(a) * 255)
+    base = _sig(LAUNCH_IMG)
+    # A CAREFUL BUYER COMPARES THE TWO PICTURES. Two different bears — one on pump.fun, one on
+    # the site — is precisely the signal a copycat produces, so a mismatch here is not cosmetic.
+    for rel in ("web/snooze-512.webp", "web/icon.png", "web/hero.png"):
+        d = _diff(base, _sig(ROOT / rel))
+        ok("%s is the same picture as the launch image" % rel, d < 0.02,
+           "mean pixel difference %.4f — the site and the token would show different art" % d)
+
 print("── the metadata is permanent, so it is checked before it is pinned")
 DESC = (ROOT / "description.txt").read_text().strip()
 ok("the launch copy is in the repo, not in somebody's shell history", DESC != "")
@@ -331,6 +356,55 @@ ok("the limits are measured in bytes, so emoji count properly",
 ok("and every refusal says it cannot be fixed later",
    all("permanent" in b or "cannot be edited" in b or "empty" in b or "copycat" in b
        for b in P.check_metadata("", "", "", "")))
+
+print("── it prompts, but never for key material")
+ok("--keypair may be omitted and prompted for",
+   'add_argument("--keypair", default=None' in SRC)
+ok("--dev-buy may be omitted and prompted for",
+   'add_argument("--dev-buy", type=float, default=None' in SRC)
+ok("and neither has a DEFAULT VALUE — being asked is not the same as being guessed",
+   "ask_float(" in SRC and 'ask_keypair_path("~/.snooze/launch.json")' in SRC)
+# THE ONE THING IT WILL NOT BECOME INTERACTIVE ABOUT.
+ok("there is no prompt for a private key, a seed or a mnemonic",
+   not re.search(r"(getpass|ask)\([^)]*(private key|secret key|seed phrase|mnemonic)",
+                 SRC, re.I))
+# The IMPORTS, not a substring. "getpass" appears in pumpfun.py's own comment explaining why
+# it does not use one — the same trap as grepping the file for "secp256k1", and the third time
+# this pattern has bitten in this project.
+import ast as _ast
+_imported = set()
+for _n in _ast.walk(_ast.parse(SRC)):
+    if isinstance(_n, _ast.Import):
+        _imported.update(a.name.split(".")[0] for a in _n.names)
+    elif isinstance(_n, _ast.ImportFrom) and _n.module:
+        _imported.add(_n.module.split(".")[0])
+ok("getpass is not imported — a masked prompt is still a paste, and the risk is the clipboard",
+   "getpass" not in _imported, sorted(_imported))
+ok("nor is any wallet, signing or crypto package",
+   not (_imported & {"eth_account", "web3", "solana", "solders", "nacl", "ecdsa",
+                     "coincurve", "cryptography", "subprocess"}), sorted(_imported))
+for good in ("~/.snooze/launch.json", "./launch.json", "/home/brad/.snooze/launch.json",
+             "So11111111111111111111111111111111111111112"):
+    ok("a path or a pubkey is accepted: %s" % good[:34], not P.looks_like_secret(good))
+# 64 bytes of base58 is ~87-88 chars. That is what a wallet's "export private key" produces,
+# and it is what got pasted into a chat window once already.
+import random as _r
+_rng = _r.Random(8453)
+for n in (87, 88):
+    fake = "".join(_rng.choice(P._B58) for _ in range(n))
+    ok("a %d-character base58 blob is caught as key material" % n, P.looks_like_secret(fake))
+ok("and the refusal does not echo what was pasted",
+   "does not print what was typed" in SRC or "Deliberately does not print" in SRC)
+
+print("── the last door is a typed ticker, not a keypress")
+ok("there is a confirmation before anything irreversible",
+   "type the ticker to launch" in SRC)
+ok("it compares against the symbol, so it cannot be answered reflexively",
+   '!= args.symbol' in SRC)
+ok("--yes exists for a scripted launch and says who it is for",
+   '"--yes"' in SRC and "if you are typing" in SRC)
+ok("stopping there leaves the launch resumable rather than half-done",
+   "continues this launch rather than starting a different one" in SRC)
 
 print("── --description is required, and readable from a file")
 SRC_D = (ROOT / "pumpfun.py").read_text()
@@ -623,13 +697,31 @@ with tempfile.TemporaryDirectory() as d:
            "would write" in out.getvalue()
            and 'data-ca=""' in (Path(d) / "web/index.html").read_text())
         a.write = True
-        with redirect_stdout(StringIO()):
+        out = StringIO()
+        with redirect_stdout(out):
             with_rpc(PubRpc(), P.cmd_publish, a)
         wrote = (Path(d) / "web/index.html").read_text()
         ok("--write puts the mint in the page",
            ('data-ca="%s"' % MINT) in wrote and (">%s</div>" % MINT) in wrote)
         ok("and it is readable with no JavaScript at all",
            MINT in wrote.split("<script>")[0])
+        # THE LINKS TOO, not just the address. They were filled only by the page's script, so a
+        # visitor with JavaScript blocked got a correct contract address and three links to
+        # bare domains — the same hole the address itself had, one element over.
+        markup = wrote.split("<script>")[0]
+        for label, want in [
+            ("buy/sell/pump.fun", "https://pump.fun/coin/" + MINT),
+            ("solscan",           "https://solscan.io/token/" + MINT),
+            ("dexscreener",       "https://dexscreener.com/solana/" + MINT),
+        ]:
+            ok("publish writes the %s link into the markup, so it works with JS off" % label,
+               ('href="%s"' % want) in markup, want)
+        ok("every data-url element ends up with a matching href",
+           all(('href="%s%s"' % (b, MINT)) in markup
+               for b in re.findall(r'data-url="([^"]*)"', markup)),
+           re.findall(r'data-url="([^"]*)"', markup))
+        ok("and it reports how many it wired", "5 links" in out.getvalue(),
+           out.getvalue()[-160:])
         ok("and nothing else on the page moved",
            len(wrote.splitlines()) == len(SITE.splitlines()))
         # Running it again is a no-op, not a second edit.
