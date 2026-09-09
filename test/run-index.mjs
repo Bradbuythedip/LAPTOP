@@ -712,6 +712,122 @@ console.log("── the Live panel is about the token that is live");
   BONDED = false;
 }
 
+console.log("── the two ways the buy card could spend money it was not asked to");
+{
+  BONDED = false; MISMATCH = false;
+
+  // ONE. The button stayed live and still said "Buy $SNOOZE" through the wallet prompt and the
+  // 180-second receipt poll, because buy() opens with await getQuote() and getQuote() ends in
+  // paint(). Two taps were two transactions, the second at a worse price because the first had
+  // already moved the curve. Driven through the real control, not through the function.
+  {
+    const p2 = await ctx.newPage();
+    await p2.addInitScript(() => {
+      window.__SENT = [];
+      window.ethereum = {
+        isPhantom: true,
+        request: ({ method, params }) => {
+          if (method === "eth_requestAccounts") return Promise.resolve(["0x1111111111111111111111111111111111111111"]);
+          if (method === "eth_accounts") return Promise.resolve([]);
+          if (method === "eth_chainId") return Promise.resolve("0x2105");
+          if (method === "eth_sendTransaction") {
+            window.__SENT.push(params[0]);
+            // Hangs, exactly as a wallet prompt does while somebody reads it.
+            return new Promise(res => setTimeout(() => res("0x" + "ab".repeat(32)), 1200));
+          }
+          return Promise.resolve(null);
+        },
+        on: (ev, cb) => { (window.__H = window.__H || {})[ev] = cb; },
+      };
+    });
+    await p2.route("**/*", r => {
+      const u = r.request().url();
+      if (r.request().method() === "POST") {
+        const body = JSON.parse(r.request().postData() || "{}");
+        const call = ((body.params || [])[0] || {}).data || "";
+        const wordOf = (v) => "0x" + BigInt(v).toString(16).padStart(64, "0");
+        const res = body.method === "eth_chainId" ? "0x2105"
+          : call === "0xfc0c546a" ? wordOf(BigInt(TOKEN_ADDR))
+          : call.startsWith("0x4beb394c") ? wordOf(1234n * 10n ** 18n)
+          : wordOf(0);
+        return r.fulfill({ contentType: "application/json",
+          body: JSON.stringify({ jsonrpc: "2.0", id: body.id, result: res }) });
+      }
+      return u.endsWith("/index.html") || u.endsWith("/")
+        ? r.fulfill({ contentType: "text/html", body: BLANK
+            .replace('const SNOOZE_CURVE = "";', `const SNOOZE_CURVE = "${CURVE_ADDR}";`)
+            .replace('const SNOOZE_TOKEN = "";', `const SNOOZE_TOKEN = "${TOKEN_ADDR}";`) })
+        : r.fulfill({ status: 404, body: "" });
+    });
+    await p2.goto("http://wallet.test/index.html", { waitUntil: "load" });
+    await p2.waitForTimeout(600);
+    await p2.click("#wConnect");
+    await p2.waitForTimeout(500);
+    ok("connecting arms the buy button",
+       !(await p2.$eval("#buyCta", e => e.disabled)) &&
+       (await p2.textContent("#buyCta")) === "Buy $SNOOZE",
+       await p2.textContent("#buyCta"));
+
+    await p2.click("#buyCta");
+    await p2.waitForTimeout(120);
+    ok("pressing it disarms it while the wallet is deciding",
+       await p2.$eval("#buyCta", e => e.disabled));
+    ok("and says what it is waiting for",
+       (await p2.textContent("#buyCta")) === "Confirm in your wallet…",
+       await p2.textContent("#buyCta"));
+    await p2.click("#buyCta", { force: true }).catch(() => {});
+    await p2.click("#buyCta", { force: true }).catch(() => {});
+    await p2.waitForTimeout(300);
+    ok("three taps on Buy are still exactly one transaction",
+       (await p2.evaluate(() => window.__SENT.length)) === 1,
+       String(await p2.evaluate(() => window.__SENT.length)));
+    const sent = await p2.evaluate(() => window.__SENT[0]);
+    ok("and it pays the curve, with the ETH in the value field",
+       sent.to.toLowerCase() === CURVE_ADDR.toLowerCase() && BigInt(sent.value) === 5n * 10n ** 16n,
+       JSON.stringify(sent));
+
+    // TWO. accountsChanged updated the owner panel and nothing else, so the card kept the
+    // address captured at connect. buy(minOut, to) takes the recipient as an argument, so the
+    // new account would have paid and the OLD one received the tokens.
+    const settled = () => p2.waitForFunction(
+      () => !document.getElementById("buyCta").disabled, { timeout: 25000 });
+    await settled();
+    await p2.evaluate(() => window.__SENT.length = 0);
+    await p2.evaluate(() => window.__H.accountsChanged(["0x2222222222222222222222222222222222222222"]));
+    await p2.waitForTimeout(600);
+    await p2.click("#buyCta", { force: true });
+    await p2.waitForFunction(() => window.__SENT.length === 1, { timeout: 15000 });
+    const after = await p2.evaluate(() => window.__SENT[0]);
+    ok("after switching accounts the buy is sent FROM the new one",
+       after && after.from.toLowerCase() === "0x2222222222222222222222222222222222222222",
+       JSON.stringify(after));
+    ok("and the tokens go TO the new one, not to the account that connected",
+       after && after.data.slice(-40).toLowerCase() === "2".repeat(40),
+       after ? after.data.slice(-64) : "nothing sent");
+
+    // And disconnecting disarms it rather than leaving a live button for a wallet that is gone.
+    await settled();
+    await p2.evaluate(() => window.__H.accountsChanged([]));
+    await p2.waitForTimeout(300);
+    ok("disconnecting disarms the button", await p2.$eval("#buyCta", e => e.disabled));
+    await p2.close();
+  }
+
+  // The cap governs what a buyer can get back out, and it was stated once, in a heading a
+  // screen and a half below the button. It belongs in the sentence read while deciding.
+  await load("?curve=1");
+  ok("the daily cap is disclosed on the buy card itself, before the money moves",
+     /capped at 20% of your balance a day/i.test(await txt("#buyFoot")), await txt("#buyFoot"));
+
+  // Six of the seven tools are LAPTOP's, and their labels did not say so on a $SNOOZE page —
+  // "Standing order" builds a real, funded 1inch limit order against LAPTOP's address.
+  const tools = await page.$$eval(".tools a", els => els.map(e => e.textContent.trim()));
+  for (const t of ["Where to buy LAPTOP", "What a size gets (LAPTOP)", "Standing order (LAPTOP)",
+                   "LAPTOP launch parameters"])
+    ok(`the tools list says "${t}" rather than a token-neutral label`, tools.includes(t),
+       tools.join(" / "));
+}
+
 console.log("── the bytes the card would ask a stranger to sign");
 {
   // The only thing in this repository that asks a stranger for a signature that spends their

@@ -614,11 +614,11 @@ tbody tr:last-child td{border-bottom:0}
 <ul class="tools">
   <li><a href="/snooze.html">The dial</a></li>
   <li><a href="/checker.html">Is this the real address?</a></li>
-  <li><a href="/buy.html">Where to buy</a></li>
-  <li><a href="/size.html">What a size actually gets</a></li>
-  <li><a href="/order.html">Standing order</a></li>
+  <li><a href="/buy.html">Where to buy LAPTOP</a></li>
+  <li><a href="/size.html">What a size gets (LAPTOP)</a></li>
+  <li><a href="/order.html">Standing order (LAPTOP)</a></li>
   <li><a href="/slot.html">Getting a slot</a></li>
-  <li><a href="/launch.html">Launch parameters</a></li>
+  <li><a href="/launch.html">LAPTOP launch parameters</a></li>
 </ul>
 
 <div class="footer">
@@ -1083,7 +1083,7 @@ const GATE_MIN_TEXT = "$SNOOZE";   // set to the real minimum once the curve is 
     note.hidden = false; note.className = cls; note.textContent = text;
   };
 
-  let wallet = null, bonded = false, quote = null;
+  let wallet = null, bonded = false, quote = null, sending = false;
   window.__BUYWIDGET = { toWei, fmt, addrWord, w,
                          SEL: { "quoteBuy(uint256)": SEL_QUOTE, "buy(uint256,address)": SEL_BUY,
                                 "bonded()": SEL_BONDED, "token()": SEL_TOKEN },
@@ -1100,8 +1100,12 @@ const GATE_MIN_TEXT = "$SNOOZE";   // set to the real minimum once the curve is 
   badge.textContent = "live"; badge.className = "badge good";
   addr.textContent = SNOOZE_CURVE; row.hidden = false;
   cta.hidden = false; pills.hidden = false;
-  foot.textContent = "1% fee, in ETH. You are protected to 2% under the quote. " +
-                     "Never send ETH straight to the contract — it reverts.";
+  /* The daily cap was stated once, in a heading 1,214 pixels below this button — about one
+     and a half screens past the moment somebody commits money. It belongs in the sentence
+     they read while deciding, not in the section they scroll to afterwards. */
+  foot.textContent = "1% fee, in ETH. Protected to 2% under the quote. Selling is capped at " +
+                     "20% of your balance a day. Never send ETH straight to the contract — " +
+                     "it reverts.";
 
   /* The claim the card makes, checked instead of asserted: the curve is asked which token it
      sells, and a curve selling something else is the one thing a copy of this page changes. */
@@ -1148,12 +1152,24 @@ const GATE_MIN_TEXT = "$SNOOZE";   // set to the real minimum once the curve is 
     if(bonded){
       cta.disabled = true; cta.textContent = "The curve has closed"; return;
     }
+    /* IN FLIGHT IS A STATE, and it was not one. buy() opens with `await getQuote()`, getQuote()
+       ends in paint(), and paint() re-enabled the button — so the control stayed live and still
+       said "Buy $SNOOZE" through the whole wallet prompt and the whole 180-second receipt poll.
+       Two taps sent two transactions: measured, byte-identical payloads, the same value twice,
+       and the second one paying a worse price because the first had already moved the curve. */
+    if(sending){ cta.disabled = true; cta.textContent = "Confirm in your wallet…"; return; }
     if(!wallet){ cta.disabled = true; cta.textContent = "Connect a wallet"; return; }
     if(!quote){ cta.disabled = true; cta.textContent = "Enter an amount"; return; }
     cta.disabled = false; cta.textContent = "Buy $SNOOZE";
   }
 
   async function buy(){
+    if(sending) return;
+    sending = true;
+    try{ await doBuy(); } finally { sending = false; paint(); }
+  }
+
+  async function doBuy(){
     await getQuote();
     if(!wallet || !quote) return;
     /* A floor at 98% of the quote. Not zero — a zero floor is what lets a sandwich take the
@@ -1243,7 +1259,29 @@ function ownerView(addr){
     p.request({ method: "eth_accounts" })
      .then(a => ownerView(a && a[0]))
      .catch(() => {});
-    if(p.on) p.on("accountsChanged", a => ownerView(a && a[0]));
+    /* THE WALLET THE CARD SIGNS FOR HAS TO BE THE WALLET THE WALLET IS ON. This handler
+       updated the owner panel and nothing else, so the buy card kept the address captured at
+       connect — and SnoozeCurve.buy(minOut, to) takes the recipient as an argument, so after a
+       switch the new account would have paid and the OLD one received the tokens. Irreversible,
+       and the buyer's only clue would have been an address in a wallet prompt they were not
+       reading. Disarmed on disconnect, re-armed on a switch, and the chain re-read because the
+       new account can be on a different one. */
+    if(p.on) p.on("accountsChanged", async a => {
+      const next = a && a[0];
+      ownerView(next);
+      if(!next){ if(window.__BUYWIDGET) window.__BUYWIDGET.setWallet(null); return wState("", "Connect"); }
+      let chain = null;
+      try{
+        const c = await p.request({ method: "eth_chainId" });
+        if(typeof c === "string" && /^0x[0-9a-fA-F]+$/.test(c)) chain = Number(BigInt(c));
+      }catch(e){}
+      const stillBase = chain === CHAIN_ID;
+      wState(stillBase ? "on" : "bad", short(next),
+        stillBase ? "Connected on Base." : "This wallet is on chain " +
+          (chain === null ? "unknown" : chain) + ", not Base.");
+      if(window.__BUYWIDGET) window.__BUYWIDGET.setWallet(next, p, stillBase);
+      holdings(next);
+    });
   }
 
   /* ---- Connect, which is the same provider asking a question rather than listening ----
