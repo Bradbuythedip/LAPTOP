@@ -2289,7 +2289,7 @@ def cmd_table(args):
     discover either of those.
     """
     rpc = Rpc()
-    kp = Keypair.from_file(args.keypair)
+    kp = Keypair.load(args.keypair)
     dest = table_path(args.keypair)
     g = read_global(rpc)
     addrs = launch_static_accounts(g)
