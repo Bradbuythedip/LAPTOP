@@ -1129,6 +1129,41 @@ ok("extend is append-only, so an index can never come to mean something else",
    P.alt_extend_ix(t1, payer.address, payer.address, [SYS_ADDR])[2][:4]
    == (2).to_bytes(4, "little"))
 
+# ── methods that do not exist
+#
+# `table` shipped calling Keypair.from_file, which is not a method. 243 assertions did not
+# notice, because none of them execute a command body — a name is only looked up when the line
+# runs, and the line that runs first on launch day is the one nothing has run before. This
+# reads the source instead: every attribute taken off a class defined in this file must
+# actually be on that class.
+print("── every method this file calls on its own classes exists")
+import ast as _ast
+
+_tree = _ast.parse(SRC)
+_classes = {n.name: getattr(P, n.name) for n in _ast.walk(_tree)
+            if isinstance(n, _ast.ClassDef) and hasattr(P, n.name)}
+ok("there are classes to check", len(_classes) >= 3, sorted(_classes))
+_missing = []
+for _n in _ast.walk(_tree):
+    if (isinstance(_n, _ast.Attribute) and isinstance(_n.value, _ast.Name)
+            and _n.value.id in _classes and not hasattr(_classes[_n.value.id], _n.attr)):
+        _missing.append("%s.%s (line %d)" % (_n.value.id, _n.attr, _n.lineno))
+ok("no call takes a method off one of them that is not there", not _missing, _missing)
+
+# The same hole one level out: a subcommand whose handler does not exist, or does not take the
+# arguments the parser will hand it, fails at the moment it is used and not before.
+_parser = P.build_parser()
+_subs = [a for a in _parser._actions if hasattr(a, "choices") and isinstance(a.choices, dict)]
+ok("the parser exposes its subcommands", _subs and len(_subs[0].choices) >= 6,
+   sorted(_subs[0].choices) if _subs else None)
+_nofn = [name for name, sp in _subs[0].choices.items()
+         if not callable(sp.get_default("fn"))]
+ok("every subcommand has a handler that is actually callable", not _nofn, _nofn)
+_module_level = {n.name for n in _tree.body if isinstance(n, (_ast.FunctionDef,))}
+_badfn = [name for name, sp in _subs[0].choices.items()
+          if sp.get_default("fn").__name__ not in _module_level]
+ok("and every handler is a function defined in this file", not _badfn, _badfn)
+
 print("── the endpoint is a credential and is treated as one")
 ok("SOLANA_RPC is read from the environment",
    'os.environ.get("SOLANA_RPC")' in SRC)
