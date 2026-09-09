@@ -609,12 +609,13 @@ def _compile(payer: str, blockhash: str, instructions: list) -> bytes:
 
 
 def read_global(rpc) -> dict:
-    """pump.fun's Global account: the fee recipient and the curve's opening reserves.
+    """pump.fun's Global account, read in full rather than to the first field that was needed.
 
-    Read rather than hardcoded. The opening reserves decide how many tokens a given number of
-    lamports buys, and pump.fun has changed them; a stale constant here would compute an
-    `amount` the curve will not honour, and the buy would fail slippage — or, with slippage
-    wide enough, fill at a price nobody chose.
+    The whole struct is parsed because the tail matters: `buyback_fee_recipients` is eight
+    pubkeys that a buy has to carry as trailing accounts when cashback is enabled, and reading
+    only as far as `fee_basis_points` is what produced BuybackFeeRecipientMissing. The opening
+    reserves are read rather than hardcoded for the same reason — pump.fun has changed them,
+    and a stale constant computes an `amount` the curve will not honour.
     """
     addr = find_program_address([b"global"], PUMP_PROGRAM)
     v = rpc.account(addr)
@@ -624,22 +625,42 @@ def read_global(rpc) -> dict:
     if raw[:8] != bytes([167, 232, 232, 177, 200, 108, 114, 127]):
         raise RuntimeError("the account at %s is not pump.fun's Global" % addr)
     i = 8
-    initialized = raw[i]; i += 1
-    authority = b58encode(raw[i:i + 32]); i += 32
-    fee_recipient = b58encode(raw[i:i + 32]); i += 32
+
+    def take(n: int) -> bytes:
+        nonlocal i
+        if i + n > len(raw):
+            raise RuntimeError(
+                "pump.fun's Global is %d bytes and this layout wants %d — the program's "
+                "account struct has changed and this script must not guess at the rest"
+                % (len(raw), i + n))
+        out = raw[i:i + n]
+        i += n
+        return out
 
     def u64():
-        nonlocal i
-        n = int.from_bytes(raw[i:i + 8], "little"); i += 8
-        return n
+        return int.from_bytes(take(8), "little")
 
-    return {"address": addr, "initialized": bool(initialized), "authority": authority,
-            "fee_recipient": fee_recipient,
-            "initial_virtual_token_reserves": u64(),
-            "initial_virtual_sol_reserves": u64(),
-            "initial_real_token_reserves": u64(),
-            "token_total_supply": u64(),
-            "fee_basis_points": u64()}
+    def flag():
+        return bool(take(1)[0])
+
+    def key():
+        return b58encode(take(32))
+
+    def keys(n):
+        return [key() for _ in range(n)]
+
+    g = {"address": addr, "initialized": flag(), "authority": key(), "fee_recipient": key(),
+         "initial_virtual_token_reserves": u64(), "initial_virtual_sol_reserves": u64(),
+         "initial_real_token_reserves": u64(), "token_total_supply": u64(),
+         "fee_basis_points": u64(), "withdraw_authority": key(), "enable_migrate": flag(),
+         "pool_migration_fee": u64(), "creator_fee_basis_points": u64(),
+         "fee_recipients": keys(7), "set_creator_authority": key(),
+         "admin_set_creator_authority": key(), "create_v2_enabled": flag(),
+         "whitelist_pda": key(), "reserved_fee_recipient": key(),
+         "mayhem_mode_enabled": flag(), "reserved_fee_recipients": keys(7),
+         "is_cashback_enabled": flag(), "buyback_fee_recipients": keys(8),
+         "buyback_basis_points": u64()}
+    return g
 
 
 def curve_buy_amount(lamports: int, g: dict) -> int:
@@ -714,6 +735,19 @@ def build_create_and_buy_direct(payer: str, mint: str, name: str, symbol: str, u
         Account(TOKEN_PROGRAM),
     ], bytes([1])))
 
+    # THE EIGHT TRAILING ACCOUNTS. When cashback is on, a buy must carry pump.fun's eight
+    # buyback fee recipients after its named accounts — "exactly 8 remaining accounts (or
+    # none)", per the program's own error 6061. Passing none while cashback is enabled is
+    # error 6062, BuybackFeeRecipientMissing, which is where this landed. They take lamports,
+    # so they are writable. Read from Global every time rather than pinned here: they are
+    # configuration, and configuration that is copied into a script goes stale silently.
+    recipients = g.get("buyback_fee_recipients") or []
+    if g.get("is_cashback_enabled") and len(recipients) != 8:
+        raise RuntimeError("cashback is enabled and Global names %d buyback recipients, not 8"
+                           % len(recipients))
+    buyback = ([Account(r, writable=True) for r in recipients]
+               if g.get("is_cashback_enabled") else [])
+
     uva = find_program_address([b"user_volume_accumulator", b58decode(payer)], PUMP_PROGRAM)
     if init_user_volume:
         # A buy WRITES to this account, and pump.fun does not create it on the way past —
@@ -755,7 +789,7 @@ def build_create_and_buy_direct(payer: str, mint: str, name: str, symbol: str, u
         Account(find_program_address([b"fee_config", b58decode(PUMP_PROGRAM)],
                                      PUMP_FEE_PROGRAM)),
         Account(PUMP_FEE_PROGRAM),
-    ], DISC_BUY + _u64(amount) + _u64(max_sol_cost) + bytes([1, 1])))
+    ] + buyback, DISC_BUY + _u64(amount) + _u64(max_sol_cost) + bytes([1, 1])))
 
     return ixs, {"amount": amount, "max_sol_cost": max_sol_cost,
                  "bonding_curve": bonding_curve, "associated_user": associated_user,
