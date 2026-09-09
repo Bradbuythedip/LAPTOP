@@ -615,10 +615,14 @@ ok("it reaches only pump.fun, solscan, dexscreener and its own origin",
    sorted(set(re.findall(r"https://([a-z0-9.]+)", SITE))))
 ok("the link preview image is absolute, or it does not unfurl",
    'og:image" content="https://' in SITE)
-ok("it warns that a Solana address has no checksum",
-   "no checksum" in SITE)
+# Prose wraps across source lines, so these read a whitespace-flattened copy. They assert the
+# IDEA survives a rewrite, not one phrasing: an address typo is unrecoverable, and the page says
+# out loud that the thing may go to zero.
+SITE_PROSE = " ".join(SITE.split())
+ok("it warns that a Solana address has no error detection",
+   "no typo check" in SITE_PROSE or "no checksum" in SITE_PROSE)
 ok("and it says the thing most token sites do not",
-   "nothing behind it" in SITE and "go to zero" in SITE)
+   "Nothing is behind it" in SITE_PROSE and "goes to zero" in SITE_PROSE)
 # NO href, not aria-disabled. aria-disabled is announced but does not stop a click, and
 # pointer-events:none does not stop the keyboard — Tab then Enter opened pump.fun's homepage,
 # where the first search result for a token name is not necessarily the token. An anchor

@@ -24,6 +24,15 @@ So there is ONE SOURCE and everything else is generated from it:
       -> web/hero-512.webp     512
       -> web/snooze-256.webp   256
       -> web/icon.png          256  favicon and apple-touch-icon
+      -> web/bear-768.webp      768  THE CUTOUT: the bear with the purple keyed out
+      -> web/bear-512.webp      512  and an alpha channel, for the page hero
+
+THE CUTOUT, and why it is not a nicety. token.jpg is a bear on a flat purple field, and the
+field is 69.7% of the frame — the subject is 1003x1029 of 1408x1408, barely half the area. Put
+that through `border-radius:50%` and you get a purple disc with a small bear in it, which is
+exactly the "flat circle" and the "too small" the artwork was accused of being. Keying the
+purple out and shipping alpha means the bear's own silhouette casts the shadow, and the same
+box shows roughly twice as much bear.
 
 web/bg.webp is NOT generated: it is the background, a different image, and nothing here
 touches it.
@@ -38,6 +47,12 @@ ROOT = Path(__file__).resolve().parent.parent
 SOURCE = ROOT / "web" / "token.jpg"
 
 # (filename, pixels, format). Order is largest first so a failure is loudest early.
+# The flat field behind the bear in token.jpg, measured rather than guessed: 69.7% of pixels
+# are within distance 40 of it. LO/HI are the RGB distances at which alpha goes 0 and 1 — the
+# gap is the soft edge, and it is narrow because gold and black are nowhere near this purple.
+KEY = (111, 59, 204)
+LO, HI = 40.0, 90.0
+
 DERIVED = [
     ("snooze.png",      1024, "PNG"),
     ("hero.png",         800, "PNG"),
@@ -47,6 +62,35 @@ DERIVED = [
     ("snooze-256.webp",  256, "WEBP"),
     ("icon.png",         256, "PNG"),
 ]
+
+
+def cutout(rgb, Image, np):
+    """The bear on transparency, cropped to itself and re-squared.
+
+    Vectorised because the per-pixel version is a two-million-iteration Python loop. The
+    despill matters more than it looks: purple bleeding onto gold reads as blue above the
+    red/green average, so clamping blue there removes the fringe without touching the artwork.
+    """
+    a = np.asarray(rgb, dtype=np.float32)
+    d = np.sqrt(((a - np.array(KEY, dtype=np.float32)) ** 2).sum(axis=2))
+    alpha = np.clip((d - LO) / (HI - LO), 0.0, 1.0)
+
+    rgb_out = a.copy()
+    avg = (rgb_out[:, :, 0] + rgb_out[:, :, 1]) / 2.0
+    spill = rgb_out[:, :, 2] > avg
+    rgb_out[:, :, 2] = np.where(spill, avg, rgb_out[:, :, 2])
+
+    out = np.dstack([rgb_out, alpha * 255.0]).astype(np.uint8)
+    im = Image.fromarray(out, "RGBA")
+    box = im.getbbox()
+    if box:
+        im = im.crop(box)
+    # Square it with a little air, so every derived size crops identically.
+    side = max(im.size)
+    side += int(side * 0.04) * 2
+    sq = Image.new("RGBA", (side, side), (0, 0, 0, 0))
+    sq.paste(im, ((side - im.width) // 2, (side - im.height) // 2), im)
+    return sq
 
 
 def main(argv=None):
@@ -97,6 +141,28 @@ def main(argv=None):
             im.save(out, "PNG", optimize=True)
         print("  wrote        %-18s %4dpx %-5s  %10s bytes"
               % (name, n, fmt, format(out.stat().st_size, ",")))
+
+    # ── the cutout
+    try:
+        import numpy as np
+    except ImportError:
+        print("\n  ! numpy is not installed, so the cutout (bear-*.webp) was skipped:")
+        print("      pip install numpy")
+    else:
+        bear = cutout(rgb, Image, np)
+        print("\n  cutout  %dx%d, from a %dx%d source (the purple field is gone)"
+              % (bear.width, bear.height, src.width, src.height))
+        for name, n in (("bear-768.webp", 768), ("bear-512.webp", 512)):
+            out = ROOT / "web" / name
+            if not args.write:
+                print("  would write  %-18s %4dpx WEBP  (alpha)" % (name, n))
+                continue
+            # exact=True or Pillow is free to put garbage in the RGB under transparent
+            # pixels, which shows up the moment anything composites or resizes it.
+            bear.resize((n, n), Image.LANCZOS).save(out, "WEBP", quality=86, method=6,
+                                                    exact=True)
+            print("  wrote        %-18s %4dpx WEBP  %10s bytes  (alpha)"
+                  % (name, n, format(out.stat().st_size, ",")))
 
     if not args.write:
         print("\n  nothing written. Re-run with --write.")
