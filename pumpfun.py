@@ -1153,7 +1153,21 @@ def verify_transaction(tx: Transaction, payer: str, mint: str, authorised_lampor
          "commitment": "processed", "accounts": {"encoding": "base64", "addresses": [payer]}},
     ])
     err = sim["value"].get("err")
-    ok(err is None, "it executes against the live cluster without reverting", repr(err))
+    # THE LOGS ARE THE ANSWER AND THEY WERE BEING THROWN AWAY. A failing simulation returns
+    # the program's own output, and an Anchor program prints the error's NAME there —
+    # "AnchorError ... Error Number: 6074. Error Message: <what it is>". That works when no
+    # IDL does: pump.fun's published IDL stops at 6071 and the deployed program has moved
+    # past it, so for three rounds the only thing on offer was a bare number. It was in the
+    # response the whole time.
+    detail = repr(err)
+    if err is not None:
+        logs = sim["value"].get("logs") or []
+        named = [l for l in logs if "Error Message:" in l or "AnchorError" in l
+                 or "Program log: Error" in l]
+        tail = named or logs[-12:]
+        if tail:
+            detail = repr(err) + "\n" + "\n".join("         " + l for l in tail)
+    ok(err is None, "it executes against the live cluster without reverting", detail)
     accts = sim["value"].get("accounts") or []
     after = accts[0]["lamports"] if accts and accts[0] else None
     if after is None:
