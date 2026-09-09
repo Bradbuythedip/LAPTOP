@@ -695,9 +695,17 @@ def _compile_v0(payer: str, blockhash: str, instructions: list, table: str,
     fee.writable = True
     rest = list(merged.values())
     pos = {a: i for i, a in enumerate(table_addrs)}
+    # A PROGRAM ID CAN NEVER COME FROM A LOOKUP TABLE. The runtime resolves tables while it is
+    # loading the transaction, and it has to know which programs to load before it can do
+    # that, so an instruction's program_id_index must point into the STATIC keys. Putting the
+    # programs in the table produced a message that parsed perfectly here and was rejected by
+    # the cluster as "failed to sanitize accounts offsets correctly" — which names the
+    # symptom and not the rule. The table may still CONTAIN them; this simply never reaches
+    # for them, which is why an already-created table does not have to be rebuilt.
+    programs = {prog for prog, _, _ in instructions}
 
     def lookupable(a) -> bool:
-        return (not a.signer) and a.key in pos
+        return (not a.signer) and a.key not in programs and a.key in pos
 
     ws = [a for a in rest if a.signer and a.writable]
     rs = [a for a in rest if a.signer and not a.writable]
@@ -2684,6 +2692,18 @@ def _structural_only(tx, payer: str, mint: str, rpc=None):
                 str(e))
     else:
         add(True, "no address-table lookups, so every account is named in the message itself")
+    # A program id must be named in the message itself. The runtime resolves lookup tables
+    # while loading the transaction and has to know which programs to load first, so it will
+    # not follow a table to find one. Compiling the programs into the table produced a message
+    # that parsed fine here and came back from the cluster as "failed to sanitize accounts
+    # offsets correctly" — a message that names the symptom and not the rule. Checked here so
+    # it is caught before a round trip, and stated as the rule it is.
+    n_static = len(tx.account_keys)
+    off = sorted({tx.keys[i["program_index"]] if i["program_index"] < len(tx.keys)
+                  else "index %d" % i["program_index"]
+                  for i in tx.instructions if i["program_index"] >= n_static})
+    add(not off, "every program it invokes is named in the message, not reached through a table",
+        ", ".join(off))
     progs = {tx.program_of(i) for i in tx.instructions}
     unresolved = sorted(x for x in progs if x.startswith("("))
     unknown = sorted(progs - set(KNOWN_PROGRAMS) - set(unresolved))
