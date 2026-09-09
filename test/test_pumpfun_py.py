@@ -1075,7 +1075,15 @@ class TableRpc(P.Rpc):
 
 
 pulled = TableRpc(TABLE_ADDRS).resolve_lookups(v0)
-ok("every account the table supplies comes back", len(pulled) == len(TABLE_ADDRS), len(pulled))
+# NOT every address in the table: the three that are used as program ids stay in the message,
+# because the runtime will not follow a table to find a program. The table may hold them; this
+# just never reaches for them, which is why an already-created table need not be rebuilt.
+_progs_in_table = {pr for pr, _, _ in big_ixs} & set(TABLE_ADDRS)
+ok("the table supplies every account except the programs, which cannot be looked up",
+   len(pulled) == len(TABLE_ADDRS) - len(_progs_in_table),
+   (len(pulled), len(TABLE_ADDRS), sorted(_progs_in_table)))
+ok("and it really is holding programs it is not being asked for",
+   len(_progs_in_table) == 3, sorted(_progs_in_table))
 
 # THE SAME COMPILER CHECK AS THE LEGACY PATH, and it matters more here: two index spaces.
 bad = []
@@ -1095,14 +1103,36 @@ ok("so the whole thing passes structural verification once resolved",
    all(g for g, _ in P._structural_only(v0, payer.address, mint.address,
                                         TableRpc(TABLE_ADDRS))))
 
+# A PROGRAM ID CAN NEVER COME FROM A LOOKUP TABLE. The runtime resolves tables while loading
+# the transaction, so it must already know which programs to load — an instruction's
+# program_id_index has to point into the static keys. Compiling the programs into the table
+# produced a message that parsed perfectly here and was rejected by the cluster as "failed to
+# sanitize accounts offsets correctly", which names the symptom and not the rule.
+_nstatic = len(v0.account_keys)
+ok("no instruction reaches through the table for its program",
+   all(i["program_index"] < _nstatic for i in v0.instructions),
+   [i["program_index"] for i in v0.instructions])
+ok("the programs are in the message even though the table also holds them",
+   all(pr in v0.account_keys for pr, _, _ in big_ixs)
+   and P.PUMP_PROGRAM in TABLE_ADDRS)
+# The structural check has to catch this WITHOUT a cluster, since the cluster's answer for it
+# is an error about offsets that names no program and no rule.
+_broken = P.Transaction(v0raw)
+_broken.instructions[2]["program_index"] = _nstatic + 1
+_failed = [nm for g_, nm in P._structural_only(_broken, payer.address, mint.address,
+                                               TableRpc(TABLE_ADDRS)) if not g_]
+ok("and a message that does reach through the table is refused before it is sent",
+   any("named in the message" in nm for nm in _failed), _failed)
+
 # The header describes the STATIC keys only; lookups are not counted in it. Getting that wrong
 # produces a message this parser accepts and the cluster rejects, after the fee is paid.
 ok("the header counts only the static keys it describes",
    v0.num_required_signatures + v0.num_readonly_unsigned <= len(static_keys),
    (v0.num_required_signatures, v0.num_readonly_unsigned, len(static_keys)))
-ok("writable table entries are listed before readonly ones",
+ok("the entry's writable and readonly index lists account for everything pulled",
    len(v0.lookup_tables[0]["writable"]) + len(v0.lookup_tables[0]["readonly"])
-   == len(TABLE_ADDRS))
+   == len(pulled), (len(v0.lookup_tables[0]["writable"]),
+                    len(v0.lookup_tables[0]["readonly"]), len(pulled)))
 # A table that does not hold an account the message wants must not silently drop it: the
 # account has to stay in the static keys instead.
 partial = P.Transaction(
