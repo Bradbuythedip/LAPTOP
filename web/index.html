@@ -278,6 +278,22 @@ ul{margin:0;padding-left:18px} li{margin-bottom:5px}
 .leg.out{background:var(--baseSoft);border-color:var(--baseLt)}
 .leg .k{font-size:12px;color:var(--dim)}
 .leg .v{font-family:var(--mono);font-size:16px;font-weight:600}
+/* The pay leg holds a real input. It is styled to disappear into the leg rather than to look
+   like a form field: this is one number on a card, not a form, and a bordered box inside a
+   bordered box reads as two things to fill in. */
+input.v{background:transparent;border:0;color:var(--fg);text-align:right;width:9ch;padding:0;
+  font-family:var(--mono);font-size:16px;font-weight:600}
+input:focus-visible{outline:2px solid var(--gold);outline-offset:3px;border-radius:4px}
+.pills{display:flex;gap:6px;margin:8px 0 0}
+.pills button{flex:1;font:inherit;font-size:12px;font-weight:600;padding:7px 0;border-radius:7px;
+  border:1.5px solid var(--edge);background:#111a2a;color:var(--dim);cursor:pointer}
+.pills button:hover{color:var(--fg);border-color:var(--gold)}
+#buyMsg{font-size:12.5px;line-height:1.5;padding:9px 11px;border-radius:8px;margin:10px 0 0;
+  word-break:break-word}
+#buyMsg.bad{background:var(--badbg);color:var(--bad)}
+#buyMsg.ok{background:var(--okbg);color:var(--ok)}
+#buyMsg.warn{background:var(--warnbg);color:var(--warn)}
+button.cta{width:100%;margin-top:10px;cursor:pointer}
 .leg.out .v{color:var(--baseLt)}
 .swap .arrow{text-align:center;color:var(--dim);font-size:15px;line-height:1}
 /* The two rows that carry a fact rather than an action. Flat, ruled, unpressable. */
@@ -458,24 +474,27 @@ tbody tr:last-child td{border-bottom:0}
 <div class="card" id="buy">
   <div class="hdr"><h2>Buy $SNOOZE</h2><span class="badge warn" id="buyBadge">not deployed</span></div>
   <div class="swap">
-    <div class="leg"><div class="k">you pay</div><div class="v">ETH</div></div>
+    <div class="leg"><label class="k" for="ethIn">you pay</label>
+      <span><input class="v" id="ethIn" inputmode="decimal" autocomplete="off" value="0.05"
+        aria-label="ETH to spend"> <span class="v">ETH</span></span></div>
     <div class="arrow" aria-hidden="true">&darr;</div>
-    <div class="leg out gold"><div class="k">you get</div><div class="v">$SNOOZE</div></div>
+    <div class="leg out gold"><div class="k">you get</div>
+      <div class="v" id="tokOut">&mdash;</div></div>
   </div>
-  <!-- The page explained the mechanism at length and never once said how to do the thing. -->
-  <ol class="howto">
-    <li>Connect a wallet on Base.</li>
-    <li>Check the curve's address in <a class="ext" href="/checker.html">the checker</a>.</li>
-    <li id="buyHow3">Call <code>buy</code> on its Write Contract tab. A plain send reverts.</li>
-  </ol>
+  <div class="pills" id="buyPills" hidden>
+    <button type="button" data-eth="0.01">0.01</button>
+    <button type="button" data-eth="0.05">0.05</button>
+    <button type="button" data-eth="0.1">0.1</button>
+    <button type="button" data-eth="0.5">0.5</button>
+  </div>
+  <button class="cta" id="buyCta" type="button" hidden disabled>Connect a wallet</button>
+  <div id="buyMsg" hidden></div>
   <div class="ca" id="buyCaRow" hidden>
     <span class="k">the curve</span>
     <code class="v" id="buyAddr">not deployed</code>
     <button class="copy" id="buyCopy" type="button">copy</button>
   </div>
-  <a class="cta" id="buyCta" href="#how" hidden>Buy on the curve</a>
-  <p class="tiny dim" style="margin:10px 0 0" id="buyFoot">Nothing is deployed yet. This page
-  reads and never signs.</p>
+  <p class="tiny dim" style="margin:10px 0 0" id="buyFoot">Nothing is deployed yet.</p>
 </div>
 
 <section class="card live" id="live">
@@ -590,6 +609,8 @@ tbody tr:last-child td{border-bottom:0}
 
 <h1 style="margin-top:26px">Tools</h1>
 <p class="sub">Read-only. None of them ask you to sign anything.</p>
+<!-- Still exactly true of the seven tools, and it is the reason they are listed apart from the
+     buy card: the card signs, one call, and nothing else on this site ever does. -->
 <ul class="tools">
   <li><a href="/snooze.html">The dial</a></li>
   <li><a href="/checker.html">Is this the real address?</a></li>
@@ -605,8 +626,10 @@ tbody tr:last-child td{border-bottom:0}
   <p style="color:var(--warn);margin:0 0 10px"><b>Never send to an address you found on a
   page</b> &mdash; not this one either. <a class="ext" href="/checker.html">Check it</a>.</p>
   <p>snoozebear.xyz &middot; Build <span class="mono" id="buildId">2026-09-08a</span>
-  &middot; no analytics, no trackers, no cookies. This page connects and reads, and it does not
-  ask you to sign anything. The README publishes the sha256 of every page under this build tag.</p>
+  &middot; no analytics, no trackers, no cookies. <b>The only thing this site will ever ask you
+  to sign is a buy on the curve above.</b> Never an approval, never a signature for anything
+  else, on any page &mdash; if one asks, it is not us. The README publishes the sha256 of every
+  page under this build tag.</p>
 </div>
 
 <div id="defbox" hidden role="dialog" aria-live="polite" aria-labelledby="defTitle">
@@ -953,67 +976,161 @@ const LAPTOP_CURVE = "";
    contract buys nothing and is the most common way somebody loses money on a launch day. */
 const SNOOZE_CURVE = "0xbb1D2764632F2851c17Ac89deF81A7e752088453";
 const SNOOZE_TOKEN = "0xCafFf33E2972C3F3927Def575Fc7C8ed06eD1d47";
-/* WHERE THE BUY BUTTON GOES, once there is somewhere better than a block explorer to send
-   people. app/index.html is a one-button buy page; it signs, so it can never be served from
-   this origin. The exiled signing page under deploy/ carries the reasoning in its own header,
-   and test/run.mjs enforces it — including by refusing to find that filename anywhere in this
-   file, which is why it is described rather than named. Host app/ on its own domain
-   (app/README.md has the two-minute Vercel recipe) and put that URL here.
-
-   Empty is the honest state: with nothing here the button falls back to the curve's Write
-   Contract tab on Basescan, which is clumsy and real. A URL that 404s would be neither. */
-const BUY_APP = "";
 const GATE_MIN_TEXT = "$SNOOZE";   // set to the real minimum once the curve is deployed
 
 (function(){
   const badge = $("buyBadge"), cta = $("buyCta"), row = $("buyCaRow"), addr = $("buyAddr"),
-        foot = $("buyFoot"), how3 = $("buyHow3");
+        foot = $("buyFoot"), out = $("tokOut"), inp = $("ethIn"), pills = $("buyPills"),
+        note = $("buyMsg");
   if(!badge) return;
-  if(SNOOZE_CURVE){
-    badge.textContent = "live"; badge.className = "badge good";
-    addr.textContent = SNOOZE_CURVE;
-    row.hidden = false;
-    cta.hidden = false;
-    /* The WRITE CONTRACT tab, not the address page, and the difference is the whole feature.
-       One is somewhere to read about a contract; the other is where a person with a wallet and
-       no command line actually calls buy(uint256 minOut, address to) with ETH in the value
-       field. This site never signs — that promise is on all nine pages and test/run.mjs fails
-       the build if any of them breaks it — so the signature happens on an origin the visitor
-       already expects to sign on, rather than here. */
-    cta.href = BUY_APP || ("https://basescan.org/address/" + SNOOZE_CURVE + "#writeContract");
-    cta.rel = "noopener noreferrer";
-    if(BUY_APP){
-      cta.textContent = "Buy $SNOOZE";
-      how3.textContent = "Press Buy. It opens the buy page, which is where you sign.";
-    }
-    /* Still true of THIS page either way, and it is the sentence the whole site rests on.
-       The button leaves the origin; nothing on this one ever asks for a signature. */
-    foot.textContent = "This page reads and never signs.";
-    /* AND THEN THE CURVE CLOSES. buy() is `if (bonded) revert AlreadyBonded()` — the first line
-       of it — so the moment somebody calls bond() this button starts sending people at a
-       function that reverts, which is the worst kind of broken because the page still looks
-       right. One eth_call decides it, and it is read rather than assumed.
 
-       Where it points afterwards is the token's page on an aggregator, not a hardcoded
-       exchange URL: bond() feeds the Uniswap V2 pair the curve's constructor created and burns
-       the LP, so there IS a pool — but a token page shows it by reading the chain, and stays
-       honest if the factory address in config ever changes. */
-    one("eth_call", [{ to: SNOOZE_CURVE, data: "0xe88dc357" }, "latest"]).then(r => {
-      if(!r.ok || typeof r.data !== "string" || r.data.length < 66) return;
-      if(BigInt(r.data.slice(0, 66)) !== 1n) return;
-      badge.textContent = "bonded"; badge.className = "badge";
-      cta.textContent = "See where it trades";
-      cta.href = "https://dexscreener.com/base/" + (SNOOZE_TOKEN || SNOOZE_CURVE);
-      how3.textContent = "The curve has closed. It trades wherever the pool was made.";
-    }).catch(() => {});
-  }else{
+  /* THE ONE CALL THIS SITE SIGNS, and the reason the footer's promise had to be narrowed from
+     "never asks you to sign anything" to "only ever a buy on the curve". The old version sent
+     people to a block explorer's Write Contract tab, which is three clicks, an unnamed tab and
+     a field called minOut — nobody buys a memecoin that way, and a buy button somewhere else
+     is a buy button somewhere a clone can imitate. The narrowed promise is still checkable and
+     still worth something: this page will never ask for an approval, a permit, or a signature
+     for anything but buy(minOut, to) on the address printed beneath it. */
+  const SEL_QUOTE = "0x4beb394c";   // quoteBuy(uint256)      — keccak-checked in test/run-index
+  const SEL_BUY   = "0x7deb6025";   // buy(uint256,address)
+  const SEL_BONDED= "0xe88dc357";   // bonded()
+  const SEL_TOKEN = "0xfc0c546a";   // token()
+
+  const w = v => BigInt(v).toString(16).padStart(64, "0");
+  const addrWord = a => {
+    const h = String(a).replace(/^0x/, "").toLowerCase();
+    if(!/^[0-9a-f]{40}$/.test(h)) throw new Error("not a 20-byte address");
+    return h.padStart(64, "0");
+  };
+  /* Integers, never parseFloat. `parseFloat("0.1") * 1e18` is 1e17 by luck and 0.07 is
+     6999999999999999.9…, and the wallet would show somebody a number they did not type. */
+  const toWei = t => {
+    const x = String(t == null ? "" : t).trim().replace(/,/g, "");
+    if(!/^\d*\.?\d*$/.test(x) || x === "" || x === ".") return null;
+    const [a, b = ""] = x.split(".");
+    return BigInt((a || "0") + (b + "0".repeat(18)).slice(0, 18));
+  };
+  const fmt = (v, places) => {
+    const base = 10n ** 18n;
+    let f = (v % base).toString().padStart(18, "0").slice(0, places).replace(/0+$/, "");
+    return (v / base).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",") + (f ? "." + f : "");
+  };
+  const say = (cls, text) => {
+    if(!text){ note.hidden = true; return; }
+    note.hidden = false; note.className = cls; note.textContent = text;
+  };
+
+  let wallet = null, bonded = false, quote = null;
+  window.__BUYWIDGET = { toWei, fmt, addrWord, w,
+                         SEL: { "quoteBuy(uint256)": SEL_QUOTE, "buy(uint256,address)": SEL_BUY,
+                                "bonded()": SEL_BONDED, "token()": SEL_TOKEN },
+                         setWallet: (a, prov, onBase) => {
+                           wallet = a && prov && onBase ? { addr: a, prov } : null; paint(); } };
+
+  if(!SNOOZE_CURVE){
     badge.textContent = "not deployed"; badge.className = "badge warn";
-    row.hidden = true;
-    // Nothing to buy, so there is nothing for a button to do. A control that goes somewhere
-    // unhelpful is the same false affordance as a card shaped like one — it is removed rather
-    // than pointed at the nearest page.
-    cta.hidden = true;
+    row.hidden = true; cta.hidden = true; pills.hidden = true;
+    inp.disabled = true;
+    return;
   }
+
+  badge.textContent = "live"; badge.className = "badge good";
+  addr.textContent = SNOOZE_CURVE; row.hidden = false;
+  cta.hidden = false; pills.hidden = false;
+  foot.textContent = "1% fee, in ETH. You are protected to 2% under the quote. " +
+                     "Never send ETH straight to the contract — it reverts.";
+
+  /* The claim the card makes, checked instead of asserted: the curve is asked which token it
+     sells, and a curve selling something else is the one thing a copy of this page changes. */
+  one("eth_call", [{ to: SNOOZE_CURVE, data: SEL_TOKEN }, "latest"]).then(r => {
+    if(!r.ok || typeof r.data !== "string" || r.data.length < 66) return;
+    const t = "0x" + r.data.slice(26, 66);
+    if(SNOOZE_TOKEN && t.toLowerCase() !== SNOOZE_TOKEN.toLowerCase()){
+      badge.textContent = "MISMATCH"; badge.className = "badge bad";
+      say("bad", "The curve at " + SNOOZE_CURVE + " sells " + t + ", not the token this page " +
+          "names. Do not buy.");
+      cta.disabled = true; cta.textContent = "Do not buy";
+      quote = null;
+    }
+  }).catch(() => {});
+
+  one("eth_call", [{ to: SNOOZE_CURVE, data: SEL_BONDED }, "latest"]).then(r => {
+    if(!r.ok || typeof r.data !== "string" || r.data.length < 66) return;
+    if(BigInt(r.data.slice(0, 66)) !== 1n) return;
+    /* buy()'s first line is `if (bonded) revert AlreadyBonded()`. After graduation this button
+       would send people at a function that reverts while the card still looked right. */
+    bonded = true;
+    badge.textContent = "bonded"; badge.className = "badge";
+    foot.textContent = "The curve has closed. It graduated into a Uniswap pool and the LP was " +
+                       "burned; $SNOOZE trades there now.";
+    paint();
+  }).catch(() => {});
+
+  async function getQuote(){
+    quote = null;
+    const wei = toWei(inp.value);
+    if(wei === null || wei === 0n || bonded){ out.textContent = "—"; return paint(); }
+    const r = await one("eth_call", [{ to: SNOOZE_CURVE,
+      data: SEL_QUOTE + w(wei) }, "latest"]);
+    if(!r.ok || typeof r.data !== "string" || r.data.length < 66){
+      out.textContent = "—"; return paint();
+    }
+    const tokens = BigInt(r.data.slice(0, 66));
+    quote = tokens === 0n ? null : { wei, tokens };
+    out.textContent = quote ? fmt(tokens, 0) : "—";
+    paint();
+  }
+
+  function paint(){
+    if(bonded){
+      cta.disabled = true; cta.textContent = "The curve has closed"; return;
+    }
+    if(!wallet){ cta.disabled = true; cta.textContent = "Connect a wallet"; return; }
+    if(!quote){ cta.disabled = true; cta.textContent = "Enter an amount"; return; }
+    cta.disabled = false; cta.textContent = "Buy $SNOOZE";
+  }
+
+  async function buy(){
+    await getQuote();
+    if(!wallet || !quote) return;
+    /* A floor at 98% of the quote. Not zero — a zero floor is what lets a sandwich take the
+       whole difference, and this curve has nothing else standing in the way. */
+    const minOut = (quote.tokens * 98n) / 100n;
+    say("warn", "Confirm in your wallet…");
+    let hash;
+    try{
+      hash = await wallet.prov.request({ method: "eth_sendTransaction", params: [{
+        from: wallet.addr, to: SNOOZE_CURVE, value: "0x" + quote.wei.toString(16),
+        data: SEL_BUY + w(minOut) + addrWord(wallet.addr) }] });
+    }catch(e){
+      return say("bad", e && e.code === 4001
+        ? "You declined. Nothing was sent."
+        : "Rejected: " + ((e && (e.message || e.reason)) || "no reason given"));
+    }
+    say("warn", "Sent. Waiting for it to land — " + hash);
+    for(let i = 0; i < 90; i++){
+      const r = await one("eth_getTransactionReceipt", [hash]);
+      const rc = r.ok ? r.data : null;
+      if(rc){
+        if(rc.status !== "0x1")
+          return say("bad", "That transaction failed on chain and the gas is spent. " +
+                     "basescan.org/tx/" + hash);
+        say("ok", "Done. You hold $SNOOZE. basescan.org/tx/" + hash);
+        holdings(wallet.addr);
+        return;
+      }
+      await new Promise(res => setTimeout(res, 2000));
+    }
+    say("warn", "Still pending. It is not lost — follow it at basescan.org/tx/" + hash);
+  }
+
+  let t = null;
+  inp.addEventListener("input", () => { clearTimeout(t); t = setTimeout(getQuote, 320); });
+  pills.querySelectorAll("button").forEach(b =>
+    b.addEventListener("click", () => { inp.value = b.dataset.eth; getQuote(); }));
+  cta.addEventListener("click", buy);
+  getQuote();
+
   const c = $("buyCopy");
   if(c) c.addEventListener("click", async () => {
     // No clipboard permission prompt on a page that has not earned one: fall back to
@@ -1116,6 +1233,10 @@ function ownerView(addr){
                ", not Base. Switch networks before buying anything.");
     ownerView(accts[0]);
     holdings(accts[0]);
+    /* The buy card arms here and nowhere else: it never prompts, and it only signs for a
+       wallet this block already connected, on Base. Off Base it stays disabled rather than
+       offering a transaction that would be sent to a chain with no curve on it. */
+    if(window.__BUYWIDGET) window.__BUYWIDGET.setWallet(accts[0], p, onBase);
   }
   if(btn) btn.addEventListener("click", connect);
   if(usable && p.on) p.on("chainChanged", () => { if(btn && btn.classList.contains("on")) connect(); });
