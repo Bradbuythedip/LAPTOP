@@ -532,7 +532,7 @@ tbody tr:last-child td{border-bottom:0}
     <p>The ETH and the tokens go into a Uniswap pool and the
     <button class="d" data-t="LP tokens" data-d="The receipt for liquidity in a pool. Whoever holds it can pull the money out. Burned means nobody holds it and nobody can.">LP</button>
     goes to the dead address. Nobody picks where it goes, including us.
-    Takes <b>21.6 ETH</b> of buys.</p>
+    Takes <b>3.5 ETH</b> of buys.</p>
   </div></div>
   <div class="step"><div class="n">4</div><div>
     <h3>Nobody dumps more than a fifth a day</h3>
@@ -662,7 +662,7 @@ let triedRelay = false;
    change to this file, which changes its hash, which the README republishes — so the address
    arrives through the same door as everything else rather than out of a config nobody reads. */
 const POOL  = "";     // PooledLaunchBuy
-const TOKEN = "0xCafFf33E2972C3F3927Def575Fc7C8ed06eD1d47";     // Snooze
+const TOKEN = "";     // Snooze
 
 async function post(body, ms = 20000){
   const ctl = new AbortController(), t = setTimeout(() => ctl.abort(), ms);
@@ -807,7 +807,7 @@ function setStats(rows){
    k = E*T with E starting at virtualEth, so the multiple after R real ETH is
    ((E0+R)/E0)^2 — the token side cancels. Identical to priceMultipleBps() in
    contracts/SnoozeCurve.sol, in bps there and as a multiple here, and checked against it. */
-const VIRTUAL_ETH = 10, BOND_AT = 21.622776601683793;
+const VIRTUAL_ETH = 2, BOND_AT = 3.5;
 function priceAt(raised){
   const e = (VIRTUAL_ETH + Math.max(0, raised)) / VIRTUAL_ETH;
   return e * e;
@@ -820,7 +820,7 @@ function showRuleCurve(){
              label:"Price, as a multiple of the opening price, against real ETH bought"});
   setStrap("Arithmetic, not a market. No price data exists yet \u2014 the line is the curve " +
            "the contract runs, and it ends where the LP burns itself.");
-  setAxes("ETH bought: 0 \u2192 21.6", "price: 1\u00d7 \u2192 10\u00d7");
+  setAxes("ETH bought: 0 \u2192 3.5", "price: 1\u00d7 \u2192 7.6\u00d7");
 }
 
 /* Deposited(address indexed who, uint256 amount). Verified against the repo's own keccak in
@@ -1037,8 +1037,8 @@ window.__SNOOZE = { priceAt, POOL, TOKEN };
 const LAPTOP_CURVE = "";
 /* The $SNOOZE curve: the address a buyer sends ETH to. Not the token — a transfer to the token
    contract buys nothing and is the most common way somebody loses money on a launch day. */
-const SNOOZE_CURVE = "0xbb1D2764632F2851c17Ac89deF81A7e752088453";
-const SNOOZE_TOKEN = "0xCafFf33E2972C3F3927Def575Fc7C8ed06eD1d47";
+const SNOOZE_CURVE = "";
+const SNOOZE_TOKEN = "";
 const GATE_MIN_TEXT = "$SNOOZE";   // set to the real minimum once the curve is deployed
 
 (function(){

@@ -89,9 +89,9 @@ const node = http.createServer((req, res) => {
         return { jsonrpc: "2.0", id: m.id, result: wordOf(1234n * 10n ** 18n) };
       // The Live panel's own reads, once it points at the curve rather than at LAPTOP's pool.
       if (call === "0x899b1528")                       // reserveEth()
-        return { jsonrpc: "2.0", id: m.id, result: wordOf(5n * 10n ** 18n) };
+        return { jsonrpc: "2.0", id: m.id, result: wordOf(8n * 10n ** 17n) };
       if (call === "0x485735c8")                       // bondTarget()
-        return { jsonrpc: "2.0", id: m.id, result: wordOf(21622776601683793319n) };
+        return { jsonrpc: "2.0", id: m.id, result: wordOf(3500000000000000000n) };
       if (call === "0x9c533f66")                       // priceMultipleBps()
         return { jsonrpc: "2.0", id: m.id, result: wordOf(22500) };
       if (call === "0x02c7e7af")                       // sold()
@@ -205,7 +205,7 @@ console.log("── the chart draws arithmetic, and says so, until a chain read 
   // actually charges, which is also the only number a buyer is deciding about.
   ok("the x axis is ETH bought, not a date",
      /ETH bought/.test(axes) && !/\bdate|\btime\b/i.test(axes), axes);
-  ok("the y axis is the price multiple", /price: 1/.test(axes) && /10/.test(axes), axes);
+  ok("the y axis is the price multiple", /price: 1/.test(axes) && /7\.6/.test(axes), axes);
   ok("and nothing on the chart claims a sale is burned",
      !/burned on sale|sale burns|burns most/i.test(axes + " " + strap), axes + " " + strap);
 }
@@ -217,9 +217,9 @@ console.log("── the curve is the contract's arithmetic, not a drawing of it"
   // wrong number about the price they are about to pay.
   const at = r => page.evaluate(x => window.__SNOOZE.priceAt(x), r);
   near("nothing bought, nothing moved", await at(0), 1);
-  near("the token side cancels, so E0 alone sets it", await at(10), 4, 1e-12);
-  near("and 21.62 ETH is exactly a 10x, which is where it bonds",
-       await at(21.622776601683793), 10, 1e-9);
+  near("the token side cancels, so E0 alone sets it", await at(2), 4, 1e-12);
+  near("and 3.5 ETH is exactly the 7.5625x where it bonds",
+       await at(3.5), 7.5625, 1e-9);
   ok("it is monotone in the ETH raised",
      (await at(1)) < (await at(5)) && (await at(5)) < (await at(20)));
   ok("and it never goes below where it opened", (await at(-5)) === 1 && (await at(0)) === 1);
@@ -241,7 +241,7 @@ console.log("── the page says what the mechanism is, in as few words as it t
   ok("it says the curve can only pay out what came in",
      /only ever pay out the ETH that came in/i.test(body));
   ok("bonding is described with a number, not a vibe",
-     /21\.6 ETH/.test(body) && /burns itself/i.test(body));
+     /3\.5 ETH/.test(body) && /burns itself/i.test(body));
   // THE CLAIM THAT WOULD HAVE BEEN FALSE. This launch's oracle answers "not ready" forever,
   // so no sale is ever burned — and the page led on a burn, in its headline, its meta
   // description and its chart. tools/publish.mjs now refuses to publish the buy card while
@@ -660,15 +660,15 @@ console.log("── the Live panel is about the token that is live");
      /live · 23% to bond/.test(await txt("#liveBadge")), await txt("#liveBadge"));
   const strap = flat(await txt("#strap"));
   ok("the strap reports what it read rather than arithmetic",
-     /Read from the chain/.test(strap) && /5 ETH in/.test(strap), strap);
+     /Read from the chain/.test(strap) && /0\.8 ETH in/.test(strap), strap);
   ok("and names the price multiple the contract reports", /2\.25×/.test(strap), strap);
   const stats = await page.$$eval(".stat", els =>
     Object.fromEntries(els.map(e => [e.querySelector(".k").textContent,
                                      e.querySelector(".v").textContent])));
   ok("the stats are the curve's, not the other token's",
-     stats["raised"] === "5 ETH" && stats["price"] === "2.25×", JSON.stringify(stats));
+     stats["raised"] === "0.8 ETH" && stats["price"] === "2.25×", JSON.stringify(stats));
   ok("including what is left to bond, which is the number a buyer is deciding about",
-     /16\.62/.test(stats["to bond"] || ""), JSON.stringify(stats));
+     /2\.7/.test(stats["to bond"] || ""), JSON.stringify(stats));
   ok("and how much of the float has gone",
      stats["sold"] === "25.0% of the float", JSON.stringify(stats));
 

@@ -1663,9 +1663,9 @@ window.__SNOOZE = {
       "ownerExempt": true
     },
     "curve": {
-      "virtualEth": "10000000000000000000",
+      "virtualEth": "2000000000000000000",
       "curveSupply": "80000000000000000000000000000000000",
-      "bondTarget": "21622776601683793319",
+      "bondTarget": "3500000000000000000",
       "feeBps": 100,
       "feeTo": "0x4296e9A65582358221EEd0e9A2B4EC94ad4F5929",
       "factory": "0x8909Dc15e40173Ff4699343b6eB8132c65e18eC6",
