@@ -1442,6 +1442,21 @@ ok("solve_pda reproduces a known derivation from the address alone",
 ok("and returns nothing rather than a wrong answer when none fits",
    P.solve_pda(other.address, _real["base_mint"]) == "")
 
+# ── accounts that are VALUES, not derivations
+#
+# A real legacy buy passed a fee_recipient that was not the canonical one, and a trailing
+# account that turned out to be one of Global's eight buyback recipients. Neither is derived
+# from anything, so searching PDA seeds for them finds nothing forever — which is exactly what
+# happened before this existed.
+print("── accounts that are stored in Global rather than derived")
+_gp = P.global_pubkeys(gg)
+ok("every buyback recipient in Global is findable by address",
+   all(_gp.get(a, "").startswith("global.buyback_fee_recipients") for a in BUYBACK), _gp)
+ok("and they keep their position, because which one was used is the question",
+   _gp[BUYBACK[3]] == "global.buyback_fee_recipients[3]", _gp[BUYBACK[3]])
+ok("the fee recipient is labelled too", _gp.get(FEE_RECIP) == "global.fee_recipient")
+ok("an address that is nowhere in Global gets no label", other.address not in _gp)
+
 # ── bonding_curve_v2, which no IDL mentions
 #
 # The deployed program throws 6074, InvalidBondingCurveV2: "bonding_curve_v2 remaining account
