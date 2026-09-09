@@ -87,13 +87,43 @@ transactions under load.
 
 ---
 
-## 5 · Rehearse
+## 5 · The metadata
+
+This is the coin page: the name, the ticker, the picture and the body text. **The create
+instruction writes its URI into the mint and the creator cannot edit it afterwards.** There is
+no later.
+
+`description.txt` in this repo is the copy, so it is reviewable and diffable rather than retyped
+into a shell. Edit it there and pass `@description.txt` — `@` reads a file, which is what you
+want for anything with newlines.
+
+The script refuses to launch without it, and checks the limits that bite:
+
+| field | limit | why |
+| --- | --- | --- |
+| name | **32 bytes** | Metaplex's struct. Over it, truncated on chain, permanently |
+| symbol | **10 bytes** | same |
+| description | must not be empty | it is the page body, and blank reads as a bot launch |
+| website | must not be empty | the only field pointing back at a page you control |
+
+**Bytes, not characters.** An emoji is four, so a name that looks short can be over.
+`Snooze Bear` is 11 bytes and `SNOOZE` is 6 — both fine.
+
+---
+
+## 6 · Rehearse
 
 ```
 python3 pumpfun.py launch \
-  --keypair ~/.snooze/launch.json --mint-keypair ~/.snooze/<ground>.json \
-  --dev-buy 1.0 --name "Snooze Bear" --symbol SNOOZE \
-  --image ./web/snooze.png --website https://snoozebear.xyz \
+  --keypair ~/.snooze/launch.json \
+  --mint-keypair ~/.snooze/<ground>.json \
+  --dev-buy 1.0 \
+  --name "Snooze Bear" \
+  --symbol SNOOZE \
+  --description @description.txt \
+  --image ./web/snooze.png \
+  --website https://snoozebear.xyz \
+  --twitter https://x.com/<your handle> \
   --dry-run
 ```
 
@@ -110,7 +140,7 @@ lookup, or if it spends more than you authorised.
 
 ---
 
-## 6 · Launch
+## 7 · Launch
 
 Same command without `--dry-run`.
 
@@ -121,6 +151,9 @@ cannot put their address on your site. Get it right now or it is wrong forever.
 In order: metadata is pinned → the transaction is built, verified and simulated → **a launch
 record is written to disk before a byte is sent** → it is signed and sent → it waits on the
 **blockhash, not a clock** → it reads back and prints your cost basis and the mint.
+
+Before it uploads, it prints the metadata back at you with byte counts. **Read it.** That is the
+last moment any of it can change.
 
 **Permanent:** the mint address, the metadata URI, the name, the symbol, the creator and the
 dev buy. All of it, in one transaction, with no edit path.
@@ -140,7 +173,7 @@ landed, and that is what `resume` establishes rather than assumes.
 
 ---
 
-## 7 · Publish the contract address
+## 8 · Publish the contract address
 
 ```
 python3 pumpfun.py publish --record ~/.snooze/launch-<mint>.json          # dry run
@@ -162,7 +195,7 @@ canonical page pointing at nothing.
 
 ---
 
-## 8 · Watch
+## 9 · Watch
 
 ```
 python3 pumpfun.py watch <mint> --minutes 5
