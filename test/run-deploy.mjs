@@ -434,10 +434,12 @@ console.log("── the oracle guard, and the difference between refusing and re
 /* ───────────────────────────────────────────────────────── the sequence, actually executed ── */
 console.log("── the sequence, sent into an EVM step by step");
 const { all } = compile(["contracts/SnoozeDeployer.sol", "contracts/Snooze.sol",
-                         "contracts/SnoozeCurve.sol", "contracts/test/SnoozeMocks.sol"]);
+                         "contracts/SnoozeCurve.sol", "contracts/test/SnoozeMocks.sol",
+                         "contracts/test/UniV2Mocks.sol"]);
 const OWNER = CFG.owner.toLowerCase();
 const STRANGER = "0x00000000000000000000000000000000deadbeef";
 const BUYER = "0x00000000000000000000000000000000000000b1";
+const DEAD = "0x000000000000000000000000000000000000dEaD";
 const evm = await createEVM();
 await fund(evm, OWNER, 1000n * E);
 await fund(evm, STRANGER, 1000n * E);
@@ -500,13 +502,29 @@ let state = { chainId: CFG.chainId, owner: CFG.owner, steps: {} };
 const cfg = { ...CFG, oracle: { ...CFG.oracle, choice: "observational", address: ORACLE } };
 const stepsNow = () => buildSteps({ cfg, artifacts: ART, state });
 
+// The venue graduation goes into. On Base these are the real Uniswap V2 factory and WETH,
+// which config.json names and which nothing in this EVM has; so the two minimal mocks stand
+// at addresses of their own, and the launch under test is pointed at them. Deployed by a
+// stranger, because on Base they were.
+const V2F = (await deploy(all.MockV2Factory.evm.bytecode.object, "", { evm, from: STRANGER })).address.toString();
+const WETH = (await deploy(all.MockWETH.evm.bytecode.object, "", { evm, from: STRANGER })).address.toString();
+cfg.curve = { ...cfg.curve, factory: ABI.toChecksum(V2F), weth: ABI.toChecksum(WETH) };
+if (PAGE_LAUNCH) PAGE_LAUNCH.curve = { ...PAGE_LAUNCH.curve, factory: ABI.toChecksum(V2F),
+                                       weth: ABI.toChecksum(WETH) };
+
 {
   const s = stepsNow();
+  // deploy/config.json now names a choice, so the refusal is exercised against a config with
+  // the field emptied rather than against the shipped one. The refusal itself is the thing
+  // being tested — that nothing can be built while nobody has decided — not which value ships.
+  const unchosen = { ...CFG, oracle: { ...CFG.oracle, choice: "", address: "" } };
   ok("step 1 cannot be verified while the oracle is unchosen",
-     !!buildSteps({ cfg: CFG, artifacts: ART, state }).find(x => x.id === "oracle").blocked());
+     !!buildSteps({ cfg: unchosen, artifacts: ART, state }).find(x => x.id === "oracle").blocked());
   ok("and every later step is blocked behind it",
-     buildSteps({ cfg: CFG, artifacts: ART, state })
+     buildSteps({ cfg: unchosen, artifacts: ART, state })
        .filter(x => x.n >= 3).every(x => !!x.blocked()));
+  ok("the shipped config does name one, so a fresh clone is not stuck",
+     !!CFG.oracle.choice, "oracle.choice is empty in deploy/config.json");
   ok("with an oracle chosen but not yet read back, step 2 is ready and step 3 is not",
      !s.find(x => x.id === "deployer").blocked() && !!s.find(x => x.id === "token").blocked(),
      "a chosen oracle is a line in a config file; a verified one answered three calls");
@@ -706,13 +724,18 @@ let SALT, PREDICTED;
 }
 
 /* ---- 5. the curve ---- */
-let CURVE;
+let CURVE, PAIR;
 {
   const step = stepsNow().find(x => x.id === "curve");
   ok("step 5 demands a phrase naming the immutable parameters",
      /immutable/.test(step.confirm) && /fee address/.test(step.confirm), step.confirm);
-  ok("and its irreversible list discloses that bond() is a race",
-     step.irreversible.some(t => /bond\(\) IS PERMISSIONLESS/.test(t)));
+  ok("and its irreversible list names where graduation goes, since nobody can change it",
+     step.irreversible.some(t => /lpTo/.test(t) && /constructor creates the pair/.test(t)),
+     step.irreversible.join(" | ").slice(0, 200));
+  ok("including that the LP is burned when lpTo is the dead address",
+     step.irreversible.some(t => /LP is burned/.test(t)));
+  ok("and that one wallet is exempt from both rules, because that is a choice with a cost",
+     step.irreversible.some(t => /capExempt\(/.test(t)));
 
   const dep = step.txs.find(t => t.key === "deploy").build();
   ok("the deploy transaction goes to the deployer and only the owner may send it",
@@ -725,7 +748,13 @@ let CURVE;
   CURVE = ABI.readAddress(r.raw);
   ok("and the curve landed exactly where addressOf promised before it existed",
      ABI.sameAddress(CURVE, PREDICTED), `${CURVE} vs ${PREDICTED}`);
-  state.steps.curve = { status: "sent", readBack: { address: CURVE } };
+  // What record.mjs 5.deploy does next: ask the curve which pair its constructor created.
+  PAIR = ABI.readAddress((await raw(CURVE, ABI.selector("pair()"), OWNER)).raw);
+  ok("the constructor created the pair, so its address is a fact before the first buy",
+     PAIR && !ABI.sameAddress(PAIR, ABI.ZERO), String(PAIR));
+  const gp = await raw(V2F, ABI.selector("getPair(address,address)") + w(TOKEN) + w(WETH), OWNER);
+  ok("and it is the factory's pair for (token, WETH)", ABI.sameAddress(ABI.readAddress(gp.raw), PAIR));
+  state.steps.curve = { status: "sent", readBack: { address: CURVE, pair: PAIR } };
 
   // The audit's R11: step 2 asserted count() == 0, which is false forever after this point, so
   // a launch that lost its state file after 5.deploy could never re-verify step 2 — and
@@ -843,6 +872,36 @@ let CURVE;
   ok("isPool(curve) is true, which is what switches BOTH rules on", ABI.readBool(isPool.raw));
   ok("capExempt(curve) is true, so the curve can pay buyers out", ABI.readBool(exempt.raw));
 
+  // The two transactions that did not exist before graduation was automatic: the pair the
+  // constructor made has to be a pool on the token, or post-graduation sells are outside
+  // both rules forever once freeze() lands; and the owner's exemption, which is a config
+  // choice and is checked as one.
+  const rp = stepsNow().find(x => x.id === "curve").txs.find(t => t.key === "registerPair");
+  ok("5.registerPair builds once the pair is known", rp.blocked() === null, rp.blocked());
+  const rpTx = rp.build();
+  ok("and it is setPool(pair, true) on the token",
+     ABI.sameAddress(rpTx.to, TOKEN) && rpTx.data.toLowerCase().includes(PAIR.slice(2).toLowerCase()));
+  const rpr = await raw(rpTx.to, rpTx.data, rpTx.from, 0n);
+  ok("registering the pair goes through", rpr.ok, rpr.err);
+  ok("isPool(pair) is true", ABI.readBool((await raw(TOKEN, ABI.selector("isPool(address)") + w(PAIR), OWNER)).raw));
+  const ex = stepsNow().find(x => x.id === "curve").txs.find(t => t.key === "exemptOwner");
+  ok("5.exemptOwner builds when token.ownerExempt is true", ex.blocked() === null, ex.blocked());
+  const exTx = ex.build();
+  const exr = await raw(exTx.to, exTx.data, exTx.from, 0n);
+  ok("exempting the owner goes through", exr.ok, exr.err);
+  ok("capExempt(owner) is true — the one wallet outside both rules",
+     ABI.readBool((await raw(TOKEN, ABI.selector("capExempt(address)") + w(OWNER), OWNER)).raw));
+  ok("and a stranger cannot exempt themselves — setCapExempt reverts NotAdmin",
+     !(await raw(TOKEN, ABI.selector("setCapExempt(address,bool)") + w(STRANGER) + w(1), STRANGER)).ok);
+  {
+    const off = { ...state, steps: state.steps };
+    const cfgOff = { ...cfg, token: { ...cfg.token, ownerExempt: false } };
+    const exOff = buildSteps({ cfg: cfgOff, artifacts: ART, state: off }).find(x => x.id === "curve")
+      .txs.find(t => t.key === "exemptOwner");
+    ok("with ownerExempt false the exemption is refused rather than sent",
+       /ownerExempt is false/.test(exOff.blocked() || ""), exOff.blocked() || "it built");
+  }
+
   const rd = async sig => (await raw(CURVE, ABI.selector(sig), OWNER)).raw;
   ok("feeTo() is the owner", ABI.sameAddress(ABI.readAddress(await rd("feeTo()")), CFG.owner));
   ok("virtualEth() is the configured virtual reserve",
@@ -855,11 +914,11 @@ let CURVE;
   ok(`step 5's own verify block passes on the real curve (${v.list.length} checks)`,
      v.list.every(c => c.ok), v.list.filter(c => !c.ok).map(c => c.name + " " + c.detail).join("; "));
   const pv = await runPageCheck("curve",
-    { token: TOKEN, curve: CURVE, predicted: PREDICTED, salt: SALT, deployer: DEPLOYER });
+    { token: TOKEN, curve: CURVE, predicted: PREDICTED, salt: SALT, deployer: DEPLOYER, pair: PAIR });
   ok(`and so does the page's (${pv.list.length} checks)`,
      pv.list.length > 0 && pv.list.every(c => c.ok),
      pv.list.filter(c => !c.ok).map(c => c.name + " " + c.why).join("; "));
-  markVerified(state, "curve", { address: CURVE });
+  markVerified(state, "curve", { address: CURVE, pair: PAIR });
 }
 
 /* ---- and a buyer who arrives before you get round to verifying ---- */
@@ -879,12 +938,23 @@ console.log("── somebody trades between funding the curve and reading it bac
   const SUP = 1000n * E, FLOAT = 800n * E;
   const t = await deploy(all.Snooze.evm.bytecode.object,
     w(SUP) + w(orcT.address.toString()) + w(CFG.token.dev) + w(0), { evm: evmT, from: OWNER });
+  const fT = (await deploy(all.MockV2Factory.evm.bytecode.object, "", { evm: evmT })).address.toString();
+  const wT = (await deploy(all.MockWETH.evm.bytecode.object, "", { evm: evmT })).address.toString();
   const c = await deploy(all.SnoozeCurve.evm.bytecode.object,
-    [t.address.toString(), 3n * E, FLOAT, 6n * E, 100, OWNER, ABI.ZERO, 0, 0].map(w).join(""),
+    [t.address.toString(), 3n * E, FLOAT, 6n * E, 100, OWNER, ABI.ZERO, 0, 0, fT, wT, DEAD].map(w).join(""),
     { evm: evmT, timestamp: 1000, from: OWNER });
   const T = { evm: evmT, address: t.address }, C = { evm: evmT, address: c.address };
   await call(T, "transfer(address,uint256)", [c.address.toString(), FLOAT], { from: OWNER });
   await call(T, "setPool(address,bool)", [c.address.toString(), 1], { from: OWNER });
+  // The rest of what step 5 now sends, so the verify below is run against a finished step.
+  const pairT = ABI.readAddress((await (async () => {
+    const r = await evmT.runCall({ caller: createAddressFromString(OWNER), to: c.address,
+      gasLimit: 30_000_000n, data: ABI.bytes(ABI.selector("pair()")),
+      block: { header: { number: 1n, timestamp: 1500n } } });
+    return "0x" + ABI.hex(r.execResult.returnValue);
+  })()));
+  await call(T, "setPool(address,bool)", [pairT, 1], { from: OWNER });
+  await call(T, "setCapExempt(address,bool)", [OWNER, 1], { from: OWNER });
   const bought = await call(C, "buy(uint256,address)", [0, BUYER],
                             { from: BUYER, value: E / 10n, timestamp: 2000 });
   ok("a buy lands before anybody has run verify", bought.ok, bought.revert);
@@ -894,10 +964,14 @@ console.log("── somebody trades between funding the curve and reading it bac
     deployer: { status: "verified", readBack: { address: DEPLOYER } },
     token: { status: "verified", readBack: { address: t.address.toString() } },
     salt: { status: "verified", readBack: { predicted: c.address.toString() } },
-    curve: { status: "sent", readBack: { address: c.address.toString() } },
+    curve: { status: "sent", readBack: { address: c.address.toString(), pair: pairT } },
   } };
+  // This EVM has its own venue — the mocks above are in the main one — so the config the
+  // verify block is built from has to name these, or it reads the right values off the curve
+  // and compares them with somebody else's factory.
   const cfgT = { ...cfg, curve: { ...cfg.curve, curveSupply: FLOAT, virtualEth: 3n * E,
-                                  bondTarget: 6n * E, feeTo: cfg.owner },
+                                  bondTarget: 6n * E, feeTo: cfg.owner,
+                                  factory: ABI.toChecksum(fT), weth: ABI.toChecksum(wT) },
                  vanity: { ...cfg.vanity, suffix: c.address.toString().slice(-2) } };
   const step = buildSteps({ cfg: cfgT, artifacts: ART, state: st }).find(x => x.id === "curve");
   const results = {};
@@ -959,8 +1033,10 @@ console.log("── funding after setPool, which is the order that does not reve
   const t = await deploy(all.Snooze.evm.bytecode.object,
     w(SUP) + w(orc3.address.toString()) + w(CFG.token.dev) + w(0), { evm: evm3, from: OWNER });
   const T3 = { evm: evm3, address: t.address };
+  const f3 = (await deploy(all.MockV2Factory.evm.bytecode.object, "", { evm: evm3 })).address.toString();
+  const w3 = (await deploy(all.MockWETH.evm.bytecode.object, "", { evm: evm3 })).address.toString();
   const c = await deploy(all.SnoozeCurve.evm.bytecode.object,
-    [t.address.toString(), 3n * E, FLOAT, 6n * E, 100, OWNER, ABI.ZERO, 0, 0].map(w).join(""),
+    [t.address.toString(), 3n * E, FLOAT, 6n * E, 100, OWNER, ABI.ZERO, 0, 0, f3, w3, DEAD].map(w).join(""),
     { evm: evm3, timestamp: 1000, from: OWNER });
   await call(T3, "setPool(address,bool)", [c.address.toString(), 1], { from: OWNER });
   const whole = await call(T3, "transfer(address,uint256)", [c.address.toString(), FLOAT],
@@ -1057,6 +1133,45 @@ console.log("── the launch this sequence produces is one somebody can trade"
      ABI.readUint(burn.raw) === 5000n, String(ABI.readUint(burn.raw)));
   const active = await raw(TOKEN, ABI.selector("ruleActive()"), BUYER);
   ok("and ruleActive() says the rule is actually in force", ABI.readBool(active.raw));
+  await call({ evm, address: orc.address }, "set(uint256,uint256,bool)", [E, E, 0]);
+
+  // GRADUATION, which used to be the sequence's biggest hole and is now its last measured
+  // step. Real ETH up to the target, then a STRANGER calls bond() — and gets nothing, because
+  // there is nothing to get: the pair was fixed in the constructor and the LP goes to lpTo.
+  const target = CFG.curve.bondTarget;
+  const gross = target * 10_000n / (10_000n - BigInt(CFG.curve.feeBps)) + 10n ** 15n;
+  const big = await raw(CURVE, ABI.selector("buy(uint256,address)") + w(0) + w(BUYER), BUYER, gross, 3100);
+  ok("a buy that crosses the bond target settles", big.ok, big.err);
+  ok("and bondable() is now true", ABI.readBool((await raw(CURVE, ABI.selector("bondable()"), BUYER)).raw));
+  const preview = await raw(CURVE, ABI.selector("bondPreview()"), BUYER);
+  const [ethToPool, tokensToPool] = [ABI.readUint(preview.raw.slice(0, 66)),
+                                     ABI.readUint("0x" + preview.raw.slice(66, 130))];
+  const strangerBefore = await balance(evm, STRANGER);
+  const bonded = await raw(CURVE, ABI.selector("bond()"), STRANGER, 0n, 3200);
+  ok("a stranger may call bond(), and it goes through", bonded.ok, bonded.err);
+  ok("the stranger received no ETH for it", (await balance(evm, STRANGER)) <= strangerBefore);
+  const pairWeth = ABI.readUint((await raw(WETH, ABI.selector("balanceOf(address)") + w(PAIR), BUYER)).raw);
+  ok("the pair holds the whole real reserve as WETH", pairWeth === ethToPool, `${pairWeth} vs ${ethToPool}`);
+  const pairTok = ABI.readUint((await raw(TOKEN, ABI.selector("balanceOf(address)") + w(PAIR), BUYER)).raw);
+  ok("and the seed tokens, at the curve's closing price", pairTok === tokensToPool, `${pairTok} vs ${tokensToPool}`);
+  const lpDead = ABI.readUint((await raw(PAIR, ABI.selector("balanceOf(address)") + w(DEAD), BUYER)).raw);
+  ok("the LP tokens went to the dead address — the LP is burned", lpDead > 0n, String(lpDead));
+  ok("the curve keeps no ETH", (await balance(evm, CURVE)) === 0n);
+  ok("bonded() is true, which is what flips the site's buy button",
+     ABI.readBool((await raw(CURVE, ABI.selector("bonded()"), BUYER)).raw));
+  ok("and the curve is closed", !(await raw(CURVE, ABI.selector("buy(uint256,address)") + w(0) + w(BUYER), BUYER, E, 3300)).ok);
+
+  // The pool is a registered pool, so the rules follow the token there. A holder selling
+  // into it is a transfer INTO isPool — Rule 2 caps it at 20% of the baseline; the owner's
+  // wallet is exempt and moves the lot.
+  const held = ABI.readUint((await raw(TOKEN, ABI.selector("balanceOf(address)") + w(BUYER), BUYER)).raw);
+  const dump = await raw(TOKEN, ABI.selector("transfer(address,uint256)") + w(PAIR) + w(held), BUYER, 0n, 3400);
+  ok("a holder cannot move their whole bag into the pool in one go — Rule 2 caps it", !dump.ok);
+  const fifth = await raw(TOKEN, ABI.selector("transfer(address,uint256)") + w(PAIR) + w(held / 5n), BUYER, 0n, 3400);
+  ok("a fifth goes through", fifth.ok, fifth.err);
+  const ownerHeld = ABI.readUint((await raw(TOKEN, ABI.selector("balanceOf(address)") + w(OWNER), OWNER)).raw);
+  const ownerMove = await raw(TOKEN, ABI.selector("transfer(address,uint256)") + w(PAIR) + w(ownerHeld / 2n), OWNER, 0n, 3400);
+  ok("the exempt owner moves half their bag into the pool in one transaction", ownerMove.ok, ownerMove.err);
 }
 
 /* ─────────────────────────────────────────────────── the page builds the same bytes ──────── */
@@ -1069,12 +1184,13 @@ console.log("── the page's encoder against the scripts', on this launch's re
       .map(([k, v]) => [k, typeof v === "bigint" ? v.toString() : v])),
     vanity: cfg.vanity,
   };
-  const st = { oracle: ORACLE, deployer: DEPLOYER, token: TOKEN, salt: SALT, curve: CURVE };
+  const st = { oracle: ORACLE, deployer: DEPLOYER, token: TOKEN, salt: SALT, curve: CURVE,
+               pair: PAIR };
   const steps = buildSteps({ cfg, artifacts: ART, state });
   const pairs = [];
   for (const step of steps)
     for (const tx of step.txs) pairs.push([`${step.n}.${tx.key}`, step, tx]);
-  ok("every transaction the scripts define has a twin on the page", pairs.length === 8,
+  ok("every transaction the scripts define has a twin on the page", pairs.length === 10,
      String(pairs.length));
   for (const [key, , tx] of pairs) {
     const mine = tx.build();
@@ -1134,8 +1250,10 @@ console.log("── the page's encoder against the scripts', on this launch's re
          page.includes(step.confirm), step.confirm);
   ok("the page carries the never-ready sentence on its face, not in a comment",
      page.includes("Rule 1 never fires") && page.includes("ordinary ERC-20"));
-  ok("and the bond() race, in the list of things that cannot be undone",
-     /bond\(\) is permissionless/i.test(page) && /race/i.test(page));
+  ok("and where graduation goes, in the list of things that cannot be undone",
+     /bond\(\) — permissionless, no argument/.test(page) && /LP is burned forever/.test(page));
+  ok("and that the owner's wallet is the one outside both rules",
+     /capExempt\(owner\) becomes permanent/.test(page));
   for (const item of AFTER_THE_SEQUENCE)
     ok(`the page also carries "${item.title}"`, page.includes(item.title));
 }
@@ -1162,7 +1280,7 @@ console.log("── the page's progress can leave the browser it is trapped in")
     const full = { oracle: "0x" + "aa".repeat(20), deployer: "0x" + "bb".repeat(20),
                    token: "0x" + "cc".repeat(20), salt: "0x" + "01".repeat(32),
                    initCodeHash: "0x" + "02".repeat(32), predicted: "0x" + "dd".repeat(20),
-                   curve: "0x" + "dd".repeat(20),
+                   curve: "0x" + "dd".repeat(20), pair: "0x" + "ef".repeat(20),
                    verified: { oracle: true, deployer: true, token: true },
                    sent: { "oracle.deploy": "0x" + "ee".repeat(32) } };
 
@@ -1200,7 +1318,7 @@ console.log("── the page's progress can leave the browser it is trapped in")
     // Empty is a legitimate record: it is what "I have not started" exports as.
     const blank = P.importProgress(rec({ oracle: null, deployer: null, token: null, salt: null,
                                          initCodeHash: null, predicted: null, curve: null,
-                                         verified: {}, sent: {} }));
+                                         pair: null, verified: {}, sent: {} }));
     ok("a record with nothing in it is accepted, because that is a real state", blank.ok, blank.why);
     // And the two maps are normalised, so a record with an array where an object belongs cannot
     // make ST.verified something the rest of the page indexes into and gets undefined from.
@@ -1649,15 +1767,19 @@ console.log("── the commands themselves: a refusal, never a stack trace");
     const st = path.join(tmp, "nr-state.json"), pg = path.join(tmp, "nr-index.html");
     fs.writeFileSync(st, JSON.stringify({ chainId: nr.chainId, owner: nr.owner,
       steps: { token: verified(TOK5), curve: verified(PROMISED) } }));
-    fs.copyFileSync(path.join(ROOT, "web", "index.html"), pg);
+    // The shipped page no longer makes the claim — that is what the guard was for and the copy
+    // was rewritten. So the page under test has it put BACK, which is the regression this
+    // catches: somebody restoring the old headline over a never-ready launch.
+    fs.writeFileSync(pg, fs.readFileSync(path.join(ROOT, "web", "index.html"), "utf8")
+      .replace("<h1 id=\"how\"", "<h3>Selling into a spike burns</h3><h1 id=\"how\""));
     r = run(["tools/publish.mjs", "--offline"], { SNOOZE_CONFIG: nrPath, SNOOZE_STATE: st, SNOOZE_PAGE: pg });
     ok("publish.mjs refuses to publish Rule 1 copy over a never-ready oracle",
        r.status === 1 && /never fire/.test(r.stderr) && /Selling into a spike burns/.test(r.stderr) && clean(r),
        (r.stderr || r.stdout).slice(0, 300));
-    fs.writeFileSync(pg, fs.readFileSync(pg, "utf8")
-      .replace(/Selling into a spike burns/g, "Selling").replace(/burns most of what you would have taken/g, "x"));
+    fs.copyFileSync(path.join(ROOT, "web", "index.html"), pg);
     r = run(["tools/publish.mjs", "--offline"], { SNOOZE_CONFIG: nrPath, SNOOZE_STATE: st, SNOOZE_PAGE: pg });
-    ok("and proceeds once the copy no longer says it", r.status === 0, (r.stderr || r.stdout).slice(0, 300));
+    ok("and the page as it actually ships passes the same guard", r.status === 0,
+       (r.stderr || r.stdout).slice(0, 300));
   }
 
   /* ---- tools/publish.mjs: the last manual step, made not manual ---- */

@@ -12,7 +12,7 @@
 // contractAddress is null, so "it is on chain" is not the same as "it worked".
 import { context, die, bar, green, dim, pick } from "./lib/run.mjs";
 import { markSent, saveState, stepState, STATE_PATH } from "./lib/state.mjs";
-import { toChecksum, keccakText, sameAddress } from "./lib/abi.mjs";
+import { toChecksum, keccakText, sameAddress, selector, readAddress } from "./lib/abi.mjs";
 
 const [spec, txHash] = process.argv.slice(2).filter(a => !a.startsWith("-"));
 if (!spec || !txHash) die("usage: node deploy/scripts/record.mjs <step>.<tx> <txHash>");
@@ -74,6 +74,14 @@ if (creates && expected && !logged && !r.contractAddress)
       "is not the deployment step 5 sent. Check the hash.");
 const created = r.contractAddress || logged || (creates ? expected : null);
 
+// The curve knows its pair; the sequence does not until it asks. Read here, once, so that
+// 5.registerPair can be built offline from the state file, and read again by verify.mjs 5.
+let pairRead = null;
+if (creates && step.id === "curve" && created) {
+  const pr = await rpc.call(created, selector("pair()"));
+  if (pr.ok) { try { pairRead = readAddress(pr.data); } catch { pairRead = null; } }
+}
+
 // What the receipt can give back to a launch that lost its state file: the salt. SnoozeDeployer
 // emits Deployed(addr, salt, by) with the salt as topic 2, and grind.mjs is gated on step 2
 // verifying, so a lost deploy/launch-state.json after 5.deploy could otherwise never get its
@@ -90,12 +98,15 @@ if (creates && loggedSalt && !stepState(state, "salt").readBack?.salt) {
 }
 if (created) {
   const s = stepState(state, step.id);
-  state.steps[step.id] = { ...s, readBack: { ...(s.readBack || {}), address: created } };
+  state.steps[step.id] = { ...s, readBack: { ...(s.readBack || {}), address: created,
+                                             ...(pairRead ? { pair: pairRead } : {}) } };
   console.log(bar(`step ${step.n}.${txKey}`));
   console.log(`  ${green(r.contractAddress ? "created" : "expected")}  ${toChecksum(created)}` +
               (r.contractAddress ? ""
                 : dim(logged ? "   (from the deployer's Deployed log, and it agrees with the salt)"
                              : "   (from the salt — a call receipt names no address of its own)")));
+  if (pairRead) console.log(`  ${green("pair")}     ${toChecksum(pairRead)}` +
+                            dim("   (the pool the curve's constructor created; 5.registerPair uses it)"));
 } else {
   console.log(bar(`step ${step.n}.${txKey}`));
   console.log(`  ${green("mined")}    ${txHash}`);

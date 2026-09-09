@@ -210,12 +210,18 @@ Read the oracle's verified source yourself; nothing here can do that for you.
 
 ## What the six steps do not cover
 
-- **`bond()` is a race you can lose.** `SnoozeCurve.bond(pool)` is permissionless *and the caller
-  names the destination*. The moment `reserveEth` reaches `bondTarget`, the first stranger to
-  call it receives the whole raise and the pool's token side, at an address they chose. The
-  contract's own comment calls this a real trust edge and says a launchpad is meant to pin the
-  pool — this sequence has no launchpad, so nothing pins it. Nothing in these scripts can prevent
-  it. The fix is a contract change.
+- **Graduation is automatic, and nobody chooses where it goes.** `SnoozeCurve.bond()` is
+  permissionless and takes no argument. The curve's constructor creates the Uniswap V2 pair for
+  (token, WETH) on the factory in `deploy/config.json` before the first buy; `bond()` wraps the
+  raise into WETH, feeds the pair with it and the seed tokens at the curve's closing price, and
+  mints the LP tokens to `curve.lpTo` — the dead address as shipped, so the LP is burned. The
+  first version took `pool` as an argument and handed the whole raise to whoever called first;
+  that is gone. What is still yours to do: **`5.registerPair`** registers the pair as a pool on the
+  token *before* `freeze()`, or sells into it after graduation are outside both rules forever.
+- **One wallet is outside both rules, on purpose, and it is public.** With `token.ownerExempt`
+  true, `5.exemptOwner` sends `setCapExempt(owner, true)`: the owner's wallet sells into a
+  registered pool with no daily cap and no haircut. `capExempt(owner)` reads true on chain
+  forever after `freeze()`, and the site says so rather than letting somebody find it.
 - **A holder cannot sell 100% of a position back to the curve.** Rule 2 stops most of them, and
   it stops them before `quoteSell` is reached: a transfer into the registered curve runs
   `_chargeWindow` first, so a wallet holding exactly what the curve has `sold` reverts with

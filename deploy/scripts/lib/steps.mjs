@@ -59,12 +59,13 @@ export const snoozeArgs = (cfg, oracle) =>
 
 /// SnoozeCurve(address _token, uint256 _virtualEth, uint256 _curveSupply, uint256 _bondTarget,
 ///             uint256 _feeBps, address _feeTo, address _gateToken, uint256 _gateMin,
-///             uint64 _gateUntil)
+///             uint64 _gateUntil, address _factory, address _weth, address _lpTo)
 export const curveArgs = (cfg, token) =>
   addressWord(token) + uintWord(cfg.curve.virtualEth) + uintWord(cfg.curve.curveSupply) +
   uintWord(cfg.curve.bondTarget) + uintWord(cfg.curve.feeBps) + addressWord(cfg.curve.feeTo) +
   addressWord(cfg.curve.gateToken) + uintWord(cfg.curve.gateMin) +
-  uintWord(cfg.curve.gateUntil, 64);
+  uintWord(cfg.curve.gateUntil, 64) + addressWord(cfg.curve.factory) +
+  addressWord(cfg.curve.weth) + addressWord(cfg.curve.lpTo);
 
 /// The exact init code the CREATE2 address is derived from: the contract's own bytecode with
 /// its encoded constructor arguments appended. Change the token address, the fee address, the
@@ -129,6 +130,7 @@ export function buildSteps({ cfg, artifacts, state }) {
   const tokenAddress = readBack("token").address || null;
   const saltRecord = readBack("salt");
   const curveAddress = readBack("curve").address || null;
+  const pairAddress = readBack("curve").pair || null;
 
   const need = (id, why) => isVerified(state, id) ? null
     : `step ${STEP_NUMBER[id]} (${id}) has not been verified yet — ${why}`;
@@ -413,19 +415,38 @@ export function buildSteps({ cfg, artifacts, state }) {
           // agree with what the grinder and grind.mjs each derived on their own.
           precondition: {
             needsChain: "the deployer's own addressOf(salt, initCodeHash) is the third " +
-                        "derivation of the address, and it lives on the chain",
+                        "derivation of the address, and it lives on the chain — and so do " +
+                        "the factory and the WETH the constructor is about to call",
             calls: () => deployerAddress && saltRecord.salt ? [
               { sig: "deployer.addressOf(salt,initHash)", to: deployerAddress,
                 data: selector("addressOf(bytes32,bytes32)") + bytes32Word(saltRecord.salt) +
                       bytes32Word(curveInitCodeHash(artifacts, cfg, tokenAddress)) },
+              // The constructor calls getPair/createPair on the factory and bond() calls
+              // deposit on the WETH. A wrong factory reverts the deploy (cheap); a wrong WETH
+              // reverts graduation with 21 ETH of other people's money inside (not cheap).
+              // Both are read here, before, as the things they claim to be.
+              { sig: "factory.allPairsLength()", to: cfg.curve.factory,
+                data: selector("allPairsLength()") },
+              { sig: "weth.symbol()", to: cfg.curve.weth, data: selector("symbol()") },
             ] : [],
             check: (results) => {
               const onChain = decode(results, "deployer.addressOf(salt,initHash)", readAddress);
               const agrees = onChain !== null && sameAddress(onChain, saltRecord.predicted);
-              return [{ ok: agrees,
-                name: "SnoozeDeployer.addressOf agrees with the salt's promise",
-                detail: onChain === null ? "could not be read"
-                      : agrees ? "" : `the deployer says ${onChain}, step 4 says ${saltRecord.predicted}` }];
+              const pairs = decode(results, "factory.allPairsLength()", readUint);
+              const sym = decode(results, "weth.symbol()", readString);
+              return [
+                { ok: agrees,
+                  name: "SnoozeDeployer.addressOf agrees with the salt's promise",
+                  detail: onChain === null ? "could not be read"
+                        : agrees ? "" : `the deployer says ${onChain}, step 4 says ${saltRecord.predicted}` },
+                { ok: pairs !== null,
+                  name: `the factory at ${toChecksum(cfg.curve.factory)} answers allPairsLength()`,
+                  detail: pairs === null ? "it did not — that is not a Uniswap V2 factory, and the " +
+                          "constructor would revert against it" : `${pairs} pairs` },
+                { ok: sym === "WETH",
+                  name: `the WETH at ${toChecksum(cfg.curve.weth)} calls itself WETH`,
+                  detail: sym === null ? "could not be read" : sym === "WETH" ? "" : `it says "${sym}"` },
+              ];
             },
           },
         },
@@ -522,6 +543,41 @@ export function buildSteps({ cfg, artifacts, state }) {
             },
           },
         },
+        {
+          key: "registerPair",
+          label: "Register the pool the curve made",
+          build: () => ({
+            to: tokenAddress,
+            data: selector("setPool(address,bool)") + addressWord(pairAddress) + uintWord(1),
+            value: "0x0",
+            from: cfg.owner,
+            about: `setPool(${pairAddress}, true) — the Uniswap V2 pair the curve's constructor ` +
+                   "created. Without this, sells into the pool after graduation are outside " +
+                   "both rules forever, because freeze() closes setPool.",
+          }),
+          // The pair's address is read off the curve by record.mjs 5.deploy and verify.mjs 5,
+          // not derived here: deriving it needs the factory's pair init-code hash, which is
+          // one more constant to be wrong about, and the curve already knows.
+          blocked: () => !curveAddress ? "the curve does not exist yet"
+            : !pairAddress ? "the pair's address has not been read off the curve yet — run " +
+                             "record.mjs 5.deploy or verify.mjs 5 first"
+            : null,
+        },
+        {
+          key: "exemptOwner",
+          label: "Exempt the owner's wallet from both rules",
+          build: () => ({
+            to: tokenAddress,
+            data: selector("setCapExempt(address,bool)") + addressWord(cfg.owner) + uintWord(1),
+            value: "0x0",
+            from: cfg.owner,
+            about: `setCapExempt(${toChecksum(cfg.owner)}, true) — this one wallet sells into ` +
+                   "a registered pool with no daily cap and no haircut. Public: capExempt(owner) " +
+                   "reads true on chain forever, and the site says so.",
+          }),
+          blocked: () => cfg.token.ownerExempt ? null
+            : "token.ownerExempt is false in deploy/config.json, so this is not sent",
+        },
       ],
       irreversible: [
         `feeTo = ${toChecksum(cfg.curve.feeTo)} is immutable. There is no setFeeTo: a fee ` +
@@ -534,12 +590,17 @@ export function buildSteps({ cfg, artifacts, state }) {
         "Tokens sent to the curve are the curve's. There is no rescue, sweep or withdraw.",
         "setPool also sets capExempt for the curve, permanently, so the curve can pay buyers " +
         "out. That is required — without it nobody could buy more than 20% of its float a day.",
-        "bond() IS PERMISSIONLESS AND THE CALLER NAMES THE DESTINATION. SnoozeCurve.bond " +
-        "checks only that the target is reached and that `pool` is non-zero, so the first " +
-        `stranger to call it after reserveEth passes ${cfg.curve.bondTarget} wei receives the ` +
-        "whole raise and the pool's token side, at an address they chose. The contract's own " +
-        "comment calls this a real trust edge and says a launchpad is meant to pin the pool; " +
-        "this sequence has no launchpad, so nothing pins it. See AFTER_THE_SEQUENCE.",
+        `factory = ${toChecksum(cfg.curve.factory)}, weth = ${toChecksum(cfg.curve.weth)} and ` +
+        `lpTo = ${toChecksum(cfg.curve.lpTo)} are immutable. The constructor creates the pair; ` +
+        "bond() — permissionless, no argument — feeds it and mints the LP to lpTo. Nobody can " +
+        "point graduation anywhere else, including you." +
+        (sameAddress(cfg.curve.lpTo, "0x000000000000000000000000000000000000dEaD")
+          ? " lpTo is the dead address: the LP is burned, forever, and nobody ever collects the pool's fees."
+          : " lpTo is NOT the dead address: whoever holds the LP can pull the pool's liquidity."),
+        (cfg.token.ownerExempt
+          ? `capExempt(${toChecksum(cfg.owner)}) = true is permanent after freeze(): that one ` +
+            "wallet is outside Rule 2's daily cap and Rule 1's haircut forever, and it is public."
+          : "No wallet is exempt from the rules except the pools themselves."),
       ],
       confirm: "the curve parameters and the fee address are immutable and I have checked them",
       blocked: () => need("salt", "the curve is deployed at the ground address"),
@@ -554,7 +615,8 @@ export function buildSteps({ cfg, artifacts, state }) {
         needsAddress: "the address SnoozeCurve landed at",
         calls: [view("token()"), view("feeTo()"), view("feeBps()"), view("virtualEth()"),
                 view("curveSupply()"), view("bondTarget()"), view("gateToken()"),
-                view("gateMin()"), view("sold()"), view("reserveEth()"), view("bonded()")],
+                view("gateMin()"), view("sold()"), view("reserveEth()"), view("bonded()"),
+                view("factory()"), view("weth()"), view("lpTo()"), view("pair()")],
         // Read on the TOKEN rather than on the curve, so they are described separately. The
         // balance is the one that says the curve can actually settle a trade; the other two
         // are what says the rules are on.
@@ -565,6 +627,14 @@ export function buildSteps({ cfg, artifacts, state }) {
             data: selector("isPool(address)") + addressWord(curveAddress) },
           { sig: "token.capExempt(curve)", to: tokenAddress,
             data: selector("capExempt(address)") + addressWord(curveAddress) },
+          { sig: "token.capExempt(owner)", to: tokenAddress,
+            data: selector("capExempt(address)") + addressWord(cfg.owner) },
+          // The pair, when it is known. Its registration is what puts post-graduation sells
+          // under the rules; read on the token, because that is where the rule lives.
+          ...(pairAddress ? [
+            { sig: "token.isPool(pair)", to: tokenAddress,
+              data: selector("isPool(address)") + addressWord(pairAddress) },
+          ] : []),
         ] : [],
         check: (results, { code, address }) => {
           const c = checks();
@@ -615,9 +685,27 @@ export function buildSteps({ cfg, artifacts, state }) {
                  "isPool(curve) is true, so both Snooze rules are on");
           c.bool(results, "token.capExempt(curve)", true,
                  "capExempt(curve) is true, so the curve can pay buyers out");
+          // Graduation's immutables, read back against the config, and the pair itself.
+          c.addr(results, "factory()", cfg.curve.factory);
+          c.addr(results, "weth()", cfg.curve.weth);
+          c.addr(results, "lpTo()", cfg.curve.lpTo);
+          const pairRead = decode(results, "pair()", readAddress);
+          c.add(pairRead !== null && !sameAddress(pairRead, ZERO),
+                "pair() is an address — the constructor created the pool",
+                pairRead === null ? "could not be read" : pairRead);
+          c.bool(results, "token.isPool(pair)", true,
+                 "isPool(pair) is true, so sells into the pool after graduation are under both rules");
+          c.bool(results, "token.capExempt(owner)", cfg.token.ownerExempt,
+                 cfg.token.ownerExempt
+                   ? "capExempt(owner) is true — the owner's wallet is outside both rules, as configured"
+                   : "capExempt(owner) is false — no wallet is exempt, as configured");
           return c.out;
         },
-        record: (_r, { address }) => ({ address }),
+        // The pair is recorded alongside the address so 5.registerPair can be built offline.
+        record: (results, { address }) => ({
+          address,
+          ...(decode(results, "pair()", readAddress) ? { pair: decode(results, "pair()", readAddress) } : {}),
+        }),
       },
     },
 
@@ -689,15 +777,15 @@ export function buildSteps({ cfg, artifacts, state }) {
 /// one that fails.
 export const AFTER_THE_SEQUENCE = [
   {
-    title: "bond() is a race you can lose",
-    body: "SnoozeCurve.bond(pool) is permissionless and the CALLER chooses where the ETH and " +
-      "the token side go. It becomes callable the instant reserveEth reaches bondTarget, and " +
-      "whoever calls it first takes the raise. Measured against these exact parameters: a " +
-      "stranger calling bond(theirOwnAddress) after the target is crossed receives all of " +
-      "reserveEth and the whole pool allocation. Nothing in these scripts can prevent that — " +
-      "the fix is a contract change that pins `pool` at construction. Until then, either " +
-      "watch for the target yourself and be first, or accept the race, and do not let anyone " +
-      "find out about it after they have bought.",
+    title: "Graduation is automatic, and nobody chooses where it goes",
+    body: "bond() is permissionless and takes no argument. The curve's constructor created the " +
+      "Uniswap V2 pair for (token, WETH) before the first buy; bond() wraps the raise into WETH, " +
+      "feeds the pair with it and the seed tokens at the curve's closing price, and mints the " +
+      "LP tokens to lpTo — the dead address as configured, so the LP is burned. Anyone may call " +
+      "it the moment reserveEth passes bondTarget; all they can do is the one thing it says. " +
+      "The first version of this contract took `pool` as an argument and handed the whole raise " +
+      "to whoever called first. That is gone. Register the pair as a pool (5.registerPair) " +
+      "BEFORE freeze(), or sells into it after graduation are outside both rules forever.",
   },
   {
     title: "Where the supply ends up",

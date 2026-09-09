@@ -27,6 +27,8 @@
     "supply": "100000000000000000000000000000000000",
     "_devBps": "0 keeps 'supply only falls' exactly true. Up to 2000 is a share OF THE HAIRCUT, never of the trade.",
     "devBps": 0,
+    "_ownerExempt": "true sends setCapExempt(owner, true) in step 5, before freeze(): the owner's wallet is then outside Rule 2's 20%/day cap AND Rule 1's haircut when it sells into a registered pool. It is exactly one wallet and it is public — capExempt(owner) reads true on chain forever — so the site says it rather than letting somebody find it. Everybody else's wallet is under both rules. The curve's 1% fee is paid by the seller and goes to fees.curveFeeTo, so at devBps 0 the owner's sells cost the owner nothing net.",
+    "ownerExempt": true,
     "_dev": "What goes in the constructor's `_dev`, which is NOT the same field as fees.snoozeDev. At devBps 0 the dev is paid nothing ever, and LAUNCH.md 3 asks for the zero address here so that anybody reading dev() on chain can see that at a glance — a live-looking address with no cut invites the question. Set this to fees.snoozeDev only if devBps goes above zero; the scripts refuse the combination of a non-zero devBps and a zero dev.",
     "dev": "0x0000000000000000000000000000000000000000"
   },
@@ -58,6 +60,22 @@
     "bondTarget": "21622776601683793319",
     "feeBps": 100,
     "_feeBps": "1%, charged in ETH on the way in and the way out, and paid straight to curveFeeTo. Capped at 500 by the contract.",
+    "_graduation": [
+      "WHERE THE RAISE GOES WHEN THE CURVE BONDS, fixed before the first buy. SnoozeCurve's",
+      "constructor creates the Uniswap V2 pair for (token, WETH) on this factory, and bond()",
+      "feeds that pair and mints its LP tokens to lpTo. Nobody names a destination at call",
+      "time any more — the first version's bond(pool) handed the whole raise to whoever",
+      "called it first. Both addresses are the ones web/checker.html already treats as",
+      "verified on Base, and step 5 reads code at both before the curve is deployed.",
+      "",
+      "lpTo = 0x…dEaD burns the LP forever, which is what 'LP burned' means on every launch",
+      "page that says it. Setting it to the owner instead keeps the pool's 0.3% trading",
+      "fees flowing to you, at the cost of the page no longer being able to say the LP is",
+      "burned. The curve's own 1% fee on buys and sells goes to fees.curveFeeTo either way."
+    ],
+    "factory": "0x8909Dc15e40173Ff4699343b6eB8132c65e18eC6",
+    "weth": "0x4200000000000000000000000000000000000006",
+    "lpTo": "0x000000000000000000000000000000000000dEaD",
     "_curveSupply": "What the curve may sell — 80% of supply. Not the total supply, and the curve never holds the rest. bondPreview()'s leftover is curveSupply/m, so at the m=10 this bondTarget encodes, 8e33 base units (8% of supply) come back to curveFeeTo when it graduates. The other 20% sits in the owner's wallet from block one, under both rules exactly like anybody else's.",
     "curveSupply": "80000000000000000000000000000000000"
   },
@@ -88,7 +106,8 @@
       "observational": "A real, ownerless observation on Base — a V3/Slipstream observe() adapter wrapped in try/catch, or a V2-style cumulative-price adapter you checkpoint. Rule 1 starts working once 24h of history exists. LAUNCH.md 2.1 has what it must satisfy.",
       "never-ready": "A deployed oracle whose ready() is false forever. Legitimate, and it means RULE 1 NEVER FIRES: no sale is ever haircut, at any price, on any day. $SNOOZE is then an ordinary ERC-20 with a 20%/day cap on selling into the curve, and nothing else. deploy/deploy.html says exactly that on its face when this is the choice, rather than in a comment."
     },
-    "choice": "",
+    "_choiceMade": "never-ready: the only oracle this repository can deploy. Rule 1 never fires, and the site says so instead of describing a burn. Change to observational only with a real ownerless oracle address in `address`.",
+    "choice": "never-ready",
     "address": "",
     "_address": "Where the chosen oracle is deployed. Step 1 checks ready(), spot() and twap24() all return without reverting WITH NO HISTORY YET, because that is the state they will be in at the moment of launch."
   },

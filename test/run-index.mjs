@@ -155,26 +155,29 @@ console.log("── the chart draws arithmetic, and says so, until a chain read 
   const paths = await page.$$eval("#chart path", ps => ps.length);
   ok("a line is drawn — an empty frame would teach nothing", paths >= 1, String(paths));
   const axes = flat(await txt(".axis"));
-  ok("the x axis is labelled as a ratio, not as time",
-     /24-hour average/.test(axes) && !/\bdate|\btime\b/i.test(axes), axes);
-  ok("the y axis names what burns", /burned on sale/.test(axes), axes);
+  // It drew Rule 1's haircut, which this launch's oracle makes impossible — a picture of the
+  // most prominent false claim on the page. What it draws now is the price the contract
+  // actually charges, which is also the only number a buyer is deciding about.
+  ok("the x axis is ETH bought, not a date",
+     /ETH bought/.test(axes) && !/\bdate|\btime\b/i.test(axes), axes);
+  ok("the y axis is the price multiple", /price: 1/.test(axes) && /10/.test(axes), axes);
+  ok("and nothing on the chart claims a sale is burned",
+     !/burned on sale|sale burns|burns most/i.test(axes + " " + strap), axes + " " + strap);
 }
 
 console.log("── the curve is the contract's arithmetic, not a drawing of it");
 {
-  // burnBps() in contracts/Snooze.sol: (P - T) / P, zero at or below the average, capped at
-  // 90%. If the page and the contract ever disagree, the page is telling people the wrong
-  // number about their own money.
-  const at = r => page.evaluate(x => window.__SNOOZE.burnAt(x), r);
-  near("at the average, nothing burns", await at(1), 0);
-  near("below the average, nothing burns", await at(0.5), 0);
-  near("a 50% premium burns a third", await at(1.5), 1 / 3, 1e-12);
-  near("double burns half", await at(2), 0.5, 1e-12);
-  near("triple burns two thirds", await at(3), 2 / 3, 1e-12);
-  ok("the cap is 90%, not 100%", (await at(1000)) === 0.9, String(await at(1000)));
-  ok("it never exceeds the cap however extreme the ratio", (await at(1e9)) <= 0.9);
-  ok("it is monotone in the ratio",
-     (await at(1.2)) < (await at(1.6)) && (await at(1.6)) < (await at(2.4)));
+  // priceMultipleBps() in contracts/SnoozeCurve.sol: ((E0+R)/E0)^2, in bps there and as a
+  // multiple here. If the page and the contract disagree, the page is telling people the
+  // wrong number about the price they are about to pay.
+  const at = r => page.evaluate(x => window.__SNOOZE.priceAt(x), r);
+  near("nothing bought, nothing moved", await at(0), 1);
+  near("the token side cancels, so E0 alone sets it", await at(10), 4, 1e-12);
+  near("and 21.62 ETH is exactly a 10x, which is where it bonds",
+       await at(21.622776601683793), 10, 1e-9);
+  ok("it is monotone in the ETH raised",
+     (await at(1)) < (await at(5)) && (await at(5)) < (await at(20)));
+  ok("and it never goes below where it opened", (await at(-5)) === 1 && (await at(0)) === 1);
 }
 
 console.log("── the page says what the mechanism is, in as few words as it takes");
@@ -193,8 +196,17 @@ console.log("── the page says what the mechanism is, in as few words as it t
   ok("it says the curve can only pay out what came in",
      /only ever pay out the ETH that came in/i.test(body));
   ok("bonding is described with a number, not a vibe",
-     /2\.16/.test(body) && /bonds/i.test(body));
-  ok("Rule 1 is stated against the 24-hour average", /24-hour average/i.test(body));
+     /21\.6 ETH/.test(body) && /burns itself/i.test(body));
+  // THE CLAIM THAT WOULD HAVE BEEN FALSE. This launch's oracle answers "not ready" forever,
+  // so no sale is ever burned — and the page led on a burn, in its headline, its meta
+  // description and its chart. tools/publish.mjs now refuses to publish the buy card while
+  // that copy is present; this is the same rule, from the reader's side.
+  ok("the page never promises a burn it cannot deliver",
+     !/spike burns|burns most of what/i.test(body), (body.match(/[^.]*burns[^.]*\./i) || [])[0]);
+  ok("and says outright that nothing is ever burned on a sale",
+     /Nothing is ever burned on a sale/i.test(body));
+  ok("with the reason, which is that the oracle is immutable and never ready",
+     /not ready/i.test(body) && /immutable/i.test(body));
   // "LAPTOP is the first launch on $SNOOZE" was never true — it was invented here and the
   // assertion was holding it up. What the owner actually said is that holding one gets you the
   // other, so that is what is asserted, and the invented version is asserted ABSENT.
@@ -212,8 +224,8 @@ console.log("── the page says what the mechanism is, in as few words as it t
   ok("and it is a snapshot, not a lock", /Nothing is locked and nothing is taken/i.test(body));
   ok("and the dynamic is stated, not just the rule",
      /pays holders, not renters/i.test(body));
-  ok("including that renting the gate is the worst way to use it",
-     /worst way to use it/i.test(body));
+  ok("including that the cap still applies to somebody renting the gate",
+     /cap still holds you to a fifth a day/i.test(body));
   ok("the claim is self-service, because nothing can claim for you",
      /You claim it yourself, from your own wallet/i.test(body));
   // textContent on <body> sweeps up the inline <script> too, which is most of this file and
@@ -230,12 +242,12 @@ console.log("── and what it does not do, which is the part a launch page lea
      /Virtual liquidity is not liquidity/i.test(body));
   ok("and it says what is actually behind the price before bonding",
      /only ETH behind the price is what buyers put in/i.test(body));
-  ok("the burn is named as the buyer's instant loss too",
-     /also your instant loss/i.test(body));
-  ok("a falling market is admitted to burn nothing",
-     /falling market burns nothing/i.test(body));
-  ok("one wallet being outside both rules is on the landing page",
-     /One wallet is outside both rules/i.test(body) && /launcher/i.test(body));
+  ok("the LP being burned is stated as automatic, and as nobody's choice",
+     /LP burns itself/i.test(body) && /Nobody picks where it goes/i.test(body));
+  ok("one wallet skipping the daily cap is on the landing page, and it is named",
+     /One wallet skips the daily cap/i.test(body) && /dev/i.test(body));
+  ok("and so is the 1% the dev takes from every trade",
+     /1% of every buy and every sell goes to the dev/i.test(body));
   ok("and it does not claim the deployer is bound", !/not the deployer/i.test(body));
   ok("most tokens never bonding is stated as normal, not hidden",
      /Most tokens never bond/i.test(body) && /normal outcome/i.test(body));
@@ -293,26 +305,20 @@ console.log("── the first action on the page is the one the owner asked for"
   ok("there is a copy control ready for the address", copy === 1, String(copy));
 }
 
-console.log("── depth costs speed, with the numbers rather than the adjective");
+console.log("── shorter, because the page is for people deciding in a minute");
 {
-  ok("the trade-off is stated as a trade-off", /Depth costs speed/i.test(body));
-  const rows = await page.$$eval("table tbody tr", rs =>
-    rs.map(r => [...r.querySelectorAll("td")].map(c => c.textContent.trim())));
-  ok("three slippage settings are tabulated", rows.length === 3, JSON.stringify(rows));
-  // Against bond_model.py's closed form, not against the copy that quotes it. The count is
-  // ceil((sqrt(10)-1)/x) and E0 is not in it — which is the whole point of the card.
-  for (const r of rows) {
-    const x = Number(String(r[0]).replace("%", "")) / 100;
-    const want = Math.ceil((Math.sqrt(10) - 1) / x);
-    ok(`a ${r[0]} buy needs ceil((sqrt(10)-1)/x) = ${want} of them to bond`,
-       Number(r[1]) === want, `the page says ${r[1]}`);
-    ok(`and the count is identical at 3 and at 25 virtual ETH`,
-       Number(r[2]) === want && Number(r[3]) === want, JSON.stringify(r));
-  }
-  ok("and it says outright that virtual ETH does not buy depth",
-     /does not buy depth/i.test(body));
-  ok("the cliff at graduation is disclosed, since it runs the wrong way",
+  // The depth/slippage table was the least degen thing on the page and the most mechanism per
+  // word: three rows proving a second-order fact about virtual ETH. The numbers still live on
+  // /size.html and /launch.html, and the two sentences worth keeping moved into the honest
+  // list, where somebody reading the risks will actually meet them.
+  ok("the mechanism table is gone from the landing page", !/Depth costs speed/i.test(body));
+  ok("but virtual ETH not buying depth is still said", /does not buy depth/i.test(body));
+  ok("and the cliff at graduation, since it runs the wrong way",
      /worse at bonding/i.test(body));
+  const words = await page.evaluate(() => document.body.innerText.replace(/\s+/g, " ").trim()
+                                            .split(" ").filter(Boolean).length);
+  ok("the whole visible page is well inside the budget, not just under it", words < 620,
+     words + " words");
 }
 
 console.log("── every word that needs defining has one attached to it");
@@ -560,10 +566,14 @@ console.log("── the buy button lands on a buy, and stops when the curve does
   // contract does not support, and this is the assertion that stops one being added back.
   // Read from what a VISITOR sees and where the button goes, not from the source: the comment
   // beside this code says the word "Uniswap" in order to explain why the page must not.
-  const seen = await page.evaluate(() => document.body.innerText);
-  ok("the page never claims a particular exchange, because bond() creates no pool",
-     !/uniswap|aerodrome|sushi/i.test(seen + " " + href2),
-     ((seen + " " + href2).match(/uniswap|aerodrome|sushi/i) || [])[0]);
+  // The page may NAME Uniswap now — bond() really does create the V2 pair, and saying so is a
+  // fact rather than a hope. What must not happen is the button hardcoding a swap URL: where
+  // the token trades is still something to read off the chain, and a token page stays right
+  // if the factory in deploy/config.json ever changes.
+  ok("the bonded button points at the token, not at a hardcoded exchange",
+     href2 === "https://dexscreener.com/base/" + TOKEN_ADDR, href2);
+  ok("and the page says where graduation goes, since it is fixed in the contract",
+     /Uniswap pool/i.test(await page.evaluate(() => document.body.innerText)));
   ok("and the deployed page is still inside the word budget",
      (await page.evaluate(() => document.body.innerText.replace(/\s+/g, " ").trim()
                                   .split(" ").filter(Boolean).length)) < 700,

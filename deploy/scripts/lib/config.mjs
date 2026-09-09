@@ -123,6 +123,17 @@ export function loadConfig(file = CONFIG_PATH) {
   const feeBps = Number(c.feeBps);
   if (!Number.isInteger(feeBps) || feeBps < 0 || feeBps > 500)
     bad("curve.feeBps must be an integer in 0..500 — MAX_FEE_BPS is 500");
+  // Graduation's three fixed addresses. Checksummed like the owner, because a transposed
+  // character in the factory is a constructor that reverts (cheap) but one in lpTo is a pool's
+  // liquidity minted to nobody's wallet (not cheap, not recoverable).
+  for (const k of ["factory", "weth", "lpTo"]) {
+    const v = cfg.curve[k];
+    if (!isAddr(v)) bad(`curve.${k} is not an address`);
+    else if (toChecksum(v) !== v) bad(`curve.${k} fails its EIP-55 checksum — it should be ${toChecksum(v)}`);
+    else if (sameAddress(v, ZERO)) bad(`curve.${k} cannot be the zero address (the constructor reverts BadConfig)`);
+  }
+  if (typeof cfg.token.ownerExempt !== "boolean")
+    bad("token.ownerExempt must be true or false — it decides whether step 5 exempts the owner's wallet from both rules");
   if (feeBps > 0 && !isAddr(cfg.fees.curveFeeTo))
     bad("a non-zero fee needs a feeTo (BadConfig)");
   // Not a contract rule, and the contract cannot check it: the curve is funded by a transfer
@@ -200,8 +211,9 @@ export function loadConfig(file = CONFIG_PATH) {
     chainId: cfg.chainId,
     owner: cfg.owner,
     token: { name: cfg.token.name, symbol: cfg.token.symbol, decimals: cfg.token.decimals,
-             supply, devBps, dev },
+             supply, devBps, dev, ownerExempt: cfg.token.ownerExempt === true },
     curve: { virtualEth, curveSupply, bondTarget, feeBps, feeTo: cfg.fees.curveFeeTo,
+             factory: cfg.curve.factory, weth: cfg.curve.weth, lpTo: cfg.curve.lpTo,
              gateToken, gateMin, gateUntil },
     vanity: { suffix, target, contract: VANITY_TARGETS[target]?.contract || null },
     oracle: { choice: String(cfg.oracle.choice || ""), address: cfg.oracle.address || "",
