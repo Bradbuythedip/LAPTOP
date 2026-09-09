@@ -109,6 +109,16 @@ The script refuses to launch without it, and checks the limits that bite:
 **Bytes, not characters.** An emoji is four, so a name that looks short can be over.
 `Snooze Bear` is 11 bytes and `SNOOZE` is 6 — both fine.
 
+### The image
+
+`web/token.jpg` — 1408×1408, full resolution, pinned to IPFS by the launch.
+
+**Everything the site shows is the same picture**, generated from that one file: the hero, the
+favicon, the link-preview image. That is not tidiness. A buyer who is being careful compares
+the picture on pump.fun to the picture on the site, and two different bears is exactly the
+signal a copycat produces. If you change the artwork, change it here and regenerate the rest —
+do not change one.
+
 ---
 
 ## 6 · Rehearse
@@ -121,7 +131,7 @@ python3 pumpfun.py launch \
   --name "Snooze Bear" \
   --symbol SNOOZE \
   --description @description.txt \
-  --image ./web/snooze.png \
+  --image ./web/token.jpg \
   --website https://snoozebear.xyz \
   --twitter https://x.com/<your handle> \
   --dry-run

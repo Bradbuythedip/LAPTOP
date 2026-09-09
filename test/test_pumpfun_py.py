@@ -306,6 +306,30 @@ ok("LAUNCH.md keeps the launch keypair out of the tree",
 ok("and the ground mint too", "cd ~/.snooze && solana-keygen grind" in LM)
 ok("and says why rather than just where", "scraped in minutes" in LM)
 
+print("── the launch image and the site show the SAME picture")
+LAUNCH_IMG = ROOT / "web" / "token.jpg"
+ok("the launch image exists", LAUNCH_IMG.is_file())
+ok("LAUNCH.md points --image at it", "--image ./web/token.jpg" in (ROOT / "LAUNCH.md").read_text())
+try:
+    from PIL import Image
+except ImportError:
+    # The suite promises "nothing to install", so this one is skipped rather than failed when
+    # Pillow is absent. Everything else here runs on the standard library alone.
+    ok("(pixel comparison skipped — Pillow not installed)", True)
+else:
+    def _sig(path, n=16):
+        im = Image.open(path).convert("RGB").resize((n, n), Image.LANCZOS)
+        return list(im.tobytes())
+    def _diff(a, b):
+        return sum(abs(x - y) for x, y in zip(a, b)) / (len(a) * 255)
+    base = _sig(LAUNCH_IMG)
+    # A CAREFUL BUYER COMPARES THE TWO PICTURES. Two different bears — one on pump.fun, one on
+    # the site — is precisely the signal a copycat produces, so a mismatch here is not cosmetic.
+    for rel in ("web/snooze-512.webp", "web/icon.png", "web/hero.png"):
+        d = _diff(base, _sig(ROOT / rel))
+        ok("%s is the same picture as the launch image" % rel, d < 0.02,
+           "mean pixel difference %.4f — the site and the token would show different art" % d)
+
 print("── the metadata is permanent, so it is checked before it is pinned")
 DESC = (ROOT / "description.txt").read_text().strip()
 ok("the launch copy is in the repo, not in somebody's shell history", DESC != "")

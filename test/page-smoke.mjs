@@ -122,10 +122,11 @@ console.log("── every asset the page references exists");
     const h = fs.readFileSync(path.join(ROOT, "web", f)).subarray(0, 12);
     if (h.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) return "png";
     if (h.subarray(0, 4).toString() === "RIFF" && h.subarray(8, 12).toString() === "WEBP") return "webp";
+    if (h[0] === 0xff && h[1] === 0xd8 && h[2] === 0xff) return "jpg";
     return "?";
   };
   const lying = fs.readdirSync(path.join(ROOT, "web"))
-    .filter(f => /\.(png|webp)$/.test(f))
+    .filter(f => /\.(png|webp|jpg)$/.test(f))
     .filter(f => magic(f) !== f.split(".").pop());
   ok("no image file's extension contradicts its bytes", lying.length === 0,
      "these lie about their format and X-Content-Type-Options is nosniff: " + lying.join(", "));
