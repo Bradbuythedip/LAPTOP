@@ -636,12 +636,42 @@ const ALLOWED_RPC = ["eth_requestAccounts","eth_chainId","eth_getBalance","eth_c
 const SIGNING = /eth_sendTransaction|eth_sendRawTransaction|personal_sign|eth_signTypedData|signTransaction|signMessage|signAndSendTransaction/;
 const decode = t => t.replace(/&mdash;/g, "\u2014").replace(/&ldquo;|&rdquo;/g, '"')
                      .replace(/&middot;/g, "\u00b7").replace(/\s+/g, " ");
+// THE PROMISE NARROWED, deliberately and once. It was "no page on this site ever asks you to
+// sign", which is the strongest anti-clone property a site can have and which the buy button
+// spends: a landing page that cannot buy sends people to a block explorer, and nobody buys
+// that way. So index.html signs, for exactly one call, and every other page keeps the absolute
+// version. What replaces it is still checkable by a visitor — "the only thing this site will
+// ever ask you to sign is a buy on the curve" — and this is what holds the line:
+//
+//   · index.html may send eth_sendTransaction and NOTHING else. No personal_sign, no
+//     eth_signTypedData, no approvals: a page that can ask for a signature over arbitrary data
+//     is a page a phishing clone can imitate exactly.
+//   · The one transaction it builds is buy(uint256,address) on the curve, and the suite proves
+//     that selector against keccak in test/run-index.mjs.
+//   · The other eight pages are unchanged and still say so.
+const SIGNS = new Set(["index.html"]);
+const BROAD_SIGNING = /personal_sign|eth_signTypedData|signTransaction|signMessage|signAndSendTransaction|eth_sendRawTransaction/;
 for (const f of pages) {
   const t = decode(fs.readFileSync(path.join(ROOT, "web", f), "utf8"));
+  const raw = fs.readFileSync(path.join(ROOT, "web", f), "utf8");
+  if (SIGNS.has(f)) {
+    ok(`${f} says exactly what it will and will not ask you to sign`,
+       /only thing this site will ever ask you to sign is a buy/i.test(t) &&
+       /if one asks, it is not us/i.test(t),
+       "the narrowed promise is missing or worded differently");
+    ok(`${f} sends a transaction, which is why it needs the narrower promise`,
+       /eth_sendTransaction/.test(raw));
+    ok(`${f} asks for no signature over arbitrary data, only that transaction`,
+       !BROAD_SIGNING.test(raw), `found ${(raw.match(BROAD_SIGNING) || [])[0]}`);
+    ok(`${f} builds only one call, and it is a buy on the curve`,
+       (raw.match(/eth_sendTransaction/g) || []).length === 1 &&
+       /SEL_BUY\s*=\s*"0x7deb6025"/.test(raw) &&
+       /to: SNOOZE_CURVE, value:/.test(raw));
+    continue;
+  }
   ok(`${f} says it does not ask you to sign`,
      /does not ask you to sign anything/i.test(t),
      "the connect-and-read promise is missing or worded differently");
-  const raw = fs.readFileSync(path.join(ROOT, "web", f), "utf8");
   ok(`${f} contains no signing or sending method`, !SIGNING.test(raw),
      `found ${(raw.match(SIGNING) || [])[0]}`);
   const methods = [...new Set(raw.match(/\beth_[a-zA-Z]+/g) || [])];

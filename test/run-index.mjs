@@ -10,6 +10,7 @@
 // The launch-day path is tested too, by serving a copy of the page with the pool address
 // filled in against a mock node. That code has to work the first time it ever runs.
 import { chromium } from "playwright";
+import * as ABI from "../deploy/scripts/lib/abi.mjs";
 import http from "node:http";
 import fs from "node:fs";
 import path from "node:path";
@@ -28,7 +29,18 @@ const POOL_ADDR = "0x00000000000000000000000000000000000000aa";
 // honestly empty until a launch happens, and the deployed path is the one that has to work.
 const CURVE_ADDR = "0x99c793b2EDfC5e9C64d5978Aed8f8CF0C64a8453";
 const TOKEN_ADDR = "0xA8303A4338Ad29B25D8c8cAAA7d296fdF23E4445";
-let BONDED = false;
+let BONDED = false, MISMATCH = false;
+// THE PAGE UNDER TEST IS THE PRE-LAUNCH ONE, always, whatever has actually launched. Half of
+// this suite asserts what a visitor sees while nothing is deployed — "not deployed" badges, a
+// hidden contract row, no button — and the other half asserts the deployed path through
+// ?curve=1. Once web/index.html carries real addresses the first half tests a page that no
+// longer exists and fails, which is what happened the hour after the launch. So the served
+// default is blanked and the deployed state is the query parameter, both derived from the one
+// real file so a change to it still reaches both.
+const BLANK = SRC
+  .replace(/^const SNOOZE_CURVE = "[^"]*";/m, 'const SNOOZE_CURVE = "";')
+  .replace(/^const SNOOZE_TOKEN = "[^"]*";/m, 'const SNOOZE_TOKEN = "";')
+  .replace(/^const TOKEN = "[^"]*";/m, 'const TOKEN = "";');
 
 // A node that answers the three reads this page makes, and nothing else. `logs` is swapped
 // between scenarios so the same page can be driven through every state it has.
@@ -64,9 +76,17 @@ const node = http.createServer((req, res) => {
       }
       // The one call the buy card makes. Everything else still refuses, so a page that starts
       // reading something new fails here rather than quietly getting a zero word back.
-      if (m.method === "eth_call" && m.params && m.params[0] && m.params[0].data === "0xe88dc357")
+      // The three the buy card reads. Everything else still refuses, so a card that starts
+      // reading something new fails here rather than quietly getting a zero word back.
+      const call = m.method === "eth_call" && m.params && m.params[0] ? m.params[0].data : "";
+      const wordOf = (v) => "0x" + BigInt(v).toString(16).padStart(64, "0");
+      if (call === "0xe88dc357")                       // bonded()
+        return { jsonrpc: "2.0", id: m.id, result: wordOf(BONDED ? 1 : 0) };
+      if (call === "0xfc0c546a")                       // token()
         return { jsonrpc: "2.0", id: m.id,
-                 result: "0x" + (BONDED ? "1" : "0").padStart(64, "0") };
+                 result: wordOf(BigInt(MISMATCH ? "0x" + "de".repeat(20) : TOKEN_ADDR)) };
+      if (call.startsWith("0x4beb394c"))               // quoteBuy(uint256)
+        return { jsonrpc: "2.0", id: m.id, result: wordOf(1234n * 10n ** 18n) };
       return { jsonrpc: "2.0", id: m.id, error: { code: -32601, message: "not allowed here" } };
     };
     res.writeHead(200, { "content-type": "application/json", ...CORS });
@@ -84,12 +104,16 @@ const site = http.createServer((req, res) => {
   const f = path.join(ROOT, "web", rel === "/" ? "index.html" : rel.replace(/^\//, ""));
   if (rel === "/" && u.searchParams.get("pool")) {
     res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
-    return res.end(SRC.replace('const POOL  = "";', `const POOL  = "${POOL_ADDR}";`));
+    return res.end(BLANK.replace('const POOL  = "";', `const POOL  = "${POOL_ADDR}";`));
   }
   if (rel === "/" && u.searchParams.get("curve")) {
     res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
-    return res.end(SRC.replace('const SNOOZE_CURVE = "";', `const SNOOZE_CURVE = "${CURVE_ADDR}";`)
-                      .replace('const SNOOZE_TOKEN = "";', `const SNOOZE_TOKEN = "${TOKEN_ADDR}";`));
+    return res.end(BLANK.replace('const SNOOZE_CURVE = "";', `const SNOOZE_CURVE = "${CURVE_ADDR}";`)
+                        .replace('const SNOOZE_TOKEN = "";', `const SNOOZE_TOKEN = "${TOKEN_ADDR}";`));
+  }
+  if (rel === "/" || rel === "/index.html") {
+    res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+    return res.end(BLANK);
   }
   const target = (!fs.existsSync(f) && f.endsWith("bg.png"))
     ? path.join(ROOT, "test", "fixture-bg.png") : f;
@@ -131,15 +155,25 @@ console.log("── it holds no custody and reaches nothing it should not");
   const off = requests.filter(u => !u.startsWith(SITE) && !u.startsWith(NODE));
   ok("no third-party origin is contacted", off.length === 0, off.join(", "));
   ok("no external script or stylesheet", !/<script[^>]+src=|<link[^>]+stylesheet/i.test(SRC));
-  ok("no signing, sending or approval method anywhere",
-     !/eth_sendTransaction|eth_sendRawTransaction|personal_sign|eth_signTypedData|signTransaction|signMessage|signAndSendTransaction/.test(SRC));
+  // THE ONE EXCEPTION, and it is one method and one call. This page sends a transaction now,
+  // because a landing page that cannot buy sends people to a block explorer and nobody buys
+  // that way. What it must never grow is a way to ask for a signature over ARBITRARY data —
+  // personal_sign and eth_signTypedData are what a drainer needs, and a page that has them is
+  // a page a clone can imitate exactly. So the send is allowed by name and nothing else is.
+  ok("no signature over arbitrary data, ever — which is what a drainer would need",
+     !/eth_sendRawTransaction|personal_sign|eth_signTypedData|signTransaction|signMessage|signAndSendTransaction/.test(SRC));
+  ok("and exactly one place that sends a transaction",
+     (SRC.match(/eth_sendTransaction/g) || []).length === 1);
   const methods = [...new Set(SRC.match(/\beth_[a-zA-Z]+/g) || [])];
   const ALLOWED = ["eth_chainId", "eth_blockNumber", "eth_getLogs", "eth_call",
                    "eth_requestAccounts", "eth_accounts", "eth_getBalance", "eth_getCode",
-                   "eth_getStorageAt"];
-  ok("names only methods in the read set", methods.every(m => ALLOWED.includes(m)),
+                   "eth_getStorageAt", "eth_sendTransaction", "eth_getTransactionReceipt"];
+  ok("names only methods in the read set, plus the buy and its receipt",
+     methods.every(m => ALLOWED.includes(m)),
      methods.filter(m => !ALLOWED.includes(m)).join(","));
-  ok("it says it does not ask you to sign", body.includes("does not ask you to sign anything"));
+  ok("it says exactly what it will ask you to sign, and what it never will",
+     /only thing this site will ever ask you to sign is a buy/i.test(body) &&
+     /if one asks, it is not us/i.test(body), body.slice(-260));
 }
 
 console.log("── the chart draws arithmetic, and says so, until a chain read says otherwise");
@@ -285,8 +319,10 @@ console.log("── the first action on the page is the one the owner asked for"
   ok("the hero's primary action is Buy $SNOOZE", cta === "#buy|Buy $SNOOZE", cta);
   ok("and the first card sells the same thing the first button does",
      /Buy \$SNOOZE/.test(await page.$eval("#buy h2", e => e.textContent)));
-  ok("and it says how, which is the question the mechanism copy never answered",
-     (await page.$$eval("#buy .howto li", els => els.length)) >= 3);
+  // It used to answer "how" with a numbered list pointing at a block explorer. The answer is
+  // now the card itself: a field, a quote and a button.
+  ok("and it does the thing rather than explaining how to do it elsewhere",
+     (await page.$$eval("#buy input, #buy button", els => els.length)) >= 3);
   ok("the contract row is hidden while there is no contract",
      await page.isHidden("#buyCaRow"));
   // One word for one state. The page used to carry three — "not launched" in the buy card,
@@ -526,60 +562,116 @@ console.log("── the launch-day path, driven before launch day");
   ok("the address is now shown", (await txt("#poolAddr")).toLowerCase() === POOL_ADDR);
 }
 
-console.log("── the buy button lands on a buy, and stops when the curve does");
+console.log("── the buy card is a buy button, and it stops when the curve does");
 {
-  // What "tradable at snoozebear.xyz" comes down to, given that no page here may ever sign:
-  // the button has to put a person on the exact screen where their own wallet can call buy().
-  // It used to link to the contract's Basescan ADDRESS page, which is a place to read about a
-  // contract and not a place to buy anything — three clicks and a tab nobody names away from
-  // the thing the card is for.
-  BONDED = false;
+  // The site used to send people to a block explorer's Write Contract tab — three clicks, an
+  // unnamed tab, and a field called minOut. Nobody buys a memecoin that way. The card signs
+  // now, which is why the footer's promise had to narrow from "never asks you to sign" to
+  // "only ever a buy on the curve"; test/run.mjs holds that line. This holds the other half:
+  // the button works, quotes off the chain, and refuses when it should.
+  BONDED = false; MISMATCH = false;
   await load("?curve=1");
-  const cta = await page.$("#buyCta");
-  ok("the buy button is shown once the curve exists", !(await cta.evaluate(e => e.hidden)));
-  const href = await cta.getAttribute("href");
-  ok("and it lands on the Write Contract tab, not the address page",
-     href === "https://basescan.org/address/" + CURVE_ADDR + "#writeContract", href);
-  ok("the card names the tab the button lands on, so the two agree",
-     /Write Contract/.test(await txt("#buyHow3")), await txt("#buyHow3"));
-  ok("and it still says a plain send reverts, which is how people lose money here",
-     /plain send reverts/.test(await txt("#buyHow3")));
   ok("the badge says the curve is live", (await txt("#buyBadge")) === "live");
-  ok("and the footer stops saying nothing is deployed",
-     !/Nothing is deployed/.test(await txt("#buyFoot")), await txt("#buyFoot"));
+  ok("the buy button is shown once the curve exists",
+     !(await page.$eval("#buyCta", e => e.hidden)));
+  ok("and it is a button, not a link to somewhere else",
+     (await page.$eval("#buyCta", e => e.tagName)) === "BUTTON");
+  ok("the amount is a field you type in, prefilled with something sane",
+     (await page.$eval("#ethIn", e => e.value)) === "0.05");
+  ok("with shortcuts, because most people press rather than type",
+     (await page.$$eval("#buyPills button", els => els.map(e => e.dataset.eth))).join(",")
+       === "0.01,0.05,0.1,0.5");
+  ok("the quote comes off the chain before anybody connects, because a price is a read",
+     (await txt("#tokOut")) === "1,234", await txt("#tokOut"));
+  ok("but it will not arm without a wallet", await page.$eval("#buyCta", e => e.disabled));
+  ok("and says so rather than looking broken",
+     (await txt("#buyCta")) === "Connect a wallet", await txt("#buyCta"));
+  ok("the fee and the floor are on the card, not buried",
+     /1% fee/.test(await txt("#buyFoot")) && /2% under the quote/.test(await txt("#buyFoot")),
+     await txt("#buyFoot"));
+  ok("and the way people lose money here is the last thing it says",
+     /Never send ETH straight to the contract/.test(await txt("#buyFoot")));
+  ok("the contract row is shown, because the address is the thing to check",
+     !(await page.$eval("#buyCaRow", e => e.hidden)) &&
+     (await txt("#buyAddr")).toLowerCase() === CURVE_ADDR.toLowerCase());
+  await page.fill("#ethIn", "");
+  await page.waitForTimeout(700);
+  ok("an empty field is not a quote of zero", (await txt("#tokOut")) === "—", await txt("#tokOut"));
+  ok("and the button says what is missing", (await txt("#buyCta")) === "Connect a wallet");
 
-  // buy() is `if (bonded) revert AlreadyBonded()` on its first line. After bond() the button
-  // above sends people at a function that reverts while the page still looks correct, which is
-  // the worst kind of broken.
+  // buy()'s first line is `if (bonded) revert AlreadyBonded()`. After graduation this button
+  // would send people at a function that reverts while the card still looked correct.
   BONDED = true;
   await load("?curve=1");
   ok("once the curve has bonded the badge says so", (await txt("#buyBadge")) === "bonded");
-  const href2 = await page.$eval("#buyCta", e => e.getAttribute("href"));
-  ok("and the button stops pointing at a buy() that now reverts",
-     !/#writeContract/.test(href2), href2);
-  ok("it points at the token, wherever the token trades",
-     href2 === "https://dexscreener.com/base/" + TOKEN_ADDR, href2);
-  const how = await txt("#buyHow3");
-  ok("and the card says the curve has closed", /curve has closed/i.test(how), how);
-  // bond(pool) hands the ETH and the tokens to an address the CALLER names and creates no pool
-  // of anything — contracts/SnoozeCurve.sol:290. So naming a venue here would be a claim the
-  // contract does not support, and this is the assertion that stops one being added back.
-  // Read from what a VISITOR sees and where the button goes, not from the source: the comment
-  // beside this code says the word "Uniswap" in order to explain why the page must not.
-  // The page may NAME Uniswap now — bond() really does create the V2 pair, and saying so is a
-  // fact rather than a hope. What must not happen is the button hardcoding a swap URL: where
-  // the token trades is still something to read off the chain, and a token page stays right
-  // if the factory in deploy/config.json ever changes.
-  ok("the bonded button points at the token, not at a hardcoded exchange",
-     href2 === "https://dexscreener.com/base/" + TOKEN_ADDR, href2);
-  ok("and the page says where graduation goes, since it is fixed in the contract",
+  ok("and the button stops offering a buy that would now revert",
+     (await page.$eval("#buyCta", e => e.disabled)) &&
+     (await txt("#buyCta")) === "The curve has closed", await txt("#buyCta"));
+  ok("and the card says where the liquidity went",
+     /Uniswap pool and the LP was burned/.test(await txt("#buyFoot")), await txt("#buyFoot"));
+  ok("the page names Uniswap only because bond() really does create that pair",
      /Uniswap pool/i.test(await page.evaluate(() => document.body.innerText)));
+  BONDED = false;
+
+  // The one thing a copy of this page would change.
+  MISMATCH = true;
+  await load("?curve=1");
+  ok("a curve selling a different token is refused rather than sold",
+     (await txt("#buyBadge")) === "MISMATCH", await txt("#buyBadge"));
+  ok("and the reason is on screen, with the button dead",
+     /Do not buy/.test(await txt("#buyMsg")) && (await page.$eval("#buyCta", e => e.disabled)));
+  MISMATCH = false;
+
+  await load("?curve=1");
   ok("and the deployed page is still inside the word budget",
      (await page.evaluate(() => document.body.innerText.replace(/\s+/g, " ").trim()
                                   .split(" ").filter(Boolean).length)) < 700,
      await page.evaluate(() => document.body.innerText.replace(/\s+/g, " ").trim()
                                  .split(" ").filter(Boolean).length) + " words");
-  BONDED = false;
+  // The launched page is the pre-launch page plus three addresses, which is what makes blanking
+  // it a fair substitute for the pre-launch state rather than a different page.
+  ok("blanking the three constants is the only difference between the two states",
+     BLANK.replace(/const (SNOOZE_CURVE|SNOOZE_TOKEN|TOKEN) = "";/g, "X").length ===
+     SRC.replace(/const (SNOOZE_CURVE|SNOOZE_TOKEN|TOKEN) = "[^"]*";/g, "X").length);
+}
+
+console.log("── the bytes the card would ask a stranger to sign");
+{
+  // The only thing in this repository that asks a stranger for a signature that spends their
+  // money, so the parts deciding WHAT gets signed are lifted out and run against keccak.
+  await load("?curve=1");
+  const B = await page.evaluate(() => {
+    const W = window.__BUYWIDGET;
+    const tryShort = () => { try { W.addrWord("0x4296e9A65582358221EEd0e9A2B4EC94ad4F592");
+                                   return "accepted"; } catch(e){ return "refused"; } };
+    return { SEL: W.SEL,
+             addr: W.addrWord("0x4296e9A65582358221EEd0e9A2B4EC94ad4F5929"),
+             wei: ["0.1", "0.07", "1.005", "2", ".5", "1,000", "0.1234567890123456789",
+                   "", ".", "abc", "1.2.3", "-1", "1e18"]
+                    .map(x => { const v = W.toWei(x); return v === null ? null : v.toString(); }),
+             fmt: [W.fmt(10n ** 17n, 4), W.fmt(1234567n * 10n ** 18n, 0)],
+             short: tryShort() };
+  });
+  const wrong = Object.entries(B.SEL).filter(([sig, sel]) => ABI.selector(sig) !== sel);
+  ok(`all ${Object.keys(B.SEL).length} selectors the card hardcodes are keccak of their signature`,
+     wrong.length === 0,
+     wrong.map(([s, v]) => `${s}: page ${v}, keccak ${ABI.selector(s)}`).join("; "));
+  ok("an address encodes exactly as deploy/scripts/lib/abi.mjs encodes it",
+     B.addr === ABI.addressWord("0x4296e9A65582358221EEd0e9A2B4EC94ad4F5929"), B.addr);
+  ok("and a 39-character address is refused rather than padded into a different one",
+     B.short === "refused");
+  // Every one of these is a number parseFloat gets wrong, on the field that decides what a
+  // wallet is about to be asked to spend.
+  const want = ["100000000000000000", "70000000000000000", "1005000000000000000",
+                "2000000000000000000", "500000000000000000", "1000000000000000000000",
+                "123456789012345678", null, null, null, null, null, null];
+  const labels = ["0.1", "0.07", "1.005", "2", ".5", "1,000", "18 decimals and more",
+                  "empty", "a lone point", "letters", "two points", "negative", "exponent"];
+  for (let i = 0; i < want.length; i++)
+    ok(`"${labels[i]}" ${want[i] === null ? "is refused, not turned into a number" : "is exactly " + want[i] + " wei"}`,
+       B.wei[i] === want[i], `got ${B.wei[i]}`);
+  ok("and the number shown back is the number, grouped so it can be read",
+     B.fmt[0] === "0.1" && B.fmt[1] === "1,234,567", B.fmt.join(" / "));
 }
 
 console.log("── one deposit is not a trend, and a refusing node is not zero interest");
@@ -627,6 +719,13 @@ console.log("── it never shows a stale number when a read fails");
   LOGS = [];
   node.close();
   await load("?pool=1");
+  // load() returns as soon as the chart has ANY mode, and showRuleCurve() sets "arithmetic"
+  // before a single read is attempted. That was close enough while the page made one request
+  // on load; the buy card makes three more, and against a closed node each one waits out its
+  // own failure first, so the error path landed after this block had already read an empty
+  // box and called it a missing message. Waited for rather than slept on.
+  await page.waitForFunction(() => window.__CHART && window.__CHART.mode === "error",
+                             { timeout: 15000 }).catch(() => {});
   const c = await page.evaluate(() => ({ ...window.__CHART }));
   ok("an unreachable node produces no market series", c.marketSeries.length === 0, c.mode);
   const e = flat(await txt("#chartEmpty"));
