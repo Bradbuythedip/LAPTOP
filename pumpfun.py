@@ -974,11 +974,16 @@ PUMP_PUBLISHED = {
 # is being asked to DO: a buy discriminator arriving at an address that is not pump.fun's means
 # something is reimplementing pump.fun's interface, which is worth knowing before signing.
 _PUMP_IX = (
-    "buy sell create create_v2 buy_v2 sell_v2 buy_exact_sol_in sell_exact_sol_out "
-    "buy_exact_quote_in_v2 sell_exact_quote_out extend_account migrate migrate_v2 "
-    "initialize set_params withdraw_fees collect_creator_fee collect_creator_fee_v2 "
-    "init_user_volume_accumulator close_user_volume_accumulator claim_cashback "
-    "claim_cashback_v2 claim_token_incentives add_quote_mint remove_quote_mint"
+    "add_quote_mint admin_set_creator admin_set_idl_authority admin_update_token_incentives "
+    "buy buy_exact_quote_in_v2 buy_exact_sol_in buy_v2 claim_cashback claim_cashback_v2 "
+    "claim_token_incentives close_user_volume_accumulator collect_creator_fee "
+    "collect_creator_fee_v2 create create_v2 distribute_creator_fees "
+    "distribute_creator_fees_v2 extend_account get_minimum_distributable_fee "
+    "init_user_volume_accumulator initialize migrate migrate_bonding_curve_creator migrate_v2 "
+    "remove_quote_mint sell sell_v2 set_creator set_mayhem_virtual_params set_metaplex_creator "
+    "set_params set_reserved_fee_recipients set_virtual_quote_reserves "
+    "sync_user_volume_accumulator toggle_cashback_enabled toggle_create_v2 toggle_mayhem_mode "
+    "update_buyback_config update_global_authority"
 ).split()
 DISCRIMINATORS = {
     hashlib.sha256(("global:" + n).encode()).digest()[:8].hex(): n for n in _PUMP_IX
@@ -2599,13 +2604,12 @@ def known_buy_accounts(mint: str, user: str, g: dict) -> dict:
     }
 
 
-def _pump_buys_in(tx) -> list:
-    """Every pump.fun buy in a transaction, top-level or reached through a CPI.
+def _pump_instructions_in(tx) -> list:
+    """Every pump.fun instruction in a transaction, top-level or reached through a CPI.
 
-    Inner instructions matter more than top-level ones here. The buy that started all of this
-    was addressed to a router, with pump.fun's own buy underneath it as a CPI — which is how
-    most volume on this program arrives. A scan that only reads top-level instructions sees
-    routers and concludes there are no buys.
+    Inner instructions matter more than top-level ones here. Most volume on this program
+    arrives underneath a router, so a scan that reads only top-level instructions sees
+    routers and reports that nothing is happening.
     """
     msg = tx["transaction"]["message"]
     loaded = (tx.get("meta") or {}).get("loadedAddresses") or {}
@@ -2613,64 +2617,61 @@ def _pump_buys_in(tx) -> list:
     # what an instruction's indices mean.
     keys = (list(msg.get("accountKeys", []))
             + list(loaded.get("writable", [])) + list(loaded.get("readonly", [])))
-    found = []
+    out = []
 
     def look(ix, where):
         try:
             prog = keys[ix["programIdIndex"]]
             data = b58decode(ix["data"])
+            accs = [keys[i] for i in ix["accounts"]]
         except Exception:
             return
-        if prog == PUMP_PROGRAM and data[:8] == DISC_BUY:
-            try:
-                found.append(([keys[i] for i in ix["accounts"]], where))
-            except IndexError:
-                pass
+        if prog == PUMP_PROGRAM and len(data) >= 8:
+            out.append({"disc": data[:8].hex(), "accounts": accs, "data": data, "where": where})
 
     for ix in msg.get("instructions", []):
         look(ix, "top level")
     for group in (tx.get("meta") or {}).get("innerInstructions", []) or []:
         for ix in group.get("instructions", []):
             look(ix, "CPI under instruction %d" % group.get("index", -1))
-    return found
+    return out
 
 
 def cmd_trace(args):
-    """Read a real, successful buy off the chain and print the accounts it actually passed.
+    """What pump.fun is ACTUALLY being asked to do, read off the chain.
 
-    THIS IS THE COMMAND THAT SHOULD HAVE EXISTED FIRST. Four required accounts were found by
-    deriving from a published IDL, sending, and reading the error — a loop that only works
-    when the IDL is right, and pump.fun's is four months behind the deployed program in both
-    the repo and the on-chain copy. Meanwhile thousands of buys succeed on this program every
-    hour, and each one is a complete, authoritative statement of what the program accepts.
+    THIS SHOULD HAVE EXISTED FIRST. Four required accounts were found by deriving from a
+    published IDL, sending, and reading the error — a loop that only works when the IDL
+    matches the program, and pump.fun's does not, in the repo or in the copy the program
+    stores about itself. Then a scan for the `buy` instruction across 41 successful
+    transactions found none at all, which is the more useful fact: the legacy instruction is
+    not what anybody calls any more, so no amount of patching its account list was going to
+    converge.
 
-    So: take a working transaction, print its buy instruction's accounts in order, name the
-    ones this script can already derive, and show what is left. The leftovers are the answer.
-
-    Defaults to scanning the PROGRAM's recent transactions rather than one token's curve. A
-    single token may have one transaction in it and no buys; the program has thousands an
-    hour and is the thing being asked about.
+    So this counts what IS called, by discriminator, and then prints the accounts one real
+    instance passed. A census first, because the question "which instruction should I be
+    building" has to be answered before "what accounts does it take".
     """
     rpc = Rpc()
     g = read_global(rpc)
     if args.signature:
-        sigs = [args.signature]
-        source = "the transaction you named"
+        sigs, source = [args.signature], "the transaction you named"
     elif args.mint:
         bc = find_program_address([b"bonding-curve", b58decode(args.mint)], PUMP_PROGRAM)
-        source = "the bonding curve of %s (%s)" % (args.mint, bc)
-        got = rpc.send("getSignaturesForAddress", [bc, {"limit": args.limit}])
-        sigs = [x["signature"] for x in got if not x.get("err")]
+        source = "the bonding curve of %s" % args.mint
+        sigs = [x["signature"] for x in
+                rpc.send("getSignaturesForAddress", [bc, {"limit": args.limit}])
+                if not x.get("err")]
     else:
         source = "pump.fun's own recent transactions"
-        got = rpc.send("getSignaturesForAddress", [PUMP_PROGRAM, {"limit": args.limit}])
-        sigs = [x["signature"] for x in got if not x.get("err")]
+        sigs = [x["signature"] for x in
+                rpc.send("getSignaturesForAddress", [PUMP_PROGRAM, {"limit": args.limit}])
+                if not x.get("err")]
     print("\n  looking at %s" % source)
     if not sigs:
         raise RuntimeError("no successful transactions found there")
-    print("  %d successful transaction(s) to check" % len(sigs))
 
-    checked = 0
+    seen, examples, checked = {}, {}, 0
     for sig in sigs:
         tx = rpc.send("getTransaction",
                       [sig, {"encoding": "json", "maxSupportedTransactionVersion": 0,
@@ -2678,38 +2679,58 @@ def cmd_trace(args):
         if not tx or (tx.get("meta") or {}).get("err"):
             continue
         checked += 1
-        for accs, where in _pump_buys_in(tx):
-            mint = accs[2] if len(accs) > 2 else None
-            user = accs[6] if len(accs) > 6 else None
-            print("\n  signature  %s" % sig)
-            print("  found      a pump.fun buy, %s" % where)
-            print("  mint       %s" % mint)
-            print("  buyer      %s" % user)
-            print("  it passed %d accounts:" % len(accs))
-            known = known_buy_accounts(mint, user, g) if mint and user else {}
-            unknown = []
-            for n, a in enumerate(accs):
-                label = known.get(a, "")
-                if not label:
-                    unknown.append((n, a))
-                print("    %2d. %-44s %s" % (n, a, label or "?  NOT ONE THIS SCRIPT DERIVES"))
-            if unknown and mint:
-                print("\n  the accounts this script cannot name, and what they might be:")
-                for n, a in unknown:
-                    hit = ""
-                    for name, seeds in BCV2_CANDIDATES:
-                        if find_program_address(seeds(mint), PUMP_PROGRAM) == a:
-                            hit = 'PDA["%s", mint]' % name
-                            break
-                    print("    %2d. %s  %s" % (n, a, hit or "no candidate seed matches"))
-            elif mint:
-                print("\n  every account is one this script already derives.")
-            print()
-            return 0
-    raise RuntimeError(
-        "checked %d successful transaction(s) and none contained a pump.fun buy, at the top\n"
-        "  level or under a CPI. Try a larger --limit, or --mint a token that is actively\n"
-        "  trading right now." % checked)
+        for ix in _pump_instructions_in(tx):
+            seen[ix["disc"]] = seen.get(ix["disc"], 0) + 1
+            examples.setdefault(ix["disc"], (sig, ix))
+    if not seen:
+        raise RuntimeError(
+            "checked %d successful transaction(s) and none invoked pump.fun at all, at the\n"
+            "  top level or under a CPI. Try a larger --limit." % checked)
+
+    print("  %d transaction(s) checked. What they asked pump.fun to do:" % checked)
+    for disc, n in sorted(seen.items(), key=lambda kv: -kv[1]):
+        name = DISCRIMINATORS.get(disc, "(not an instruction any published IDL names)")
+        print("    %4d x  %-16s %s" % (n, disc, name))
+
+    want = args.instruction
+    if want:
+        pick = next((d for d in seen if DISCRIMINATORS.get(d) == want), None)
+        if pick is None:
+            raise RuntimeError("no transaction here called %r" % want)
+    else:
+        # Default to the busiest instruction that buys something.
+        buyish = [d for d in seen if (DISCRIMINATORS.get(d) or "").startswith("buy")]
+        pick = max(buyish or seen, key=lambda d: seen[d])
+
+    sig, ix = examples[pick]
+    accs = ix["accounts"]
+    name = DISCRIMINATORS.get(pick, pick)
+    print("\n  one real %s, %s" % (name, ix["where"]))
+    print("  signature  %s" % sig)
+    print("  data       %d bytes" % len(ix["data"]))
+    print("  it passed %d accounts:" % len(accs))
+    # A buy names its mint and buyer at fixed positions; anything else, do not pretend to.
+    mint = accs[2] if name.startswith("buy") and len(accs) > 2 else None
+    user = accs[6] if name == "buy" and len(accs) > 6 else (
+        accs[13] if name == "buy_v2" and len(accs) > 13 else None)
+    known = known_buy_accounts(mint, user, g) if mint and user else {}
+    unknown = []
+    for n, a in enumerate(accs):
+        label = known.get(a, "")
+        if not label:
+            unknown.append((n, a))
+        print("    %2d. %-44s %s" % (n, a, label or "?"))
+    if mint and unknown:
+        print("\n  the ones this script cannot name, and what they might be:")
+        for n, a in unknown:
+            hit = ""
+            for cand, seeds in BCV2_CANDIDATES:
+                if find_program_address(seeds(mint), PUMP_PROGRAM) == a:
+                    hit = 'PDA["%s", mint]' % cand
+                    break
+            print("    %2d. %s  %s" % (n, a, hit or "no candidate seed matches"))
+    print()
+    return 0
 
 
 def cmd_program(args):
@@ -3087,6 +3108,7 @@ def build_parser():
     s.add_argument("--mint", help="any pump.fun token that is currently trading")
     s.add_argument("--signature", help="a specific transaction instead")
     s.add_argument("--limit", type=int, default=60)
+    s.add_argument("--instruction", help="show this one instead of the busiest buy")
     s.set_defaults(fn=cmd_trace)
     s = sub.add_parser("idl", help="a program's IDL, read from the chain rather than a repo")
     s.add_argument("address")
