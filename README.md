@@ -79,7 +79,7 @@ file and opening it locally removes the hosting party from the trust question en
 Published build `2026-09-08a`:
 
 ```
-sha256(web/index.html)   = 23b5345ca543845838a6eb3ac448b5d035bfdc4733ebd27ad71936500d941f31
+sha256(web/index.html)   = ee5db1979174f7949f7874f9ae6f35ec38606ffa755131fef6434b13e761131e
 sha256(web/buy.html)     = 3cd6f11114f5f0cbf9696d4153c5349a4c6999326db3e932c185c476f045e8b7
 sha256(web/checker.html) = 42bdeb0c23f1c05b576f1da1da4eb1dda1ce8b4997cb3e69f6d4899e9907e3bf
 sha256(web/size.html)    = 02a2028a2536c5d9764fe38c85e43c02ec3cd7587122b6e462ab0414c304b5f3
@@ -96,7 +96,7 @@ sha256(web/snooze.html)  = 774fc77328903db238f4e99862360ad71b1463a0d411728dd3640
 sh test/run-all.sh         # everything below, no network touched
 ```
 
-**2191 assertions across twenty-four suites.**
+**2192 assertions across twenty-four suites.**
 
 `test/run.mjs` — 376, drives the real page in Chromium against `test/mock-rpc.mjs`: Keccak vectors,
 the four EIP-55 reference addresses, the v4 poolId derivation checked against a real Base pool
@@ -124,7 +124,7 @@ of the JavaScript, plus properties a size curve lives or dies on: output rises w
 effective price strictly worsens, a fee costs exactly its rate at the limit, deeper liquidity
 fills better, and no fill can exceed the output-side virtual reserve. Emits the fixture below.
 
-`test/run-index.mjs` — 183, drives the $SNOOZE landing page. Most of it is about one
+`test/run-index.mjs` — 184, drives the $SNOOZE landing page. Most of it is about one
 distinction: a plot of a FORMULA and a plot of a MARKET look identical from three feet away, so
 the suite asserts which one is on screen. With nothing deployed the chart shows Rule 1 itself —
 exact, checkable against `burnBps()` in the contract, labelled *this is arithmetic, not a

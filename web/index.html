@@ -639,7 +639,7 @@ let triedRelay = false;
    change to this file, which changes its hash, which the README republishes — so the address
    arrives through the same door as everything else rather than out of a config nobody reads. */
 const POOL  = "";     // PooledLaunchBuy
-const TOKEN = "";     // Snooze
+const TOKEN = "0xCafFf33E2972C3F3927Def575Fc7C8ed06eD1d47";     // Snooze
 
 async function post(body, ms = 20000){
   const ctl = new AbortController(), t = setTimeout(() => ctl.abort(), ms);
@@ -951,8 +951,8 @@ window.__SNOOZE = { priceAt, POOL, TOKEN };
 const LAPTOP_CURVE = "";
 /* The $SNOOZE curve: the address a buyer sends ETH to. Not the token — a transfer to the token
    contract buys nothing and is the most common way somebody loses money on a launch day. */
-const SNOOZE_CURVE = "";
-const SNOOZE_TOKEN = "";
+const SNOOZE_CURVE = "0xbb1D2764632F2851c17Ac89deF81A7e752088453";
+const SNOOZE_TOKEN = "0xCafFf33E2972C3F3927Def575Fc7C8ed06eD1d47";
 /* WHERE THE BUY BUTTON GOES, once there is somewhere better than a block explorer to send
    people. app/index.html is a one-button buy page; it signs, so it can never be served from
    this origin. The exiled signing page under deploy/ carries the reasoning in its own header,

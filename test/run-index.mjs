@@ -29,6 +29,17 @@ const POOL_ADDR = "0x00000000000000000000000000000000000000aa";
 const CURVE_ADDR = "0x99c793b2EDfC5e9C64d5978Aed8f8CF0C64a8453";
 const TOKEN_ADDR = "0xA8303A4338Ad29B25D8c8cAAA7d296fdF23E4445";
 let BONDED = false;
+// THE PAGE UNDER TEST IS THE PRE-LAUNCH ONE, always, whatever has actually launched. Half of
+// this suite asserts what a visitor sees while nothing is deployed — "not deployed" badges, a
+// hidden contract row, no button — and the other half asserts the deployed path through
+// ?curve=1. Once web/index.html carries real addresses the first half tests a page that no
+// longer exists and fails, which is what happened the hour after the launch. So the served
+// default is blanked and the deployed state is the query parameter, both derived from the one
+// real file so a change to it still reaches both.
+const BLANK = SRC
+  .replace(/^const SNOOZE_CURVE = "[^"]*";/m, 'const SNOOZE_CURVE = "";')
+  .replace(/^const SNOOZE_TOKEN = "[^"]*";/m, 'const SNOOZE_TOKEN = "";')
+  .replace(/^const TOKEN = "[^"]*";/m, 'const TOKEN = "";');
 
 // A node that answers the three reads this page makes, and nothing else. `logs` is swapped
 // between scenarios so the same page can be driven through every state it has.
@@ -84,12 +95,16 @@ const site = http.createServer((req, res) => {
   const f = path.join(ROOT, "web", rel === "/" ? "index.html" : rel.replace(/^\//, ""));
   if (rel === "/" && u.searchParams.get("pool")) {
     res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
-    return res.end(SRC.replace('const POOL  = "";', `const POOL  = "${POOL_ADDR}";`));
+    return res.end(BLANK.replace('const POOL  = "";', `const POOL  = "${POOL_ADDR}";`));
   }
   if (rel === "/" && u.searchParams.get("curve")) {
     res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
-    return res.end(SRC.replace('const SNOOZE_CURVE = "";', `const SNOOZE_CURVE = "${CURVE_ADDR}";`)
-                      .replace('const SNOOZE_TOKEN = "";', `const SNOOZE_TOKEN = "${TOKEN_ADDR}";`));
+    return res.end(BLANK.replace('const SNOOZE_CURVE = "";', `const SNOOZE_CURVE = "${CURVE_ADDR}";`)
+                        .replace('const SNOOZE_TOKEN = "";', `const SNOOZE_TOKEN = "${TOKEN_ADDR}";`));
+  }
+  if (rel === "/" || rel === "/index.html") {
+    res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+    return res.end(BLANK);
   }
   const target = (!fs.existsSync(f) && f.endsWith("bg.png"))
     ? path.join(ROOT, "test", "fixture-bg.png") : f;
@@ -544,8 +559,13 @@ console.log("── the buy button lands on a buy, and stops when the curve does
   // and a link to a domain nobody has set up would be neither. Setting BUY_APP swaps it.
   ok("that is the FALLBACK, and the page says so rather than leaving it a mystery",
      /Empty is the honest state/.test(SRC) && /const BUY_APP = "";/.test(SRC));
+  // And the launched page still is the pre-launch page plus addresses, which is what makes
+  // blanking it a fair substitute rather than a different page.
+  ok("blanking the three constants is the only difference between the two states",
+     BLANK.replace(/const (SNOOZE_CURVE|SNOOZE_TOKEN|TOKEN) = "";/g, "X").length ===
+     SRC.replace(/const (SNOOZE_CURVE|SNOOZE_TOKEN|TOKEN) = "[^"]*";/g, "X").length);
   {
-    const withApp = SRC.replace('const BUY_APP = "";', 'const BUY_APP = "https://buy.example";')
+    const withApp = BLANK.replace('const BUY_APP = "";', 'const BUY_APP = "https://buy.example";')
                        .replace('const SNOOZE_CURVE = "";', `const SNOOZE_CURVE = "${CURVE_ADDR}";`)
                        .replace('const SNOOZE_TOKEN = "";', `const SNOOZE_TOKEN = "${TOKEN_ADDR}";`);
     const p2 = await ctx.newPage();
