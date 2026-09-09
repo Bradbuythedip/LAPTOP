@@ -727,6 +727,55 @@ let CURVE;
      ABI.sameAddress(CURVE, PREDICTED), `${CURVE} vs ${PREDICTED}`);
   state.steps.curve = { status: "sent", readBack: { address: CURVE } };
 
+  // The audit's R11: step 2 asserted count() == 0, which is false forever after this point, so
+  // a launch that lost its state file after 5.deploy could never re-verify step 2 — and
+  // grind.mjs is gated on step 2, so the salt could never be recovered. State-aware now.
+  {
+    const s2 = stepsNow().find(x => x.id === "deployer");
+    const again = await runStepCheck(s2, DEPLOYER);
+    ok("step 2 still verifies after the curve has been deployed from it",
+       again.list.every(c => c.ok), again.list.filter(c => !c.ok).map(c => c.name + " " + c.detail).join("; "));
+    ok("and it now says count() is 1, which is what the chain says",
+       again.list.some(c => /count\(\) is 1/.test(c.name)));
+  }
+
+  // The audit's C10: three files said step 5 reads the address off the chain by calling
+  // addressOf, and nothing did. It is a precondition on 5.deploy now, so the deployer's own
+  // derivation is read BEFORE the send rather than enforced by a revert at spend time.
+  {
+    const dep5 = stepsNow().find(x => x.id === "curve").txs.find(t => t.key === "deploy");
+    ok("5.deploy carries a chain precondition", !!dep5.precondition && /addressOf/.test(dep5.precondition.needsChain));
+    const results = {};
+    for (const c of dep5.precondition.calls()) {
+      const r = await raw(c.to, c.data, OWNER);
+      results[c.sig] = r.ok ? { ok: true, data: r.raw } : { ok: false, error: r.err };
+    }
+    const list = dep5.precondition.check(results);
+    ok("and the deployer's addressOf agrees with the salt's promise, read off the chain",
+       list.every(c => c.ok), list.map(c => c.name + " " + c.detail).join("; "));
+    // A salt record that promises somewhere else is caught by this read, before any send.
+    const lying = { ...state, steps: { ...state.steps, salt: { ...state.steps.salt,
+      readBack: { ...state.steps.salt.readBack, predicted: "0x" + "ab".repeat(20) } } } };
+    const dep5b = buildSteps({ cfg, artifacts: ART, state: lying }).find(x => x.id === "curve")
+      .txs.find(t => t.key === "deploy");
+    const bad = dep5b.precondition.check(results);
+    ok("and a promise the deployer does not agree with fails it", bad.some(c => !c.ok),
+       "the wrong address would have been sent to");
+  }
+
+  // The audit's R3, the one that sends 80% of the supply to the wrong contract: the funding
+  // transfer used to be gated on the curve's address being KNOWN, and a wrong hash pasted at
+  // record.mjs 5.deploy makes some address known. Now it has to be the salt's promise.
+  {
+    const wrong = { ...state, steps: { ...state.steps, curve: { status: "sent", readBack: { address: TOKEN } } } };
+    const fund = buildSteps({ cfg, artifacts: ART, state: wrong }).find(x => x.id === "curve")
+      .txs.find(t => t.key === "fund");
+    ok("5.fund refuses when the recorded curve is not the address the salt promised",
+       /not the address the salt promised/.test(fund.blocked() || ""), fund.blocked() || "it would have built");
+    const right = stepsNow().find(x => x.id === "curve").txs.find(t => t.key === "fund");
+    ok("and builds when it is", right.blocked() === null, right.blocked());
+  }
+
   // The precondition that encodes the ordering. Funding must come first: once isPool[curve] is
   // true, a transfer into the curve is a sell.
   const reg = stepsNow().find(x => x.id === "curve").txs.find(t => t.key === "register");
@@ -1166,6 +1215,32 @@ console.log("── the page's progress can leave the browser it is trapped in")
   }
 }
 
+/* ───────────────────────────────────── the one address a paste can silently corrupt ─────── */
+// R9. The owner was checksum-checked; the oracle address was checked only when mixed-case, so
+// an all-lower-case paste — which carries no checksum at all — went through with any two
+// characters transposed. It is the field that becomes immutable in step 3.
+console.log("── the oracle address has to arrive checksummed");
+{
+  // An address whose checksum actually has upper-case letters in it — all-digit hex has no
+  // case to carry a checksum, so "0x1234…" would have passed lower-cased for the wrong reason.
+  const good = ABI.toChecksum("0x" + "abcdef1234".repeat(4));
+  const tmpCfg = path.join(ROOT, "deploy", ".test-oracle.json");
+  const withOracle = (address) => {
+    const raw = JSON.parse(R("deploy/config.json"));
+    raw.oracle.choice = "observational"; raw.oracle.address = address;
+    fs.writeFileSync(tmpCfg, JSON.stringify(raw));
+    return loadConfig(tmpCfg).problems;
+  };
+  ok("the checksummed form is accepted", withOracle(good).length === 0, withOracle(good).join("; "));
+  const lower = withOracle(good.toLowerCase());
+  ok("the same address in lower case is refused, and the refusal says why",
+     lower.some(p => /checksummed form/.test(p) && /no checksum/.test(p)), lower.join("; "));
+  const swapped = good.toLowerCase().replace(/^0x(.)(.)/, "0x$2$1");
+  ok("and so is a lower-case address with two characters transposed — the paste this exists for",
+     withOracle(swapped).length > 0);
+  fs.unlinkSync(tmpCfg);
+}
+
 /* ──────────────────────────────── every address, before the wallet has spent anything ────── */
 // deploy/scripts/predict.mjs makes one claim: all four addresses are knowable in advance, so a
 // contract address can go on a Dexscreener submission or a pinned post days before a wei is
@@ -1290,12 +1365,19 @@ console.log("── the commands themselves: a refusal, never a stack trace");
   // block existed.
   const { spawnSync } = await import("node:child_process");
   const tmp = path.join(ROOT, "deploy", ".test-cli");
+  // Cleared first: a run killed part-way leaves this folder behind (it is gitignored now, C18),
+  // and a stale predicted.json in it made "nothing was written" false on the next run.
+  fs.rmSync(tmp, { recursive: true, force: true });
   fs.mkdirSync(tmp, { recursive: true });
   const cfgPath = path.join(tmp, "config.json");
   const statePath = path.join(tmp, "state.json");
   const raw = JSON.parse(R("deploy/config.json"));
   raw.oracle.choice = "observational";
-  raw.oracle.address = "0x00000000000000000000000000000000000000aa";
+  // Checksummed, because config.mjs now refuses a lower-case oracle address outright — the
+  // one field that becomes immutable in step 3 and the only one where a transposition in a
+  // lower-cased paste is undetectable. The fixture used to be all lower case, which is
+  // exactly the paste the rule exists to stop.
+  raw.oracle.address = ABI.toChecksum("0x00000000000000000000000000000000000000aa");
   fs.writeFileSync(cfgPath, JSON.stringify(raw, null, 2));
 
   const run = (args, extraEnv = {}) => spawnSync(process.execPath, args, {
@@ -1455,6 +1537,128 @@ console.log("── the commands themselves: a refusal, never a stack trace");
      r.stdout.includes(ABI.toChecksum(ABI.createAddress(raw.owner, 5))) &&
      /deployed and verified/.test(r.stdout), (r.stderr || r.stdout).slice(0, 400));
   fs.rmSync(statePath, { force: true });
+
+  /* ---- a node in a box, so record.mjs and build.mjs can be run against a receipt of my choosing ---- */
+  // The refusal that matters most in this file cannot be reached without an endpoint: record.mjs
+  // reads a receipt and decides what to write down. So here is an endpoint, answering exactly
+  // what the test says and nothing else.
+  //
+  // A SEPARATE PROCESS, not an in-process server: the commands are run with spawnSync, which
+  // blocks this event loop, so a server living in it could never answer them — the first
+  // version hung for the client's 20-second timeout on every request.
+  const nodeScript = path.join(tmp, "node.mjs");
+  fs.writeFileSync(nodeScript, `
+    import http from "node:http"; import fs from "node:fs";
+    const cfgPath = process.argv[2];
+    const srv = http.createServer((req, res) => {
+      let body = ""; req.on("data", d => body += d);
+      req.on("end", () => {
+        const m = JSON.parse(body);
+        const c = JSON.parse(fs.readFileSync(cfgPath, "utf8"));   // re-read: the test edits it
+        const reply = m.method === "eth_chainId" ? { result: c.chain }
+          : m.method === "eth_getTransactionReceipt" ? { result: c.receipt }
+          : m.method === "eth_call" ? { result: "0x" + "0".repeat(64) }
+          : m.method === "eth_getCode" ? { result: "0x6001" }
+          : { error: { code: -32601, message: "not here" } };
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({ jsonrpc: "2.0", id: m.id, ...reply }));
+      });
+    });
+    srv.listen(0, () => { process.stdout.write(String(srv.address().port) + "\\n"); });
+  `);
+  const nodeCfg = path.join(tmp, "node.json");
+  const setNode = (chain, receipt) => fs.writeFileSync(nodeCfg, JSON.stringify({ chain, receipt }));
+  setNode("0x2105", null);
+  const { spawn } = await import("node:child_process");
+  const nodeProc = spawn(process.execPath, [nodeScript, nodeCfg], { stdio: ["ignore", "pipe", "inherit"] });
+  const NODE = "http://127.0.0.1:" + await new Promise(res => {
+    let buf = ""; nodeProc.stdout.on("data", d => { buf += d; if (/\n/.test(buf)) res(buf.trim()); });
+  });
+  const nodeEnv = { SNOOZE_RPC: NODE };
+
+  const OWN = raw.owner, DEPL = ABI.createAddress(OWN, 5), TOK5 = ABI.createAddress(OWN, 6);
+  const SALT5 = "0x" + "07".repeat(32);
+  const IH = curveInitCodeHash(ART, { ...cfg }, TOK5);
+  const PROMISED = ABI.create2Address(DEPL, SALT5, IH);
+  const HASH = "0x" + "9a".repeat(32);
+  const pad = a => "0x" + a.slice(2).toLowerCase().padStart(64, "0");
+  const DEPLOYED_TOPIC = ABI.keccakText("Deployed(address,bytes32,address)");
+  const stateAtStep5 = (saltReadBack) => JSON.stringify({
+    chainId: raw.chainId, owner: OWN,
+    steps: { oracle: verified(raw.oracle.address), deployer: verified(DEPL), token: verified(TOK5),
+             salt: { status: "verified", readBack: saltReadBack } } });
+  const fullSalt = { salt: SALT5, initCodeHash: IH, predicted: PROMISED, deployer: DEPL, token: TOK5 };
+
+  // R3, reproduced: step 3's receipt has a contractAddress and no Deployed log. It used to win.
+  fs.writeFileSync(statePath, stateAtStep5(fullSalt));
+  setNode("0x2105", { status: "0x1", contractAddress: TOK5, logs: [], blockNumber: "0x10" });
+  r = run(["deploy/scripts/record.mjs", "5.deploy", HASH], nodeEnv);
+  ok("record.mjs refuses a receipt that created something other than what the salt promised",
+     r.status === 1 && /different deployment/.test(r.stderr) && clean(r), (r.stderr || r.stdout).slice(0, 300));
+  ok("and did not write the token down as the curve",
+     !/"curve"/.test(fs.readFileSync(statePath, "utf8")));
+  // A receipt that created nothing and logged nothing is not the deployment either.
+  setNode("0x2105", { status: "0x1", contractAddress: null, logs: [], blockNumber: "0x10" });
+  r = run(["deploy/scripts/record.mjs", "5.deploy", HASH], nodeEnv);
+  ok("and one that created nothing and emitted no Deployed log",
+     r.status === 1 && /no Deployed log/.test(r.stderr), (r.stderr || r.stdout).slice(0, 300));
+  // The real thing: a call receipt with the deployer's log, agreeing with the salt.
+  setNode("0x2105", { status: "0x1", contractAddress: null, blockNumber: "0x10",
+                      logs: [{ topics: [DEPLOYED_TOPIC, pad(PROMISED), SALT5, pad(OWN)] }] });
+  r = run(["deploy/scripts/record.mjs", "5.deploy", HASH], nodeEnv);
+  ok("a receipt whose Deployed log agrees with the salt is recorded",
+     r.status === 0 && new RegExp(ABI.toChecksum(PROMISED)).test(r.stdout), (r.stderr || r.stdout).slice(0, 300));
+  // R11: the salt comes back out of the log for a launch that lost its state file.
+  fs.writeFileSync(statePath, stateAtStep5({ initCodeHash: IH, deployer: DEPL, token: TOK5 }));
+  r = run(["deploy/scripts/record.mjs", "5.deploy", HASH], nodeEnv);
+  const recovered = JSON.parse(fs.readFileSync(statePath, "utf8"));
+  ok("and a state file with no salt gets it back from the Deployed log's second topic",
+     r.status === 0 && recovered.steps.salt.readBack.salt === SALT5 && /read back out of the Deployed log/.test(r.stdout),
+     (r.stderr || r.stdout).slice(0, 300));
+
+  // R10: build.mjs was the one command that read the chain without asking which chain.
+  fs.writeFileSync(statePath, JSON.stringify({ ...JSON.parse(stateAtStep5(fullSalt)),
+    steps: { ...JSON.parse(stateAtStep5(fullSalt)).steps, curve: { status: "sent", readBack: { address: PROMISED } } } }));
+  setNode("0x14a34", null);
+  r = run([B, "5.register", "--confirm", "the curve parameters and the fee address are immutable and I have checked them"], nodeEnv);
+  ok("build.mjs refuses to read a precondition off the wrong chain",
+     r.status === 1 && /chain 84532/.test(r.stderr) && clean(r), (r.stderr || r.stdout).slice(0, 300));
+  nodeProc.kill();
+
+  // C17, reproduced by the audit at HEAD: the grinder from a folder with a space in its name
+  // found nothing and blamed the suffix. A desktop download lands in exactly such a folder.
+  {
+    const spaced = path.join(tmp, "Bob Smith");
+    fs.mkdirSync(path.join(spaced, "tools"), { recursive: true });
+    for (const f of ["vanity.mjs", "vanity-par.mjs"])
+      fs.copyFileSync(path.join(ROOT, "tools", f), path.join(spaced, "tools", f));
+    try { fs.symlinkSync(path.join(ROOT, "node_modules"), path.join(spaced, "node_modules"), "dir"); } catch {}
+    const g = spawnSync(process.execPath, [path.join(spaced, "tools", "vanity-par.mjs"), "ed",
+      "--deployer", DEPL, "--inithash", IH, "--max", "400000"], { encoding: "utf8", cwd: spaced });
+    ok("the grinder works from a folder whose name contains a space",
+       g.status === 0 && /^salt\s+0x/m.test(g.stdout), (g.stderr || g.stdout).slice(0, 300));
+  }
+
+  // C1's door: publish.mjs will not make the buy card live under copy that promises a burn the
+  // chosen oracle can never produce.
+  {
+    const nr = JSON.parse(R("deploy/config.json"));
+    nr.oracle.choice = "never-ready";
+    const nrPath = path.join(tmp, "never-ready.json");
+    fs.writeFileSync(nrPath, JSON.stringify(nr));
+    const st = path.join(tmp, "nr-state.json"), pg = path.join(tmp, "nr-index.html");
+    fs.writeFileSync(st, JSON.stringify({ chainId: nr.chainId, owner: nr.owner,
+      steps: { token: verified(TOK5), curve: verified(PROMISED) } }));
+    fs.copyFileSync(path.join(ROOT, "web", "index.html"), pg);
+    r = run(["tools/publish.mjs", "--offline"], { SNOOZE_CONFIG: nrPath, SNOOZE_STATE: st, SNOOZE_PAGE: pg });
+    ok("publish.mjs refuses to publish Rule 1 copy over a never-ready oracle",
+       r.status === 1 && /never fire/.test(r.stderr) && /Selling into a spike burns/.test(r.stderr) && clean(r),
+       (r.stderr || r.stdout).slice(0, 300));
+    fs.writeFileSync(pg, fs.readFileSync(pg, "utf8")
+      .replace(/Selling into a spike burns/g, "Selling").replace(/burns most of what you would have taken/g, "x"));
+    r = run(["tools/publish.mjs", "--offline"], { SNOOZE_CONFIG: nrPath, SNOOZE_STATE: st, SNOOZE_PAGE: pg });
+    ok("and proceeds once the copy no longer says it", r.status === 0, (r.stderr || r.stdout).slice(0, 300));
+  }
 
   /* ---- tools/publish.mjs: the last manual step, made not manual ---- */
   // It lives in tools/ and it is tested here because what it reads is the launch state, and

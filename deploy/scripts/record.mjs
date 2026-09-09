@@ -53,7 +53,41 @@ if (logged && expected && !sameAddress(logged, expected))
 // transfer and after setPool — neither of which creates anything — which reads as a second
 // deployment.
 const creates = txKey === "deploy";
+
+// THE PASTE THAT SENDS 80% OF THE SUPPLY TO THE WRONG CONTRACT. The first version let a
+// receipt's own contractAddress win over the salt's promise, on the grounds that a receipt is
+// the chain speaking. It is — about whichever transaction the hash names. Paste step 3's hash
+// here instead of step 5's (both are in the same scrollback, both are 66 characters) and that
+// receipt has a contractAddress, the TOKEN's, and no Deployed log to disagree with it; so the
+// token was recorded as the curve, 5.fund was gated only on the curve being KNOWN, and
+// build.mjs 5.fund printed transfer(token, curveSupply) — the whole allocation into a contract
+// that cannot give it back. Found by the audit, then reproduced.
+//
+// So when the salt has promised an address, every source has to agree with it — a receipt
+// that names something else is a receipt for a different transaction, whatever it deployed.
+if (creates && expected && r.contractAddress && !sameAddress(r.contractAddress, expected))
+  die(`that transaction created ${r.contractAddress}, and the salt recorded in step 4 promises ` +
+      `${expected}. That is a receipt for a different deployment — step 3's, probably. Do not ` +
+      "record it as the curve: the next transaction sends the curve its whole allocation.");
+if (creates && expected && !logged && !r.contractAddress)
+  die(`that transaction created nothing and SnoozeDeployer emitted no Deployed log in it, so it ` +
+      "is not the deployment step 5 sent. Check the hash.");
 const created = r.contractAddress || logged || (creates ? expected : null);
+
+// What the receipt can give back to a launch that lost its state file: the salt. SnoozeDeployer
+// emits Deployed(addr, salt, by) with the salt as topic 2, and grind.mjs is gated on step 2
+// verifying, so a lost deploy/launch-state.json after 5.deploy could otherwise never get its
+// salt back — a fresh grind finds a DIFFERENT salt for a curve that already exists elsewhere.
+const loggedSalt = (r.logs || [])
+  .filter(l => (l.topics || [])[0] === DEPLOYED_TOPIC && l.topics[2])
+  .map(l => l.topics[2])[0] || null;
+if (creates && loggedSalt && !stepState(state, "salt").readBack?.salt) {
+  const s4 = stepState(state, "salt");
+  state.steps.salt = { ...s4, readBack: { ...(s4.readBack || {}), salt: loggedSalt,
+                       predicted: created, recoveredFrom: txHash } };
+  console.log(dim(`  the salt ${loggedSalt} was read back out of the Deployed log and recorded ` +
+                  "for step 4, which had none. Run verify.mjs 4 before anything else."));
+}
 if (created) {
   const s = stepState(state, step.id);
   state.steps[step.id] = { ...s, readBack: { ...(s.readBack || {}), address: created } };

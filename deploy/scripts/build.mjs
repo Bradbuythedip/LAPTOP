@@ -19,7 +19,7 @@ if (!spec) die("which step? e.g. `node deploy/scripts/build.mjs 2`, or run plan.
 const ci = argv.indexOf("--confirm");
 const confirmed = ci >= 0 ? argv[ci + 1] : null;
 
-const { cfg, steps, state, rpc } = await context();
+const { cfg, steps, state, rpc, chainId } = await context();
 const { step, txKey } = pick(steps, spec);
 
 const why = step.blocked();
@@ -51,6 +51,11 @@ if (txBlocked) die(txBlocked);
 if (tx.precondition) {
   if (!rpc) die(`${step.n}.${tx.key} cannot be built offline. ${tx.precondition.needsChain}\n` +
                 "Set SNOOZE_RPC and try again.");
+  // The one command that read the chain without asking which chain. CREATE and CREATE2
+  // addresses are chain-independent, so a rehearsal endpoint left in SNOOZE_RPC answers
+  // balanceOf(curve) with the rehearsal's funded numbers, the precondition passes, and setPool
+  // is printed for a mainnet curve holding nothing. Every other command already refuses here.
+  try { await rpc.requireChain(chainId); } catch (e) { die(e.message); }
   const results = {};
   for (const c of tx.precondition.calls())
     results[c.sig] = await rpc.call(c.to, "0x" + c.data.replace(/^0x/, ""));

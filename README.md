@@ -96,7 +96,7 @@ sha256(web/snooze.html)  = 774fc77328903db238f4e99862360ad71b1463a0d411728dd3640
 sh test/run-all.sh         # everything below, no network touched
 ```
 
-**2070 assertions across twenty-three suites.**
+**2089 assertions across twenty-three suites.**
 
 `test/run.mjs` — 374, drives the real page in Chromium against `test/mock-rpc.mjs`: Keccak vectors,
 the four EIP-55 reference addresses, the v4 poolId derivation checked against a real Base pool
@@ -241,7 +241,7 @@ ordinary externally-owned account rather than from another contract, and gas mea
 the block limit — `launch()` deploys two contracts and makes five state-changing calls in one
 transaction, and comes in at 7.2% of a 30M block. It writes `deploy/`.
 
-`test/run-deploy.mjs` — 293, the deployment sequence in `deploy/scripts` sent step by step into
+`test/run-deploy.mjs` — 312, the deployment sequence in `deploy/scripts` sent step by step into
 an in-process EVM, using the exact bytes `build.mjs` prints and `deploy/deploy.html` sends. It is
 an execution rather than a grep because that is what found the thing that decides the shape of
 the whole sequence: **`Snooze` deployed through `SnoozeDeployer` mints the entire supply to the
@@ -255,7 +255,7 @@ to the curve, fund before `setPool` (measured: the other order does not revert, 
 `freeze()` and `seal()`, and finally a real buy that settles with `burnBps()` at 5000. It also
 pins the two halves that keep the deploy button out of `web/`, checks every selector the page
 hardcodes against keccak of its signature (nineteen of thirty-six were wrong when first
-written), and asserts all seven transactions are byte-identical between the page and the
+written), and asserts all eight transactions are byte-identical between the page and the
 scripts.
 
 `test/run-launchpad.mjs` — 37, `launch()` end to end: the wiring granted before any deposit
@@ -345,7 +345,14 @@ the Python is right, the same arrangement `size.html` has with `test_size_math.p
 The page is not linked from the buyer navigation — operator tool, reachable by URL. Still a
 static file on a public site, so not secret, just not advertised.
 
-## Launching — read `LAUNCH.md` first
+## Launching — read `deploy/scripts/README.md` first
+
+**The runbook for the launch this repository can actually perform is
+[`deploy/scripts/README.md`](deploy/scripts/README.md)** — six steps, sent from your own
+wallet, through `deploy/scripts` or `deploy/deploy.html`. `LAUNCH.md` below is the design
+record and the launchpad path, which `LAUNCH.md` §2.2 itself shows cannot complete on Base.
+
+### The design record — `LAUNCH.md`
 
 [`LAUNCH.md`](LAUNCH.md) is the runbook: what only you can decide, what has to exist before the
 launch transaction, the sequence, and what can still go wrong afterwards. Three things in it are

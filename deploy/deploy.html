@@ -575,8 +575,15 @@ function STEPS(){
       var c = [];
       push(c, hasCode(code), "there is code at the address the deployment created");
       addrIs(c, r, "owner()", L.owner);
-      boolIs(c, r, "sealed_()", false, "sealed_() is false, so it can still deploy");
-      numIs(c, r, "count()", "0", "count() is 0 — nothing has been deployed from it yet");
+      /* State-aware, like step 3's: "nothing deployed from it yet" is true at step 2 and false
+         forever after step 5, so a step 2 that asserted it could never be re-read once the
+         curve existed. The scripts' step 2 makes the same two allowances. */
+      var curveUp = !!ST.curve, sealedNow = !!ST.verified.lock;
+      boolIs(c, r, "sealed_()", sealedNow, sealedNow ? "the deployer is sealed"
+             : "sealed_() is false, so it can still deploy");
+      numIs(c, r, "count()", curveUp ? "1" : "0", curveUp
+            ? "count() is 1 — the curve, and nothing else, has been deployed from it"
+            : "count() is 0 — nothing has been deployed from it yet");
       return c;
     }
   },
@@ -698,7 +705,18 @@ function STEPS(){
         after:function(){ return "curve"; } },
       { key:"5.fund", label:"Send the curve its allocation",
         about:function(){ return "transfer(" + (ST.curve || "?") + ", " + L.curve.curveSupply + ")"; },
-        needs:function(){ return ST.curve ? null : "the curve's address is not known yet"; } },
+        /* Known is not enough. A curve address that reached ST.curve from the wrong receipt —
+           step 3's hash, pasted where step 5's belonged — is a real address with real code,
+           and this button would send the whole allocation to it. The one thing decided about
+           the curve before any receipt existed is the salt's promise, so the transfer's
+           destination has to be that, and the scripts' 5.fund refuses on the same comparison. */
+        needs:function(){
+          if(!ST.curve) return "the curve's address is not known yet";
+          if(ST.predicted && !SNOOZE.same(ST.curve, ST.predicted))
+            return "the recorded curve " + ST.curve + " is not the address the salt promised (" +
+                   ST.predicted + "). Do not fund it — re-read step 5's deployment first.";
+          return null;
+        } },
       { key:"5.register", label:"Register the curve as the pool",
         about:function(){ return "setPool(" + (ST.curve || "?") + ", true) — this is what switches " +
           "BOTH Snooze rules on. _move() fires the haircut and the daily cap on the same " +
@@ -1199,7 +1217,7 @@ async function send(step, tx, card){
     "from   " + (built.from || "(anyone)") +
     "\nto     " + (built.to || "(contract creation)") +
     "\nvalue  " + built.value +
-    "\ndata   " + ((built.data.length) / 2) + " bytes\n\n0x" + SNOOZE.strip(built.data));
+    "\ndata   " + (SNOOZE.strip(built.data).length / 2) + " bytes\n\n0x" + SNOOZE.strip(built.data));
   out.appendChild(pre);
 
   if(built.from && !SNOOZE.same(built.from, W.addr)){
@@ -1268,6 +1286,17 @@ async function send(step, tx, card){
       return;
     }
     var created = rc.contractAddress || logged;
+    /* And the same refusal for a receipt that CREATED something else: the scripts' record.mjs
+       took a wrong hash's contractAddress over the salt's promise, and 5.fund then sent the
+       allocation to it. The page does not paste hashes, but the comparison costs nothing and
+       the transfer it guards cannot be undone. */
+    if(created && slot === "curve" && ST.predicted && !SNOOZE.same(created, ST.predicted)){
+      out.appendChild(el("div", "badbox",
+        "That transaction created " + created + ", and the salt promises " + ST.predicted +
+        ". That is a different deployment. Not recorded — the next button would send the " +
+        "curve's whole allocation to it."));
+      return;
+    }
     if(created && slot){
       ST[slot] = created;
       save();

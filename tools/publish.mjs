@@ -26,6 +26,7 @@
 // steps, and it would let the site say something the launch never verified.
 import fs from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 import { loadConfig } from "../deploy/scripts/lib/config.mjs";
 import { loadState, stepState, isVerified, STATE_PATH } from "../deploy/scripts/lib/state.mjs";
@@ -33,7 +34,7 @@ import { rpcFromEnv, chainFromEnv, NO_ENDPOINT } from "../deploy/scripts/lib/rpc
 import { toChecksum, sameAddress, selector, addressWord, readAddress, readString, readBool }
   from "../deploy/scripts/lib/abi.mjs";
 
-const ROOT = path.resolve(new URL(".", import.meta.url).pathname, "..");
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 // SNOOZE_PAGE exists for the same reason SNOOZE_CONFIG and SNOOZE_STATE do: a rehearsal has to
 // be able to run the real command against a copy. When it is set, the README is NOT re-hashed —
 // the hashes describe web/, and stamping them from a rehearsal would publish the wrong ones.
@@ -95,6 +96,26 @@ if (!OFFLINE) {
   if (fail.length) die("the chain does not agree with " + STATE_PATH + ":\n" +
                        fail.map(f => "  · " + f).join("\n"));
   console.log(`  read back on ${rpc.label}: symbol, curve.token(), isPool — all agree`);
+}
+
+/* ------------------------------------------------------- what the page claims about Rule 1 */
+
+// The one thing this command knows that the page cannot read off the chain. With
+// oracle.choice "never-ready", ready() is false forever, so Rule 1 never fires — and the page's
+// headline, its meta description and its chart all say that selling into a spike burns. A
+// never-ready oracle and an observational one with no history yet answer every view
+// identically, so no read distinguishes "not yet" from "never"; only the config does. This is
+// the last door before the site goes live, so it is the door that refuses.
+if (cfg.oracle.choice === "never-ready") {
+  const page = fs.readFileSync(PAGE, "utf8");
+  const claims = ["Selling into a spike burns", "burns most of what you would have taken"]
+    .filter(c => page.includes(c));
+  if (claims.length)
+    die(`oracle.choice is "never-ready", so Rule 1 will never fire on this token — and ` +
+        `${path.relative(ROOT, PAGE)} still says: ${claims.map(c => JSON.stringify(c)).join(", ")}.` +
+        "\n\nThat is a promise the contract cannot keep, above a buy button. Change the copy " +
+        "first (the haircut card, the meta description and the chart strap all describe Rule 1), " +
+        "then run this again. There is no flag to publish it anyway.");
 }
 
 /* --------------------------------------------------------------------------- the edit itself */

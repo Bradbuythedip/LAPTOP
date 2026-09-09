@@ -176,11 +176,18 @@ export function loadConfig(file = CONFIG_PATH) {
   // The oracle address is the single most irreversible field in the whole sequence, and it was
   // the only address escaping the checksum discipline the owner gets. A lower-cased address
   // that lost a character in a paste is still a valid address; a checksummed one is not.
+  // Refused outright when it is not the checksummed form — including when it is all lower
+  // case, which the first version let through. A lower-cased address has no checksum to fail,
+  // so two transposed characters in one are still a valid address, of nobody's oracle, and
+  // this is the field that becomes immutable in step 3. Basescan shows the checksummed form;
+  // paste that.
   if (cfg.oracle.address && isAddr(cfg.oracle.address) &&
-      toChecksum(cfg.oracle.address) !== cfg.oracle.address &&
-      cfg.oracle.address !== cfg.oracle.address.toLowerCase())
-    bad(`oracle.address fails its EIP-55 checksum — it should be ` +
-        `${toChecksum(cfg.oracle.address)}`);
+      toChecksum(cfg.oracle.address) !== cfg.oracle.address)
+    bad(`oracle.address must be the EIP-55 checksummed form: ${toChecksum(cfg.oracle.address)}` +
+        (cfg.oracle.address === cfg.oracle.address.toLowerCase()
+          ? ". Lower case carries no checksum, so a transposed character in it is undetectable, " +
+            "and this address becomes immutable in step 3."
+          : ". A transposed character in a checksummed address stops being an address."));
 
   /* ---- the oracle documentation, checked against the choices the code accepts ---- */
   for (const k of ORACLE_CHOICES)
