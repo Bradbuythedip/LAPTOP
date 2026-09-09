@@ -2685,6 +2685,26 @@ def solve_pda(target: str, mint: str, programs=(), seeds=()) -> str:
     return ""
 
 
+def global_pubkeys(g: dict) -> dict:
+    """Every pubkey stored in Global, addressed by where it sits.
+
+    An account a transaction passes that is not a PDA and not a program is very often just a
+    VALUE out of this account — the fee recipient in a real buy was not the canonical one but
+    one of the seven in `fee_recipients`, and the trailing account was one of the eight
+    buyback recipients. Searching PDA seeds for those would never have found them, because
+    they are not derived from anything.
+    """
+    out = {}
+    for k in ("authority", "fee_recipient", "withdraw_authority", "set_creator_authority",
+              "admin_set_creator_authority", "whitelist_pda", "reserved_fee_recipient"):
+        if g.get(k):
+            out[g[k]] = "global.%s" % k
+    for k in ("fee_recipients", "reserved_fee_recipients", "buyback_fee_recipients"):
+        for n, a in enumerate(g.get(k) or []):
+            out.setdefault(a, "global.%s[%d]" % (k, n))
+    return out
+
+
 def known_buy_accounts(mint: str, user: str, g: dict) -> dict:
     """Every account in a buy this script can already name, so `trace` can show the rest."""
     bc = find_program_address([b"bonding-curve", b58decode(mint)], PUMP_PROGRAM)
@@ -2834,13 +2854,19 @@ def cmd_trace(args):
         mark = ""
         if label in mine:
             mark = "  == mine" if mine[label] == a else "  != mine (%s)" % mine[label]
+        if not mark or "!= mine" in mark:
+            where = global_pubkeys(g).get(a)
+            if where:
+                mark = "  %s" % where
         if n >= len(names):
             extra.append((n, a))
         print("    %2d. %-44s %-38s%s" % (n, a, label, mark))
     if extra and mint:
         print("\n  accounts past the IDL's list, which is where the undocumented ones are:")
         for n, a in extra:
-            print("    %2d. %s  %s" % (n, a, solve_pda(a, mint) or "no candidate reproduces it"))
+            inglobal = global_pubkeys(g).get(a, "")
+            print("    %2d. %s  %s"
+                  % (n, a, inglobal or solve_pda(a, mint) or "no candidate reproduces it"))
         print("\n  mint for these: %s" % mint)
     print()
     return 0
