@@ -92,6 +92,8 @@ const node = http.createServer((req, res) => {
         return { jsonrpc: "2.0", id: m.id, result: wordOf(8n * 10n ** 17n) };
       if (call === "0x485735c8")                       // bondTarget()
         return { jsonrpc: "2.0", id: m.id, result: wordOf(3500000000000000000n) };
+      if (call === "0x4bd387e1")                       // virtualEth()
+        return { jsonrpc: "2.0", id: m.id, result: wordOf(1600000000000000000n) };
       if (call === "0x9c533f66")                       // priceMultipleBps()
         return { jsonrpc: "2.0", id: m.id, result: wordOf(22500) };
       if (call === "0x02c7e7af")                       // sold()
@@ -671,6 +673,19 @@ console.log("── the Live panel is about the token that is live");
      /2\.7/.test(stats["to bond"] || ""), JSON.stringify(stats));
   ok("and how much of the float has gone",
      stats["sold"] === "25.0% of the float", JSON.stringify(stats));
+  /* THE LINE AND THE BADGE ARE THE SAME CURVE. The page holds VIRTUAL_ETH = 2 and BOND_AT
+     = 3.5 from deploy/config.json, and used to draw its line from them before reading
+     anything — while the badge above measured progress against the target it read off
+     chain. A curve deployed at any other setting therefore got one curve's picture under
+     another curve's number, on the card people buy from. This mock is a 1.6 ETH curve, so
+     the constant and the chain disagree on purpose: ((1.6+3.5)/1.6)^2 is 10.2x, and the
+     page's own constants would say 7.6x. */
+  const daxes = flat(await txt(".axis"));
+  ok("the axis is the curve the page READ, not the curve it was compiled with",
+     /10\.2/.test(daxes) && !/7\.6/.test(daxes), daxes);
+  ok("and the x axis is that curve's bond target",
+     /ETH bought: 0 . 3\.5/.test(daxes), daxes);
+  ok("a line is drawn for it", (await page.$$eval("#chart path", ps => ps.length)) >= 1);
 
   // A failed read is never a zero. This page keeps that rule everywhere else.
   BONDED = false;

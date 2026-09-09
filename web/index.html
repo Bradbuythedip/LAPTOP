@@ -807,20 +807,35 @@ function setStats(rows){
    k = E*T with E starting at virtualEth, so the multiple after R real ETH is
    ((E0+R)/E0)^2 — the token side cancels. Identical to priceMultipleBps() in
    contracts/SnoozeCurve.sol, in bps there and as a multiple here, and checked against it. */
+/* THESE TWO ARE A DEFAULT, NOT A FACT. They are deploy/config.json's curve.virtualEth and
+   curve.bondTarget, and they are only correct for the curve this repo is about to deploy.
+   Both are `immutable` on SnoozeCurve, so a curve deployed at any other setting can never be
+   brought back to them — and this card reads its PROGRESS off chain while it used to draw the
+   line from these constants. A curve at a different setting therefore got a line from one
+   curve under a badge from another, on the card people buy from. showRuleCurve now takes the
+   parameters and loadCurve reads them, so the drawing and the badge are the same curve or
+   there is no drawing. */
 const VIRTUAL_ETH = 2, BOND_AT = 3.5;
-function priceAt(raised){
-  const e = (VIRTUAL_ETH + Math.max(0, raised)) / VIRTUAL_ETH;
+function priceAt(raised, e0){
+  const E0 = e0 === undefined ? VIRTUAL_ETH : e0;
+  if(!(E0 > 0)) return 1;
+  const e = (E0 + Math.max(0, raised)) / E0;
   return e * e;
 }
-function showRuleCurve(){
+/* Trailing zeros off, so 3.5 reads as 3.5 and 1 reads as 1 rather than 1.0000. */
+function trim(n){ return String(+Number(n).toFixed(4)); }
+function showRuleCurve(e0, bondAt){
+  const E0 = e0 === undefined ? VIRTUAL_ETH : e0;
+  const R = bondAt === undefined ? BOND_AT : bondAt;
   CHART.mode = "arithmetic"; CHART.marketSeries = [];
   const pts = [];
-  for(let r = 0; r <= BOND_AT + 1e-9; r += BOND_AT / 100) pts.push([r, priceAt(r)]);
+  for(let r = 0; r <= R + 1e-9; r += R / 100) pts.push([r, priceAt(r, E0)]);
   plot(pts, {zeroBased:true, market:false,
              label:"Price, as a multiple of the opening price, against real ETH bought"});
   setStrap("Arithmetic, not a market. No price data exists yet \u2014 the line is the curve " +
            "the contract runs, and it ends where the LP burns itself.");
-  setAxes("ETH bought: 0 \u2192 3.5", "price: 1\u00d7 \u2192 7.6\u00d7");
+  setAxes("ETH bought: 0 \u2192 " + trim(R),
+          "price: 1\u00d7 \u2192 " + priceAt(R, E0).toFixed(1) + "\u00d7");
 }
 
 /* Deposited(address indexed who, uint256 amount). Verified against the repo's own keccak in
@@ -838,10 +853,14 @@ const TOPIC_DEPOSITED = "0x2da466a7b24304f47e87fa2e1e5a81b9831ce54fec19055ce277c
    arrived, ((E0+R)/E0)^2, so the curve IS the price history and the marker is where the token
    actually sits on it. Nothing here is interpolated or remembered. */
 const CURVE_SEL = { reserve:"0x899b1528", target:"0x485735c8", mult:"0x9c533f66",
-                    sold:"0x02c7e7af", supply:"0x2138a4c0", bonded:"0xe88dc357" };
+                    sold:"0x02c7e7af", supply:"0x2138a4c0", bonded:"0xe88dc357",
+                    virtual:"0x4bd387e1" };
 async function loadCurve(){
   setBadge("reading Base\u2026", "");
-  showRuleCurve();
+  /* Nothing is drawn until the curve has answered. This used to draw showRuleCurve() here,
+     from the constants, before a single read — so a curve deployed at other parameters got a
+     line it does not run, and then a badge measuring progress against the target it does. A
+     blank frame for one round trip is the cheaper mistake. */
   const read = async (sel) => {
     const r = await one("eth_call", [{ to: SNOOZE_CURVE, data: sel }, "latest"]);
     return r.ok && typeof r.data === "string" && r.data.length >= 66 ? big(word(r.data, 0)) : null;
@@ -857,14 +876,29 @@ async function loadCurve(){
   }
   const raised = await read(CURVE_SEL.reserve), target = await read(CURVE_SEL.target),
         mult = await read(CURVE_SEL.mult), sold = await read(CURVE_SEL.sold),
-        supply = await read(CURVE_SEL.supply), bonded = await read(CURVE_SEL.bonded);
+        supply = await read(CURVE_SEL.supply), bonded = await read(CURVE_SEL.bonded),
+        virt = await read(CURVE_SEL.virtual);
   /* A failed read is never a zero — the rule the rest of this page already keeps. Four dashes
      and a badge that says so beats a card confidently reporting an empty curve. */
   if(raised === null || target === null){
+    CHART.mode = "error"; CHART.marketSeries = []; setAxes("", "");
     setBadge("could not read the curve", "bad");
     setStats([["raised", "\u2014"], ["to bond", "\u2014"],
               ["price", "\u2014"], ["state", "unreadable"]]);
     return;
+  }
+  /* THE LINE COMES FROM THE CURVE OR IT DOES NOT COME. virtualEth and bondTarget are both
+     immutable on SnoozeCurve, so these two reads are the whole shape of the line and no
+     constant in this file can stand in for them. If either is unreadable the frame stays
+     empty: a wrong curve under a right badge is the one picture this card exists not to
+     draw. */
+  if(virt !== null && virt > 0n && target > 0n){
+    showRuleCurve(Number(virt) / 1e18, Number(target) / 1e18);
+  } else {
+    CHART.mode = "error"; CHART.marketSeries = []; setAxes("", "");
+    setEmpty("Could not read the curve.",
+      "virtualEth() and bondTarget() set the shape of this line. Nothing is drawn rather " +
+      "than a guess.");
   }
   const pct = target > 0n ? Number((raised * 10000n) / target) / 100 : 0;
   const x = Number(mult === null ? 0 : mult) / 10000;
