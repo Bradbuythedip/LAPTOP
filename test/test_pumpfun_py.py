@@ -1333,17 +1333,17 @@ ok("it counts which pump.fun instructions were actually called",
 ok("and names them by discriminator, including ones no IDL would name",
    "66063d1201daebea" in _out, _out[:400])
 ok("it names the ones this script can already derive", "bonding_curve" in _out)
-ok("and flags the ones it cannot, which are the answer",
-   "the ones this script cannot name" in _out, _out[-600:])
-ok("a trailing account that matches a candidate seed is identified as such",
-   'PDA["bonding-curve-v2", mint]' in _out)
+ok("and flags the ones past the IDL's list, which is where the undocumented ones are",
+   "past the IDL" in _out, _out[-700:])
+ok("a trailing account a candidate reproduces is identified as such",
+   '"bonding-curve-v2"' in _out, _out[-500:])
 
 _odd = P.Keypair.generate().address
 _out2 = _capture(lambda: P.cmd_trace(_ns(mint=_tmint, signature=None, limit=5,
                                          instruction=None)),
                  rpc=TraceRpc([P.PUMP_PROGRAM, SYS_ADDR, _tmint, _tuser, _odd, _tbc], _tix))
-ok("and one that matches nothing says so rather than inventing a name",
-   "no candidate seed matches" in _out2)
+ok("and one that no candidate reproduces says so rather than inventing a name",
+   "no candidate reproduces it" in _out2, _out2[-400:])
 
 # Accounts a transaction loaded from a lookup table have to be appended in the runtime's
 # order — writable then readonly — or every index past the static keys names the wrong one.
@@ -1351,8 +1351,10 @@ _out3 = _capture(lambda: P.cmd_trace(_ns(mint=_tmint, signature=None, limit=5,
                                          instruction=None)),
                  rpc=TraceRpc([P.PUMP_PROGRAM, SYS_ADDR, _tmint, _tuser, _tbc], _tix,
                               loaded={"writable": [], "readonly": [_mystery]}))
-ok("an account the transaction loaded from a table is resolved too",
-   'PDA["bonding-curve-v2", mint]' in _out3)
+# The account is loaded from a table rather than named in the message; it must still land at
+# the right index, or every position past the static keys labels the wrong account.
+ok("an account the transaction loaded from a table is resolved and placed correctly",
+   _mystery in _out3, _out3[-600:])
 
 # MOST BUYS ARRIVE AS A CPI. The transaction that started all of this was addressed to a
 # router with pump.fun's buy underneath it — a scan that only reads top-level instructions
@@ -1366,7 +1368,7 @@ ok("buy_v2's published discriminator is known, so a census can name it",
 ok("every instruction the IDL declares is in the name table", len(P.DISCRIMINATORS) == 40,
    len(P.DISCRIMINATORS))
 ok("a buy reached through a CPI is found, not skipped",
-   'PDA["bonding-curve-v2", mint]' in _out4 and "CPI" in _out4)
+   '"bonding-curve-v2"' in _out4 and "CPI" in _out4)
 ok("and it says where it found it, so the shape of the transaction is visible",
    "CPI under instruction 0" in _out4)
 
@@ -1384,6 +1386,61 @@ ok("nothing to look at is an error that says so, not an empty success",
        rpc=EmptyRpc(_tkeys, _tix)), RuntimeError))
 ok("with no mint given it scans the program itself, which always has traffic",
    "pump.fun's own recent transactions" in _out4)
+
+# ── derivations checked against a real mainnet transaction
+#
+# THIS IS THE ONLY KIND OF EVIDENCE THAT COUNTS HERE. The IDL describes a buy; a transaction
+# IS one. Every account below is from 4tq5fgiYcRbYrNX2oEWPHt2ETL9VYTP4GzQUvHGK9aUqt2K3gsWciiDx
+# 5S7yQST9DxU2rDgM7ieV3VnUr7Gh3ReS, a buy_exact_quote_in_v2 that succeeded on mainnet. The
+# check found the one derivation that was wrong: sharing_config is a PDA of the FEE program,
+# not of pump.fun.
+print("── the v2 derivations reproduce a real mainnet buy")
+REAL_BUY = """4wTV1YmiEkRvAtNtsSGPtUrqRYQMe5SKy2uB4Jjaxnjf
+89DABTP3GPCmxwACrk14iu3mD3L3SLfyR2CwuULYLeAq So11111111111111111111111111111111111111112
+TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA
+ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL 62qc2CNXwrYqQScmEdiZFFAnJR262PxWEuNQtxfafNgV
+94qWNrtmfn42h3ZjUZwWvK1MEo9uVmmrBPd2hpNjYDjb A7hAgCzFw14fejgCp387JUJRMNyz4j89JKnhtKU8piqW
+qkYdTGRPHbWTWuBMz45bCiU6a23axRqf6sBHm9295WY BsjoPB22sgk17vJYVuKzcEfpHhFMJP1CK86zFFWCbgWR
+7cgmZzpriQcCtoYEBLcPWC59NNRWw3NfPb3GZ7ZzWpAa 7HkMueDQuPH2mwudqL9KboqSSUxDJaN6yUWUv3RE4MgH
+2ZNqbeGMLcNoDPAdgp7Bpkapras3HvEW7PwEPSbFPE8g 5hDjeZn1ZtGdDY9yMM37HWPoVqQL3gsgaTBdfF6PAuVy
+6qFXzWFUGQbSbC5PGSNbySBeAR3PEDH3NREEthQGBTvo 2yotgs3vtbjTpWNZfcqy5i3C3Cj395tQiDkr8b8ZiUxE
+5P6f55UALyx9YnNN4sAX1Qp46QLyBWTaqRZReA1ZSW4n CX7cKwGW7rWqT3RgJ7CPcDRZK2o5Wkxkor2nHMWs7Mrz
+Hq2wp8uJ9jCPsYgNHex8RtqdvMPfVGoYwjvF1ATiwn2Y DJWF1CDkqinDJz68dCPDpr6srm8A9KW5Aob4n2vwq5wB
+BCoSPoCpbT1nETVJNgD77EYeWjJWMZVdz5yBpNnh8Jf5 8Wf5TiAheLUqBrKXeYg2JtAFFMWtKdG2BSFgqUcPVwTt
+pfeeUxB6jkeY1Hxd7CsFCAjcbHA9rWtchMGdZ6VojVZ 11111111111111111111111111111111
+Ce6TQqeHC9p8KetsN6JsjHK7UTZk7nasjjnr7XxXp9F1 6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P""".split()
+_names = P.IX_ACCOUNTS["buy_v2"]
+ok("the IDL's buy_v2 takes 27 accounts and the real one passed 27",
+   len(_names) == 27 and len(REAL_BUY) == 27)
+ok("buy_exact_quote_in_v2 takes the same accounts, so one derivation serves both",
+   P.IX_ACCOUNTS["buy_exact_quote_in_v2"] == _names)
+_real = dict(zip(_names, REAL_BUY))
+_mine = P.derive_v2_accounts(_real["base_mint"], _real["user"],
+                             {"address": _real["global"],
+                              "fee_recipient": _real["fee_recipient"]},
+                             _real["base_token_program"], _real["buyback_fee_recipient"])
+# creator_vault derives from the token's CREATOR, and that buyer was not it — so those two
+# differing is the derivation being right, not wrong. In a launch the buyer IS the creator.
+_skip = {"creator_vault", "associated_creator_vault"}
+_diff = [n for n in _names if n not in _skip and _mine[n] != _real[n]]
+ok("every other account reproduces the real transaction exactly", not _diff, _diff)
+ok("including sharing_config, which is a PDA of the fee program and not of pump.fun",
+   _mine["sharing_config"] == _real["sharing_config"]
+   and _mine["sharing_config"]
+   != P.find_program_address([P.SHARING_CONFIG_SEED, P.b58decode(_real["base_mint"])],
+                             P.PUMP_PROGRAM))
+ok("the quote side is wrapped SOL on the legacy token program",
+   _mine["quote_mint"] == P.WSOL and _mine["quote_token_program"] == P.TOKEN_PROGRAM)
+ok("and the base side uses whatever token program the mint itself uses",
+   _mine["associated_base_user"]
+   == P.ata(_real["user"], _real["base_mint"], _real["base_token_program"]))
+ok("the two that differ are the creator's, and they differ because the buyer was not it",
+   _mine["creator_vault"] != _real["creator_vault"])
+ok("solve_pda reproduces a known derivation from the address alone",
+   "sharing-config" in P.solve_pda(_real["sharing_config"], _real["base_mint"],
+                                   seeds=[("sharing-config", b"sharing-config")]))
+ok("and returns nothing rather than a wrong answer when none fits",
+   P.solve_pda(other.address, _real["base_mint"]) == "")
 
 # ── bonding_curve_v2, which no IDL mentions
 #
