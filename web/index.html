@@ -5,168 +5,300 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="referrer" content="no-referrer">
 <meta name="color-scheme" content="dark">
-<title>$SNOOZE</title>
-<meta name="description" content="Snooze Bear. A token on pump.fun, on Solana. You snooze, you win.">
-<meta property="og:title" content="$SNOOZE — Snooze Bear">
-<meta property="og:description" content="A token on pump.fun, on Solana. You snooze, you win.">
+<title>$SNOOZE — Snooze Bear</title>
+<meta name="description" content="The bear is asleep. Be the bear. $SNOOZE on pump.fun, on Solana.">
+<meta property="og:title" content="$SNOOZE — the bear is asleep">
+<meta property="og:description" content="The bear is asleep. Be the bear. On pump.fun, on Solana.">
 <meta property="og:url" content="https://snoozebear.xyz/">
 <meta property="og:image" content="https://snoozebear.xyz/hero.png">
-<meta property="og:image:width" content="1024">
-<meta property="og:image:height" content="1024">
-<!-- summary, not summary_large_image: the artwork is square, and a large card crops a square
-     to 1.91:1 and takes the bear's face off. Distribution here is entirely link-sharing. -->
+<meta property="og:image:width" content="800">
+<meta property="og:image:height" content="800">
+<!-- summary, not summary_large_image: the artwork is square and a large card crops it to
+     1.91:1, which takes the bear's face off. -->
 <meta name="twitter:card" content="summary">
 <meta name="twitter:image" content="https://snoozebear.xyz/hero.png">
 <link rel="icon" type="image/png" href="/icon.png">
 <link rel="apple-touch-icon" href="/icon.png">
 <style>
 /* Two colours and a ground. Gold is the bear; the ground is near-black navy so the gold reads
-   as metal rather than as a highlighter. Nothing else has a colour. */
+   as metal. Nothing else gets a colour except the three brand marks, which have to be their
+   own colours to be recognisable at a glance. */
 :root{
-  --bg:#070b16; --fg:#e9edf8; --dim:#9aa6c2;
-  --line:#26304a; --card:rgba(255,255,255,.045); --panel:#0b111c;
-  --gold:#f0c040; --goldHi:#ffd970; --onGold:#140f02;
-  --ok:#4fd18a; --warn:#f2c14e;
+  --bg:#070b16; --fg:#eef2fb; --dim:#98a4c0; --line:#222b42;
+  --panel:#0b1120; --panel2:#0e1626;
+  --gold:#f0c040; --goldHi:#ffdd7a; --goldDeep:#c08d1c; --onGold:#150f02;
   --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
 }
 *{box-sizing:border-box}
 html,body{margin:0;padding:0}
-body{background:var(--bg);color:var(--fg);
-  font:16px/1.6 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
-  -webkit-text-size-adjust:100%;overflow-x:hidden;
-  padding:0 18px calc(40px + env(safe-area-inset-bottom));max-width:620px;margin:0 auto;
-  background-image:url("/bg.webp");background-size:cover;background-position:center;
-  background-attachment:fixed}
-/* iOS Safari has never honoured background-attachment:fixed and degrades it to scroll, which
-   sizes `cover` against the whole document instead of the viewport — so an iPhone gets the
-   image blown up about 2x further than an Android on the same handset. Most traffic to a page
-   like this is an iPhone opening a link from X or Telegram, so it is the majority case. The
-   panel over it is 72% opaque either way; this just stops the crop being absurd. */
-@media (hover:none) and (pointer:coarse){
-  body{background-attachment:scroll;background-size:100% auto;background-repeat:no-repeat}
+html{-webkit-text-size-adjust:100%}
+body{
+  background:var(--bg);color:var(--fg);
+  font:16px/1.65 system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  overflow-x:hidden;
+  /* The background sits far back: dimmed, desaturated and behind a vignette, so it reads as
+     depth rather than competing with the bear. */
+  background-image:
+    radial-gradient(120% 80% at 50% 0%, rgba(240,192,64,.09) 0%, rgba(7,11,22,0) 55%),
+    linear-gradient(180deg, rgba(7,11,22,.86) 0%, rgba(7,11,22,.97) 42%, #070b16 78%),
+    url("/bg.webp");
+  background-size:auto, auto, cover;
+  background-position:center top, center top, center center;
+  background-attachment:scroll, scroll, fixed;
+  background-repeat:no-repeat;
 }
-.wrap{background:rgba(7,11,22,.72);backdrop-filter:blur(2px);margin:0 -18px;padding:0 18px}
+@media (hover:none) and (pointer:coarse){
+  /* iOS Safari ignores background-attachment:fixed and sizes cover against the whole
+     document, which blows the image up ~2x. Most traffic here is a phone opening a link. */
+  body{background-attachment:scroll,scroll,scroll;background-size:auto,auto,100% auto}
+}
+.wrap{max-width:600px;margin:0 auto;padding:0 20px calc(56px + env(safe-area-inset-bottom))}
 
-/* the bear */
-.hero{text-align:center;padding:34px 0 6px}
-.hero img{width:150px;height:150px;border-radius:50%;
-  border:2px solid rgba(240,192,64,.45);
-  box-shadow:0 0 0 6px rgba(240,192,64,.06), 0 10px 30px rgba(0,0,0,.6)}
-h1{font-size:38px;margin:16px 0 2px;letter-spacing:-.02em}
-.tag{color:var(--dim);font-size:15px;margin:0 0 6px}
-.chain{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--dim);
-  border:1px solid var(--line);border-radius:999px;padding:4px 11px;margin-top:8px}
+/* ─────────────────────────────────────────────────────────── the bear, as an object */
+.hero{text-align:center;padding:40px 0 4px}
+.bear{position:relative;width:min(70vw,300px);aspect-ratio:1/1;
+  margin:0 auto clamp(30px,12vw,52px);isolation:isolate}
+/* the light it sits in */
+.bear::before{content:"";position:absolute;z-index:0;pointer-events:none;
+  left:50%;top:45%;transform:translate(-50%,-50%);width:162%;height:162%;
+  background:radial-gradient(circle at 50% 42%,
+    rgba(240,192,64,.22) 0%, rgba(240,192,64,.11) 30%,
+    rgba(240,192,64,.034) 50%, rgba(240,192,64,0) 70%);
+  filter:blur(7px)}
+/* the floor it stands on — the one cue that turns an image into an object */
+.bear::after{content:"";position:absolute;z-index:1;pointer-events:none;
+  left:50%;bottom:1%;transform:translateX(-50%);
+  width:58%;height:6%;border-radius:50%;
+  background:radial-gradient(ellipse at 50% 50%,
+    rgba(0,0,0,.78) 0%, rgba(0,0,0,.42) 46%, rgba(0,0,0,0) 72%);
+  filter:blur(6px)}
+/* Shape-following shadows. The art has an alpha channel, so these hug the ears and paws
+   instead of a bounding box — which is the whole reason the purple was keyed out. */
+.bearArt{position:relative;z-index:2;display:block;width:100%;height:auto;
+  filter:
+    drop-shadow(0 1px 1px rgba(0,0,0,.55))
+    drop-shadow(0 10px 15px rgba(0,0,0,.46))
+    drop-shadow(0 28px 42px rgba(0,0,0,.34))}
+.bearRef{position:absolute;z-index:1;pointer-events:none;left:0;top:100%;width:100%;
+  height:auto;transform:scaleY(-1);transform-origin:top center;opacity:.14;filter:blur(1.6px);
+  -webkit-mask-image:linear-gradient(to bottom,rgba(0,0,0,.9) 0%,rgba(0,0,0,.26) 20%,rgba(0,0,0,0) 40%);
+          mask-image:linear-gradient(to bottom,rgba(0,0,0,.9) 0%,rgba(0,0,0,.26) 20%,rgba(0,0,0,0) 40%)}
 
-.card{background:var(--card);border:1px solid var(--line);border-radius:14px;
-  padding:16px;margin:16px 0}
-h2{font-size:14px;margin:0 0 10px;letter-spacing:.04em;text-transform:uppercase;
-  color:var(--dim);font-weight:600}
+h1{font-size:clamp(46px,15vw,72px);line-height:1;margin:0 0 10px;letter-spacing:-.035em;
+  font-weight:800;
+  background:linear-gradient(175deg,var(--goldHi) 0%,var(--gold) 46%,var(--goldDeep) 100%);
+  -webkit-background-clip:text;background-clip:text;color:transparent;
+  -webkit-text-fill-color:transparent;
+  filter:drop-shadow(0 2px 0 rgba(0,0,0,.5)) drop-shadow(0 8px 22px rgba(240,192,64,.20))}
+.tag{font-size:clamp(17px,4.6vw,21px);font-weight:600;margin:0 0 14px;color:var(--fg)}
+.chain{display:inline-flex;align-items:center;gap:7px;font-size:12.5px;color:var(--dim);
+  border:1px solid var(--line);border-radius:999px;padding:6px 14px;background:rgba(11,17,32,.7)}
+.chain b{color:var(--gold);font-weight:600}
 
-/* the address */
+/* ─────────────────────────────────────────────────────────── the address */
+.addr{margin:30px 0 0;border:1px solid var(--line);border-radius:16px;overflow:hidden;
+  background:linear-gradient(180deg,var(--panel2) 0%,var(--panel) 100%);
+  box-shadow:0 1px 0 rgba(255,255,255,.045) inset, 0 18px 40px rgba(0,0,0,.5)}
+.addr .lab{font-size:11.5px;letter-spacing:.13em;text-transform:uppercase;color:var(--dim);
+  padding:15px 17px 0;font-weight:600}
 .ca{font-family:var(--mono);font-size:14px;line-height:1.55;word-break:break-all;
-  background:var(--panel);border-radius:9px;padding:13px 14px;
-  border:1px solid var(--line)}
-@media (min-width:520px){ .ca{font-size:15.5px} }
-.ca.none{color:var(--warn);border-color:rgba(242,193,78,.4)}
-.copy{margin-top:10px;width:100%;font:inherit;font-size:14px;font-weight:600;padding:11px;
-  border-radius:9px;border:1px solid var(--line);background:var(--panel);color:var(--fg);
-  cursor:pointer}
-.copy:hover{border-color:var(--gold);color:var(--goldHi)}
-.copy:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
+  padding:9px 17px 15px;color:var(--fg)}
+@media (min-width:480px){ .ca{font-size:15.5px} }
+.ca.none{color:var(--gold);font-family:inherit;font-size:16px}
+.copy{display:block;width:100%;font:inherit;font-size:15px;font-weight:700;
+  min-height:52px;padding:14px;cursor:pointer;color:var(--fg);
+  border:0;border-top:1px solid var(--line);
+  background:linear-gradient(180deg,rgba(255,255,255,.05),rgba(255,255,255,.01))}
+.copy:hover{color:var(--goldHi);background:linear-gradient(180deg,rgba(240,192,64,.13),rgba(240,192,64,.05))}
+.copy:active{background:rgba(240,192,64,.18)}
+.copy:focus-visible{outline:2px solid var(--gold);outline-offset:-3px}
 
-/* buy and sell */
-.trade{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+/* ─────────────────────────────────────────────────────────── buy / sell */
+.trade{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:14px 0 0}
 .btn{display:flex;align-items:center;justify-content:center;text-decoration:none;
-  font-size:16px;font-weight:700;padding:16px 12px;border-radius:11px;
-  transition:filter .12s ease, transform .06s ease}
-.btn:active{transform:translateY(1px)}
-.btn.buy{background:var(--gold);color:var(--onGold);border:1px solid var(--gold)}
-.btn.buy:hover{filter:brightness(1.08)}
-.btn.sell{background:transparent;color:var(--fg);border:1px solid var(--line)}
+  min-height:62px;font-size:19px;font-weight:800;letter-spacing:.01em;border-radius:14px;
+  transition:filter .12s ease,transform .06s ease}
+.btn.buy{color:var(--onGold);border:1px solid var(--goldDeep);
+  background:linear-gradient(180deg,var(--goldHi) 0%,var(--gold) 52%,var(--goldDeep) 100%);
+  box-shadow:0 1px 0 rgba(255,255,255,.55) inset, 0 -2px 0 rgba(0,0,0,.18) inset,
+             0 10px 24px rgba(240,192,64,.24), 0 3px 8px rgba(0,0,0,.5)}
+.btn.buy:hover{filter:brightness(1.07)}
+.btn.sell{color:var(--fg);border:1px solid var(--line);
+  background:linear-gradient(180deg,var(--panel2),var(--panel));
+  box-shadow:0 1px 0 rgba(255,255,255,.05) inset, 0 8px 18px rgba(0,0,0,.42)}
 .btn.sell:hover{border-color:var(--gold);color:var(--goldHi)}
-.btn:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
-.btn:not([href]){opacity:.4;pointer-events:none;cursor:default}
-.links{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;font-size:13.5px}
-/* 44px tall, because these three links are how a cautious buyer verifies the mint
-   independently and they were the hardest thing on the page to hit. */
-.links a{color:var(--dim);display:inline-flex;align-items:center;min-height:44px;padding:0 11px;
-  border:1px solid var(--line);border-radius:8px;text-decoration:none}
-.links a:hover{color:var(--goldHi)}
+.btn:active{transform:translateY(2px);filter:brightness(.95)}
+.btn:focus-visible{outline:2px solid var(--gold);outline-offset:3px}
+/* An anchor with no href is not focusable and not activatable, in every browser, with or
+   without CSS. aria-disabled is announced but does not stop a click. */
+.btn:not([href]){opacity:.38;pointer-events:none;cursor:default;box-shadow:none}
 
-.warn{background:rgba(242,193,78,.09);border-left:3px solid var(--warn);
-  border-radius:0 8px 8px 0;padding:12px 14px;font-size:13.5px;color:var(--fg);margin:16px 0}
-.warn b{color:var(--warn)}
-p{margin:0 0 10px}
-.tiny{font-size:13px;color:var(--dim);line-height:1.6}
-footer{color:var(--dim);font-size:12.5px;text-align:center;margin:26px 0 0;line-height:1.7}
+/* ─────────────────────────────────────────────────────────── the brand chips */
+.chips{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:12px 0 0}
+.chip{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:7px;
+  min-height:76px;padding:12px 6px;text-decoration:none;border-radius:14px;
+  border:1px solid var(--line);color:var(--dim);font-size:12.5px;font-weight:600;
+  background:linear-gradient(180deg,var(--panel2),var(--panel));
+  box-shadow:0 1px 0 rgba(255,255,255,.04) inset, 0 6px 16px rgba(0,0,0,.36);
+  transition:border-color .14s ease,color .14s ease,transform .06s ease}
+.chip:hover{border-color:var(--gold);color:var(--fg)}
+.chip:active{transform:translateY(1px)}
+.chip:focus-visible{outline:2px solid var(--gold);outline-offset:3px}
+.chip svg{display:block;filter:drop-shadow(0 2px 5px rgba(0,0,0,.55))}
+
+/* ─────────────────────────────────────────────────────────── words */
+.verify{margin:20px 0 0;padding:13px 15px;font-size:13.5px;line-height:1.6;
+  border-left:3px solid var(--gold);border-radius:0 10px 10px 0;
+  background:linear-gradient(90deg,rgba(240,192,64,.10),rgba(240,192,64,.03))}
+.verify b{color:var(--gold)}
+section.blk{margin:34px 0 0}
+h2{font-size:12px;letter-spacing:.15em;text-transform:uppercase;color:var(--gold);
+  margin:0 0 9px;font-weight:700}
+.blk p{margin:0;font-size:16.5px;line-height:1.62;color:var(--fg)}
+.blk p + p{margin-top:11px}
+
+/* the song */
+.song{margin:38px 0 0;border:1px solid var(--line);border-radius:16px;padding:20px 18px;
+  background:linear-gradient(180deg,rgba(240,192,64,.05),rgba(11,17,32,.7));
+  box-shadow:0 12px 30px rgba(0,0,0,.4)}
+.song h2{margin-bottom:3px}
+.song .by{font-size:12.5px;color:var(--dim);margin:0 0 14px}
+.song pre{margin:0;font:inherit;font-size:15.5px;line-height:1.72;white-space:pre-wrap;
+  color:var(--fg)}
+.song .ch{color:var(--gold)}
+
+footer{margin:40px 0 0;padding-top:20px;border-top:1px solid var(--line);
+  font-size:13px;line-height:1.7;color:var(--dim);text-align:center}
 footer a{color:var(--dim)}
 a{color:var(--goldHi)}
+
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation:none!important;transition:none!important}
+}
 </style>
 </head>
 <body>
 <div class="wrap">
 
 <div class="hero">
-  <img src="/snooze-512.webp" width="512" height="512" alt="Snooze Bear" decoding="async">
+  <div class="bear">
+    <img class="bearArt" src="/bear-768.webp" width="768" height="768"
+         alt="Snooze Bear, a gold bear, asleep" decoding="async" fetchpriority="high">
+    <img class="bearRef" src="/bear-512.webp" width="512" height="512"
+         alt="" aria-hidden="true" decoding="async">
+  </div>
   <h1>$SNOOZE</h1>
-  <p class="tag">You snooze, you win.</p>
-  <div class="chain">Solana &middot; pump.fun</div>
+  <p class="tag">The bear is asleep. Be the bear.</p>
+  <div class="chain">Solana &middot; <b>pump.fun</b></div>
 </div>
 
-<div class="card">
-  <h2>Contract address</h2>
-  <!-- THE ADDRESS IS IN THE MARKUP, and `publish` rewrites this one line. It used to exist
-       only inside the script, so with JavaScript off or blocked — an in-app webview from X or
-       Telegram, Brave on strict, a content blocker — the canonical page for a launched token
-       said "Not launched yet." and Buy went to pump.fun's homepage, where the first search
-       result for a name is not necessarily the token. -->
+<div class="addr">
+  <div class="lab">Contract address</div>
   <div class="ca none" id="ca" data-ca="">Not launched yet.</div>
   <button class="copy" id="copy" type="button" hidden aria-live="polite">Copy address</button>
 </div>
 
-<div class="card">
-  <h2>Trade</h2>
-  <div class="trade">
-    <!-- NO href UNTIL THERE IS AN ADDRESS. aria-disabled is announced but does not stop a
-         click, and pointer-events:none does not stop the keyboard: Tab, Enter, and a new tab
-         opens on pump.fun's homepage with no token. An anchor without href is not focusable
-         and not activatable, in every browser, with or without CSS. -->
-    <a class="btn buy" id="buy" data-url="https://pump.fun/coin/"
-       rel="noopener noreferrer" target="_blank">Buy</a>
-    <a class="btn sell" id="sell" data-url="https://pump.fun/coin/"
-       rel="noopener noreferrer" target="_blank">Sell</a>
-  </div>
-  <div class="links">
-    <a id="pf" data-url="https://pump.fun/coin/" href="https://pump.fun"
-       rel="noopener noreferrer" target="_blank">pump.fun</a>
-    <a id="scan" data-url="https://solscan.io/token/" href="https://solscan.io"
-       rel="noopener noreferrer" target="_blank">Solscan</a>
-    <a id="dex" data-url="https://dexscreener.com/solana/" href="https://dexscreener.com"
-       rel="noopener noreferrer" target="_blank">DexScreener</a>
-  </div>
-  <p class="tiny" style="margin-top:12px">Buying and selling happen on pump.fun. This page holds
-  no liquidity, takes no fee, and never asks you to connect a wallet or sign anything.</p>
+<div class="trade">
+  <a class="btn buy" id="buy" data-url="https://pump.fun/coin/"
+     rel="noopener noreferrer" target="_blank">Buy</a>
+  <a class="btn sell" id="sell" data-url="https://pump.fun/coin/"
+     rel="noopener noreferrer" target="_blank">Sell</a>
 </div>
 
-<div class="warn">
-  <b>Check the address before you send anything.</b> A Solana address has no checksum &mdash; a
-  mistyped character can land on a real account and nothing warns you. Copy it from this page.
-  Never retype it, and never take it from a reply, a DM or a screenshot.
+<div class="chips">
+  <a class="chip" id="pf" data-url="https://pump.fun/coin/" href="https://pump.fun"
+     rel="noopener noreferrer" target="_blank">
+    <svg viewBox="0 0 32 32" width="26" height="26" aria-hidden="true" focusable="false">
+      <rect width="32" height="32" rx="9.5" fill="#2fd35b"/>
+      <g transform="rotate(-45 16 16)">
+        <rect x="10" y="3.5" width="12" height="25" rx="6" fill="#fff"/>
+        <rect x="10" y="15.1" width="12" height="1.7" fill="#2fd35b"/>
+      </g>
+    </svg>pump.fun</a>
+  <a class="chip" id="dex" data-url="https://dexscreener.com/solana/" href="https://dexscreener.com"
+     rel="noopener noreferrer" target="_blank">
+    <svg viewBox="0 0 32 32" width="26" height="26" aria-hidden="true" focusable="false">
+      <rect width="32" height="32" rx="9.5" fill="#7b5cf0"/>
+      <g fill="#fff">
+        <rect x="6.6" y="17" width="3.6" height="8.4" rx="1.3"/>
+        <rect x="7.9" y="14.4" width="1" height="13.6"/>
+        <rect x="14.2" y="10.8" width="3.6" height="11.4" rx="1.3"/>
+        <rect x="15.5" y="8.2" width="1" height="16.6"/>
+        <rect x="21.8" y="6.2" width="3.6" height="9.4" rx="1.3"/>
+        <rect x="23.1" y="4.2" width="1" height="13.4"/>
+      </g>
+    </svg>DexScreener</a>
+  <a class="chip" id="scan" data-url="https://solscan.io/token/" href="https://solscan.io"
+     rel="noopener noreferrer" target="_blank">
+    <svg viewBox="0 0 32 32" width="26" height="26" aria-hidden="true" focusable="false">
+      <defs><linearGradient id="ssg" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0" stop-color="#25d6c4"/><stop offset="1" stop-color="#7b5cf0"/>
+      </linearGradient></defs>
+      <rect width="32" height="32" rx="9.5" fill="url(#ssg)"/>
+      <g fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round">
+        <path d="M11.2 21.4a7 7 0 0 1 10-10"/>
+        <path d="M13.6 25a11 11 0 0 1 11-11" opacity=".7"/>
+      </g>
+      <circle cx="11.7" cy="11.7" r="2.2" fill="#fff"/>
+    </svg>Solscan</a>
 </div>
 
-<div class="card">
-  <h2>What it is</h2>
-  <p class="tiny">A token on pump.fun. It trades on a bonding curve until it graduates to a
-  pool; the price is whatever people pay. No presale and no team round.</p>
-  <p class="tiny"><b>The creator bought first, in the same transaction that made the token.</b>
-  That is how a pump.fun launch works, and it is a few percent of the float &mdash; check it on
-  Solscan rather than taking this page&rsquo;s word for it.</p>
-  <p class="tiny" style="margin:0"><b>It is not an investment and there is nothing behind it.</b>
-  No treasury, no revenue, no redemption, no promise. Most tokens like this go to zero. Do not
-  put in money you need.</p>
+<div class="verify">
+  <b>Copy it from here.</b> Copycats use this bear's face, and Solana addresses have no typo
+  check — never take one from a DM, a reply or a screenshot.
+</div>
+
+<section class="blk">
+  <h2>The 3am chart</h2>
+  <p>You have refreshed a chart at three in the morning. You have let a number decide what kind
+  of morning it was. The bear has done neither.</p>
+</section>
+
+<section class="blk">
+  <h2>What he does</h2>
+  <p>Nothing. No roadmap, no treasury, no plan to wake him. He does not know he is a financial
+  instrument, and telling him would not help.</p>
+</section>
+
+<section class="blk">
+  <h2>The whole book</h2>
+  <p>A pump.fun token on a bonding curve — the price is whatever people pay. The creator bought
+  first, in the same transaction that made the mint, a few percent of the float. Check that on
+  Solscan instead of believing this page.</p>
+</section>
+
+<div class="song">
+  <h2>Snooze Bear Is Sleeping</h2>
+  <p class="by">the theme song &middot; sing it slowly</p>
+<pre>Down in the hollow where the lanterns are gold,
+there lives a bear, and here's how it's told:
+he found him a blanket, he found him a chair,
+and nothing in the world is going to move that bear.
+
+<span class="ch">Snooze Bear, Snooze Bear, hum him a tune.
+Snooze Bear, Snooze Bear, sleeping past noon.
+The clocks can keep counting, the kettles can cry —
+Snooze Bear is snoring, and so am I.</span>
+
+Somebody knocked, and he did not wake.
+Somebody shouted there was money to make.
+He rolled to the wall with a sleepy old sigh
+and slept a little deeper. He never asked why.
+
+<span class="ch">Snooze Bear, Snooze Bear, hum him a tune.
+Snooze Bear, Snooze Bear, sleeping past noon.
+The clocks can keep counting, the kettles can cry —
+Snooze Bear is snoring, and so am I.</span>
+
+Somebody is watching a screen in the night,
+counting little candles by the flickering light.
+Whatever was so urgent has drifted away.
+Snooze Bear, Snooze Bear will sleep through the day.</pre>
 </div>
 
 <footer>
+  Nothing is behind it and nothing is promised — if it goes to zero,<br>
+  the bear sleeps through that too.<br><br>
   snoozebear.xyz &middot; no analytics, no trackers, no cookies<br>
   This page cannot send a transaction.
 </footer>
@@ -176,37 +308,31 @@ a{color:var(--goldHi)}
 "use strict";
 (function(){
   var $ = function(id){ return document.getElementById(id); };
-  /* ONE SOURCE OF TRUTH, and it is the markup. `publish` rewrites the data-ca line, so the
-     address renders without any of this running. This only adds what genuinely needs
-     JavaScript: the links and the copy button. */
+  /* ONE SOURCE OF TRUTH, and it is the markup. `publish` rewrites the data-ca line and every
+     data-url href, so the address and all five links render with JavaScript off. This adds
+     only what genuinely needs it: the copy button. */
   var box = $("ca");
   var CA = (box.getAttribute("data-ca") || "").trim();
   if(!CA) return;
 
   $("copy").hidden = false;
 
-  /* A FALLBACK, not the mechanism. `publish` writes these hrefs into the markup so every
-     link works with JavaScript off — this only fills one that publish has not reached, which
-     is a page whose data-ca was edited by hand. A link already pointing at the mint is left
-     alone rather than rewritten to the same value. */
+  /* A fallback, not the mechanism — it fills a link publish has not reached, which is a page
+     whose data-ca was edited by hand, and leaves a correct href alone. */
   var links = document.querySelectorAll("a[data-url]");
-  for (var i = 0; i < links.length; i++) {
+  for(var i = 0; i < links.length; i++){
     var a = links[i], want = a.getAttribute("data-url") + CA;
-    if (a.getAttribute("href") !== want) a.setAttribute("href", want);
+    if(a.getAttribute("href") !== want) a.setAttribute("href", want);
   }
 
   $("copy").addEventListener("click", function(){
     var done = function(){
       $("copy").textContent = "Copied";
-      setTimeout(function(){ $("copy").textContent = "Copy address"; }, 1400);
+      setTimeout(function(){ $("copy").textContent = "Copy address"; }, 1500);
     };
-    if(navigator.clipboard && navigator.clipboard.writeText){
-      navigator.clipboard.writeText(CA).then(done, select);
-    } else { select(); }
     function select(){
-      /* Clipboard access can be refused — an insecure origin, a permissions policy, an
-         in-app browser. Select the text instead so it is still copyable by hand rather
-         than failing silently. */
+      /* Clipboard access can be refused — an insecure origin, a permissions policy, an in-app
+         browser. Select the text so it stays copyable by hand rather than failing silently. */
       try{
         var r = document.createRange();
         r.selectNodeContents(box);
@@ -215,6 +341,9 @@ a{color:var(--goldHi)}
         $("copy").textContent = "Select and copy";
       }catch(e){ $("copy").textContent = "Copy failed — select it by hand"; }
     }
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      navigator.clipboard.writeText(CA).then(done, select);
+    } else { select(); }
   });
 })();
 </script>
