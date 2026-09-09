@@ -33,10 +33,18 @@ has no default, because it is money.
 ## 2 · A fresh wallet, holding only the launch
 
 ```
-solana-keygen new -o ./launch.json
-chmod 600 ./launch.json
+mkdir -p ~/.snooze && chmod 700 ~/.snooze
+solana-keygen new -o ~/.snooze/launch.json
+chmod 600 ~/.snooze/launch.json
 # fund it with the dev buy + ~0.03 SOL. Nothing else, ever.
 ```
+
+**Not in this directory.** The launch record written in step 6 sits beside the keypair and
+contains the mint's secret key; a keypair file contains the wallet's outright. Inside the repo,
+one `git add -A` publishes either to GitHub, where it is scraped in minutes. `.gitignore` covers
+the predictable names as a backstop, but `solana-keygen grind` writes a file named after an
+address nobody can predict — so keep them out of the tree instead of relying on a pattern.
+`pumpfun.py` warns if it ever writes a record inside a git repository.
 
 `launch` reads the balance first and **refuses to sign with a wallet holding more than the
 launch needs** — that is evidence of the wrong file, not of headroom.
@@ -48,8 +56,8 @@ launch needs** — that is evidence of the wrong file, not of headroom.
 ## 3 · Grind the mint address
 
 ```
-solana-keygen grind --ends-with pump:1
-chmod 600 ./<the file it writes>.json
+cd ~/.snooze && solana-keygen grind --ends-with pump:1
+chmod 600 ~/.snooze/<the file it writes>.json
 ```
 
 Almost every pump.fun token ends in `pump`, because pump.fun's frontend grinds for it. **The
@@ -83,7 +91,7 @@ transactions under load.
 
 ```
 python3 pumpfun.py launch \
-  --keypair ./launch.json --mint-keypair ./<ground>.json \
+  --keypair ~/.snooze/launch.json --mint-keypair ~/.snooze/<ground>.json \
   --dev-buy 1.0 --name "Snooze Bear" --symbol SNOOZE \
   --image ./web/snooze.png --website https://snoozebear.xyz \
   --dry-run
@@ -120,7 +128,8 @@ dev buy. All of it, in one transaction, with no edit path.
 ### If anything goes wrong, do not run `launch` again
 
 ```
-python3 pumpfun.py resume --keypair ./launch.json --record ./launch-<mint>.json
+python3 pumpfun.py resume --keypair ~/.snooze/launch.json \
+    --record ~/.snooze/launch-<mint>.json
 ```
 
 `resume` checks whether the mint already exists **before doing anything**, so it cannot create a
@@ -134,8 +143,8 @@ landed, and that is what `resume` establishes rather than assumes.
 ## 7 · Publish the contract address
 
 ```
-python3 pumpfun.py publish --record ./launch-<mint>.json            # says what it would write
-python3 pumpfun.py publish --record ./launch-<mint>.json --write
+python3 pumpfun.py publish --record ~/.snooze/launch-<mint>.json          # dry run
+python3 pumpfun.py publish --record ~/.snooze/launch-<mint>.json --write
 git add web/index.html && git commit -m "publish the contract address" && git push
 ```
 

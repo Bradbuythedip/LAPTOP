@@ -1,11 +1,24 @@
-node_modules/
-env/
+# ── KEY MATERIAL. Nothing here may ever be committed. ────────────────────────────────────────
+#
+# A launch record holds the MINT'S SECRET KEY — it has to, because re-sending with the same
+# mint is a retry and re-sending with a new one is a second token. A Solana CLI keypair file
+# holds the launch wallet's secret key outright. `git add -A` after a launch would publish
+# either one to GitHub, where it is scraped in minutes.
+#
+# These patterns are a backstop, NOT the plan. The plan is that keys live outside the
+# repository entirely — see LAUNCH.md, which puts them in ~/.snooze — because a pattern only
+# catches the filenames somebody thought of, and `solana-keygen grind` writes a file named
+# after an address nobody can predict.
+launch-*.json
+launch.json
+id.json
+mint-*.json
+*keypair*.json
+*.keypair
+.snooze/
+
+# ── ordinary junk ───────────────────────────────────────────────────────────────────────────
 __pycache__/
 *.pyc
 .vercel
-test/shot-*.png
-shots/
-deploy/launch-state.json
-deploy/predicted.json
-deploy/.test-cli/
-deploy/.test-state.json
+node_modules/

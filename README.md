@@ -105,17 +105,34 @@ initialise.
 It is all removed rather than left to rot into false claims about a token that works differently.
 It is in the git history if it is ever wanted.
 
+## Keys never go in this directory
+
+`pumpfun.py` writes a launch record beside your keypair, and **it contains the mint's secret
+key** — it has to, because re-sending with the same mint is a retry and re-sending with a new
+one is a second token. A Solana CLI keypair file contains the launch wallet's key outright.
+
+Inside a git repository, one `git add -A` publishes either to GitHub, where it is scraped in
+minutes. So `LAUNCH.md` puts them in `~/.snooze`, `.gitignore` covers the predictable filenames
+as a **backstop rather than a plan** — a pattern only catches names somebody thought of, and
+`solana-keygen grind` writes a file named after an address nobody can predict — and the script
+warns at write time if a record ever lands inside a repository.
+
+This was a real hole until it was tested for: `launch-*.json` was not ignored, and neither were
+`launch.json` or `id.json`, which are what `solana-keygen new` writes by default.
+
 ## Tests
 
 ```
 sh test/run.sh
 ```
 
-**88 assertions, no network touched, nothing to install.** They cover the arithmetic against
+**104 assertions, no network touched, nothing to install** (plus the script's own 33-check
+`selftest`, which is what a downloaded copy can run on its own). They cover the arithmetic against
 RFC 8032 and published base58 vectors, every way a keypair file is refused, the transaction
 decoder against transactions built byte by byte, the publish flow end-to-end against the real
-page, that the site says what it must and mentions no chain it is not on, and the page's own
-script executed against a stub DOM so a broken link is a failed test rather than a dead button
-on launch day.
+page, that the site says what it must and mentions no chain it is not on, the page's own script
+executed against a stub DOM so a broken link is a failed test rather than a dead button on
+launch day, and — the one with the worst consequence — that a launch record can never be
+committed.
 
 `node` is used for the page smoke test only. Everything else is Python and the standard library.

@@ -221,6 +221,46 @@ with redirect_stdout(StringIO()):
     g, tries = P.grind_mint("z")
 ok("a one-character suffix actually grinds", g.address.endswith("z") and tries >= 1)
 
+print("── a secret key must not be committable, and .gitignore is only the backstop")
+GI = (ROOT / ".gitignore").read_text()
+for pat in ["launch-*.json", "launch.json", "id.json", "mint-*.json", "*keypair*.json"]:
+    ok("gitignore covers %s" % pat, pat in GI)
+ok("and it does NOT swallow vercel.json, which must be committed",
+   "vercel.json" not in GI and not re.search(r"^\*\.json$", GI, re.M))
+with tempfile.TemporaryDirectory() as d:
+    os.makedirs(Path(d) / "repo" / ".git")
+    ok("a record inside a git worktree is detected",
+       P.in_git_worktree(Path(d) / "repo" / "launch-x.json") == Path(d, "repo").resolve())
+    ok("and one outside it is not",
+       P.in_git_worktree(Path(d) / "launch-x.json") is None)
+    ok("detection walks up from a nested directory",
+       P.in_git_worktree(Path(d) / "repo" / "a" / "b" / "launch-x.json")
+       == Path(d, "repo").resolve())
+    out = StringIO()
+    with redirect_stdout(out):
+        P.warn_if_committable(Path(d) / "repo" / "launch-x.json")
+    ok("it warns, and says the key would be scraped", "SECRET KEY" in out.getvalue()
+       and "scraped" in out.getvalue())
+    ok("and points the operator outside the repository", "~/.snooze" in out.getvalue())
+    quiet = StringIO()
+    with redirect_stdout(quiet):
+        P.warn_if_committable(Path(d) / "launch-x.json")
+    ok("it stays silent when the record is outside a repository", quiet.getvalue() == "")
+# The record itself must never be world-readable, whatever else is true.
+with tempfile.TemporaryDirectory() as d:
+    rp = Path(d) / "launch-x.json"
+    os.umask(0)
+    P.write_record(rp, {"mint": "x"})
+    ok("write_record creates 0600 even under a permissive umask",
+       (rp.stat().st_mode & 0o777) == 0o600, oct(rp.stat().st_mode & 0o777))
+
+print("── the docs point keys outside the repository")
+LM = (ROOT / "LAUNCH.md").read_text()
+ok("LAUNCH.md keeps the launch keypair out of the tree",
+   "~/.snooze/launch.json" in LM and "-o ./launch.json" not in LM)
+ok("and the ground mint too", "cd ~/.snooze && solana-keygen grind" in LM)
+ok("and says why rather than just where", "scraped in minutes" in LM)
+
 print("── the transaction is decoded before a key touches it")
 payer, mint, other = P.Keypair.generate(), P.Keypair.generate(), P.Keypair.generate()
 

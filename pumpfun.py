@@ -574,6 +574,33 @@ def existing_records(keypair_path: str) -> list[Path]:
     return sorted(d.glob("launch-*.json"))
 
 
+def in_git_worktree(path: Path) -> Path | None:
+    """The repository root above `path`, if there is one."""
+    p = Path(path).expanduser().resolve()
+    for d in [p if p.is_dir() else p.parent, *(p if p.is_dir() else p.parent).parents]:
+        if (d / ".git").exists():
+            return d
+    return None
+
+
+def warn_if_committable(path: Path) -> None:
+    """A launch record holds a secret key. Say so, loudly, if git can see it.
+
+    .gitignore is a backstop and not a plan: it only catches filenames somebody thought of, and
+    `solana-keygen grind` writes a file named after an address nobody can predict. So the check
+    that matters is at write time, when the path is known.
+    """
+    root = in_git_worktree(path)
+    if root is None:
+        return
+    print("\n  ! THIS RECORD IS INSIDE A GIT REPOSITORY (%s)." % root)
+    print("    It contains the mint's SECRET KEY. `git add -A` would commit it, and a secret")
+    print("    key pushed to GitHub is scraped within minutes.")
+    print("    Keep launch keys outside the repository:")
+    print("        mkdir -p ~/.snooze && chmod 700 ~/.snooze")
+    print("        solana-keygen new -o ~/.snooze/launch.json && chmod 600 ~/.snooze/launch.json")
+
+
 def write_record(path: Path, data: dict) -> None:
     # 0600 before a byte is written, not after: a world-readable window of even a moment is a
     # window, and os.open with the mode is the only way to have none.
@@ -915,6 +942,7 @@ def cmd_launch(args):
     }
     write_record(rec_path, record)
     print("\n  record    %s   (written BEFORE sending, so a retry is a retry)" % rec_path)
+    warn_if_committable(rec_path)
 
     return _send_and_confirm(rpc, kp, mint, tx, record, rec_path, args.keypair)
 
