@@ -890,12 +890,14 @@ def build_create_and_buy_direct(payer: str, mint: str, name: str, symbol: str, u
     # error 6062, BuybackFeeRecipientMissing, which is where this landed. They take lamports,
     # so they are writable. Read from Global every time rather than pinned here: they are
     # configuration, and configuration that is copied into a script goes stale silently.
+    # ONE buyback recipient, not eight. Two real legacy buys on mainnet each passed exactly
+    # two trailing accounts — bonding_curve_v2, then a single recipient out of Global's eight
+    # — where this was sending all eight. Error 6061's "exactly 8 remaining accounts (or
+    # none)" describes some other caller's shape, and building to the error message instead of
+    # to an observed transaction is how that happened.
     recipients = g.get("buyback_fee_recipients") or []
-    if g.get("is_cashback_enabled") and len(recipients) != 8:
-        raise RuntimeError("cashback is enabled and Global names %d buyback recipients, not 8"
-                           % len(recipients))
-    buyback = ([Account(r, writable=True) for r in recipients]
-               if g.get("is_cashback_enabled") else [])
+    buyback = ([Account(recipients[0], writable=True)]
+               if g.get("is_cashback_enabled") and recipients else [])
 
     uva = find_program_address([b"user_volume_accumulator", b58decode(payer)], PUMP_PROGRAM)
     if init_user_volume:
