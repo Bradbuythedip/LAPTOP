@@ -9,8 +9,14 @@
 <meta name="description" content="Snooze Bear. A token on pump.fun, on Solana. You snooze, you win.">
 <meta property="og:title" content="$SNOOZE — Snooze Bear">
 <meta property="og:description" content="A token on pump.fun, on Solana. You snooze, you win.">
-<meta property="og:image" content="/hero.png">
-<meta name="twitter:card" content="summary_large_image">
+<meta property="og:url" content="https://snoozebear.xyz/">
+<meta property="og:image" content="https://snoozebear.xyz/hero.png">
+<meta property="og:image:width" content="1024">
+<meta property="og:image:height" content="1024">
+<!-- summary, not summary_large_image: the artwork is square, and a large card crops a square
+     to 1.91:1 and takes the bear's face off. Distribution here is entirely link-sharing. -->
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://snoozebear.xyz/hero.png">
 <link rel="icon" type="image/png" href="/icon.png">
 <link rel="apple-touch-icon" href="/icon.png">
 <style>
@@ -29,7 +35,7 @@ body{background:var(--bg);color:var(--fg);
   font:16px/1.6 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
   -webkit-text-size-adjust:100%;overflow-x:hidden;
   padding:0 18px calc(40px + env(safe-area-inset-bottom));max-width:620px;margin:0 auto;
-  background-image:url("/bg.png");background-size:cover;background-position:center;
+  background-image:url("/bg.webp");background-size:cover;background-position:center;
   background-attachment:fixed}
 .wrap{background:rgba(7,11,22,.72);backdrop-filter:blur(2px);margin:0 -18px;padding:0 18px}
 
@@ -71,9 +77,12 @@ h2{font-size:14px;margin:0 0 10px;letter-spacing:.04em;text-transform:uppercase;
 .btn.sell{background:transparent;color:var(--fg);border:1px solid var(--line)}
 .btn.sell:hover{border-color:var(--gold);color:var(--goldHi)}
 .btn:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
-.btn[aria-disabled="true"]{opacity:.4;pointer-events:none}
-.links{display:flex;gap:14px;flex-wrap:wrap;margin-top:12px;font-size:13px}
-.links a{color:var(--dim)}
+.btn:not([href]){opacity:.4;pointer-events:none;cursor:default}
+.links{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;font-size:13.5px}
+/* 44px tall, because these three links are how a cautious buyer verifies the mint
+   independently and they were the hardest thing on the page to hit. */
+.links a{color:var(--dim);display:inline-flex;align-items:center;min-height:44px;padding:0 11px;
+  border:1px solid var(--line);border-radius:8px;text-decoration:none}
 .links a:hover{color:var(--goldHi)}
 
 .warn{background:rgba(242,193,78,.09);border-left:3px solid var(--warn);
@@ -98,22 +107,29 @@ a{color:var(--goldHi)}
 
 <div class="card">
   <h2>Contract address</h2>
-  <div class="ca none" id="ca">Not launched yet.</div>
-  <button class="copy" id="copy" type="button" hidden>Copy address</button>
+  <!-- THE ADDRESS IS IN THE MARKUP, and `publish` rewrites this one line. It used to exist
+       only inside the script, so with JavaScript off or blocked — an in-app webview from X or
+       Telegram, Brave on strict, a content blocker — the canonical page for a launched token
+       said "Not launched yet." and Buy went to pump.fun's homepage, where the first search
+       result for a name is not necessarily the token. -->
+  <div class="ca none" id="ca" data-ca="">Not launched yet.</div>
+  <button class="copy" id="copy" type="button" hidden aria-live="polite">Copy address</button>
 </div>
 
 <div class="card">
   <h2>Trade</h2>
   <div class="trade">
-    <a class="btn buy" id="buy" href="https://pump.fun" aria-disabled="true"
-       rel="noopener noreferrer" target="_blank">Buy</a>
-    <a class="btn sell" id="sell" href="https://pump.fun" aria-disabled="true"
-       rel="noopener noreferrer" target="_blank">Sell</a>
+    <!-- NO href UNTIL THERE IS AN ADDRESS. aria-disabled is announced but does not stop a
+         click, and pointer-events:none does not stop the keyboard: Tab, Enter, and a new tab
+         opens on pump.fun's homepage with no token. An anchor without href is not focusable
+         and not activatable, in every browser, with or without CSS. -->
+    <a class="btn buy" id="buy" rel="noopener noreferrer" target="_blank">Buy</a>
+    <a class="btn sell" id="sell" rel="noopener noreferrer" target="_blank">Sell</a>
   </div>
   <div class="links">
     <a id="pf" href="https://pump.fun" rel="noopener noreferrer" target="_blank">pump.fun</a>
     <a id="scan" href="https://solscan.io" rel="noopener noreferrer" target="_blank">Solscan</a>
-    <a id="dex" href="https://dexscreener.com/solana" rel="noopener noreferrer" target="_blank">DexScreener</a>
+    <a id="dex" href="https://dexscreener.com" rel="noopener noreferrer" target="_blank">DexScreener</a>
   </div>
   <p class="tiny" style="margin-top:12px">Buying and selling happen on pump.fun. This page holds
   no liquidity, takes no fee, and never asks you to connect a wallet or sign anything.</p>
@@ -128,8 +144,10 @@ a{color:var(--goldHi)}
 <div class="card">
   <h2>What it is</h2>
   <p class="tiny">A token on pump.fun. It trades on a bonding curve until it graduates to a
-  pool; the price is whatever people pay. There is no presale, no allocation and no team
-  round.</p>
+  pool; the price is whatever people pay. No presale and no team round.</p>
+  <p class="tiny"><b>The creator bought first, in the same transaction that made the token.</b>
+  That is how a pump.fun launch works, and it is a few percent of the float &mdash; check it on
+  Solscan rather than taking this page&rsquo;s word for it.</p>
   <p class="tiny" style="margin:0"><b>It is not an investment and there is nothing behind it.</b>
   No treasury, no revenue, no redemption, no promise. Most tokens like this go to zero. Do not
   put in money you need.</p>
@@ -143,22 +161,20 @@ a{color:var(--goldHi)}
 </div>
 <script>
 "use strict";
-/* Written by `python3 pumpfun.py publish --write`, from the launch record, after the mint was
-   read back off the chain. Empty until then, and the page says so rather than showing an
-   empty box that reads as loading. */
-const CA = "";
-
 (function(){
   var $ = function(id){ return document.getElementById(id); };
+  /* ONE SOURCE OF TRUTH, and it is the markup. `publish` rewrites the data-ca line, so the
+     address renders without any of this running. This only adds what genuinely needs
+     JavaScript: the links and the copy button. */
+  var box = $("ca");
+  var CA = (box.getAttribute("data-ca") || "").trim();
   if(!CA) return;
 
-  $("ca").textContent = CA;
-  $("ca").className = "ca";
   $("copy").hidden = false;
 
   var coin = "https://pump.fun/coin/" + CA;
-  $("buy").href = coin;   $("buy").removeAttribute("aria-disabled");
-  $("sell").href = coin;  $("sell").removeAttribute("aria-disabled");
+  $("buy").href = coin;
+  $("sell").href = coin;
   $("pf").href = coin;
   $("scan").href = "https://solscan.io/token/" + CA;
   $("dex").href = "https://dexscreener.com/solana/" + CA;
@@ -177,7 +193,7 @@ const CA = "";
          than failing silently. */
       try{
         var r = document.createRange();
-        r.selectNodeContents($("ca"));
+        r.selectNodeContents(box);
         var s = window.getSelection();
         s.removeAllRanges(); s.addRange(r);
         $("copy").textContent = "Select and copy";

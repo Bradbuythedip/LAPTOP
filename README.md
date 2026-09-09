@@ -86,6 +86,28 @@ None of these were findable by reading, and every one would have cost the launch
    back to the create now.
 5. **`publish` referenced an undefined `HERE` and died with a `NameError`** before reading
    anything — on the one command whose entire job is launch day.
+6. **The confirmation loop caught its own verdict.** It wrapped the RPC calls in
+   `except RuntimeError` so a transient network failure would not abandon a transaction in
+   flight — but "it landed and reverted" was raised as a `RuntimeError` too, so the loop caught
+   its own exception, printed it as `(rpc hiccup: … — still watching)`, and went round again.
+   **Forever**, on the one outcome where the operator most needs it to stop. It has its own
+   exception type now, and only the RPC calls are inside the guard.
+7. **`resume` could never rebuild.** When a blockhash expired with nothing on chain it left the
+   dead signature in the record, so every subsequent `resume` re-checked a transaction that
+   could never land and reported the same dead end instead of resending. The signature is
+   cleared now.
+8. **The verifier's fee ceiling was below the script's own cost estimate** — 0.02 SOL against a
+   `--reserve` of 0.03 for exactly the same costs. A correct launch failed its own verification.
+9. **The address only existed inside JavaScript.** With JS off or blocked — an in-app webview
+   from X or Telegram, a content blocker, Brave on strict — the canonical page for a launched
+   token said "Not launched yet" and Buy pointed at pump.fun's homepage. The address is in the
+   markup now and `publish` rewrites that line.
+10. **`aria-disabled` does not make an anchor inert.** Tab, Enter, and a new tab opened on
+    pump.fun's homepage with no token. The buttons have no `href` until one is published.
+11. **The site said "no allocation"** while the launch takes 3–5% of the float for the creator
+    in the create transaction. One false sentence on the page a buyer checks against Solscan.
+12. **`web/bg.png` was a WebP file**, served as `image/png` under `X-Content-Type-Options:
+    nosniff`.
 
 Two more were closed by design. **Nothing reached disk**, so a crash lost the mint keypair, the
 signature and the metadata URI at once, and the only "recovery" was a command that mints a twin —
@@ -126,7 +148,7 @@ This was a real hole until it was tested for: `launch-*.json` was not ignored, a
 sh test/run.sh
 ```
 
-**104 assertions, no network touched, nothing to install** (plus the script's own 33-check
+**125 assertions, no network touched, nothing to install** (plus the script's own 33-check
 `selftest`, which is what a downloaded copy can run on its own). They cover the arithmetic against
 RFC 8032 and published base58 vectors, every way a keypair file is refused, the transaction
 decoder against transactions built byte by byte, the publish flow end-to-end against the real

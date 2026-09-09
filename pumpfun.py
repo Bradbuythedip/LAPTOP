@@ -362,7 +362,7 @@ class Rpc:
 # Solana's wire format, decoded so the thing being signed can be looked at first. This is the
 # reason this file exists rather than a curl command: the transaction is composed by somebody
 # else's builder, and signing bytes you have not decoded is the whole class of loss this
-# project spends nine HTML pages arguing against.
+# project exists to avoid.
 
 def _shortvec_decode(buf: bytes, i: int):
     """Solana's compact-u16. Returns (value, next index)."""
@@ -495,7 +495,7 @@ class Transaction:
 
 
 def verify_transaction(tx: Transaction, payer: str, mint: str, authorised_lamports: int,
-                       rpc: Rpc, fee_ceiling: int = 20_000_000) -> list[tuple[bool, str]]:
+                       rpc: Rpc, fee_ceiling: int = 40_000_000) -> list[tuple[bool, str]]:
     """Everything that has to be true before a key touches these bytes.
 
     Two layers, and the second is the one that matters. The structural checks depend on
@@ -513,6 +513,11 @@ def verify_transaction(tx: Transaction, payer: str, mint: str, authorised_lampor
         checks.append((bool(cond), name + (("  — " + detail) if detail and not cond else "")))
 
     # ── the economic check, which needs no instruction layout at all
+    #
+    # THE CEILING HAS TO CLEAR THE SCRIPT'S OWN COST ESTIMATE. It was 0.02 SOL while --reserve
+    # budgets 0.03 for exactly the same costs — mint rent, metadata rent, two token accounts,
+    # pump.fun's fee, the priority fee. A correct create+buy landing anywhere in that band
+    # failed its own verification, so the launch refused itself.
     #
     # AT THE SAME COMMITMENT AS THE SIMULATION. simulateTransaction below runs at "processed";
     # taking the before-balance at anything later means any transfer that is confirmed but not
@@ -815,12 +820,15 @@ def cmd_launch(args):
     ceiling = int((args.dev_buy + args.reserve + args.headroom) * LAMPORTS)
     if bal > ceiling:
         raise RuntimeError(
-            "%s holds %.4f SOL, more than the %.4f this launch needs.\n"
+            "%s holds %.4f SOL, more than the %.4f this launch needs "
+            "(dev buy %.2f + reserve %.2f + headroom %.2f).\n"
             "  That looks like a main wallet, and this refuses to sign with one. Fund a FRESH\n"
             "  keypair with the launch amount only:\n"
             "      solana-keygen new -o ./launch.json && chmod 600 ./launch.json\n"
             "  Raise --headroom only if you know exactly why."
-            % (kp.address, bal / LAMPORTS, args.dev_buy + args.headroom))
+            % (kp.address, bal / LAMPORTS,
+               args.dev_buy + args.reserve + args.headroom,
+               args.dev_buy, args.reserve, args.headroom))
     if bal < need + reserve:
         raise RuntimeError(
             "%s holds %.4f SOL. The dev buy is %.4f and a create also pays rent for the mint,\n"
@@ -860,6 +868,16 @@ def cmd_launch(args):
                          "  Do not start a new launch: if that transaction is still in flight,\n"
                          "  a new one is a second token." % (args.keypair, rec))))
 
+    # CHECKED BEFORE ANYTHING EXPENSIVE. A missing --image used to surface as an uncaught
+    # FileNotFoundError from inside upload_metadata — after the mint was ground, which can be
+    # minutes. And --dry-run never opened it at all, so the rehearsal passed and the real run
+    # failed on the same typo.
+    img = Path(args.image).expanduser()
+    if not img.is_file():
+        raise RuntimeError("no image at %s — the launch needs one and pins it permanently" % img)
+    if img.stat().st_size == 0:
+        raise RuntimeError("%s is empty" % img)
+
     # ── the mint
     if args.mint_keypair:
         mint = Keypair.load(args.mint_keypair)
@@ -880,6 +898,26 @@ def cmd_launch(args):
         print("        solana-keygen grind --ends-with pump:1")
         print("        python3 pumpfun.py launch --mint-keypair ./<that file>.json …\n")
 
+    # THE MINT REACHES DISK NOW, before anything that can fail. It used to be written only
+    # after the metadata upload and the build had both succeeded — so a grind of several
+    # minutes, or a builder that returned a stale blockhash, lost the keypair entirely and the
+    # only way forward was a NEW mint, which is a different token with a different address.
+    rec_path = record_path(args.keypair, mint.address)
+    record = {
+        "mint": mint.address,
+        "mint_keypair": list(mint._seed + mint.pub),
+        "payer": kp.address,
+        "name": args.name, "symbol": args.symbol, "uri": None,
+        "dev_buy_sol": args.dev_buy,
+        "slippage": args.slippage, "priority_fee": args.priority_fee,
+        "blockhash": None, "balance_before": bal, "signature": None,
+        "status": "mint-reserved",
+    }
+    if not args.dry_run:
+        write_record(rec_path, record)
+        print("\n  record    %s" % rec_path)
+        warn_if_committable(rec_path)
+
     # ── metadata. A DRY RUN MUST NOT PUBLISH ANYTHING.
     #
     # The upload is permanent and public: name, ticker, image and socials pinned to IPFS the
@@ -894,6 +932,9 @@ def cmd_launch(args):
         uri = upload_metadata(args.name, args.symbol, args.description, args.image,
                               args.twitter, args.telegram, args.website)
         print("  metadata  %s" % uri)
+        record["uri"] = uri
+        record["status"] = "metadata-pinned"
+        write_record(rec_path, record)
 
     print("\n  building create + buy as ONE transaction…")
     raw = build_create_and_buy(kp.address, mint.address, args.name, args.symbol, uri,
@@ -927,22 +968,11 @@ def cmd_launch(args):
             "  metadata is already pinned, so pass --mint-keypair to keep the same mint."
             % tx.recent_blockhash)
 
-    # ── the record, written BEFORE the send and not after
-    rec_path = record_path(args.keypair, mint.address)
-    record = {
-        "mint": mint.address,
-        "mint_keypair": list(mint._seed + mint.pub),
-        "payer": kp.address,
-        "name": args.name, "symbol": args.symbol, "uri": uri,
-        "dev_buy_sol": args.dev_buy,
-        "blockhash": tx.recent_blockhash,
-        "balance_before": bal,
-        "signature": None,
-        "status": "about-to-send",
-    }
+    # ── everything the send needs is now known
+    record["blockhash"] = tx.recent_blockhash
+    record["status"] = "about-to-send"
     write_record(rec_path, record)
     print("\n  record    %s   (written BEFORE sending, so a retry is a retry)" % rec_path)
-    warn_if_committable(rec_path)
 
     return _send_and_confirm(rpc, kp, mint, tx, record, rec_path, args.keypair)
 
@@ -989,6 +1019,17 @@ def _send_and_confirm(rpc, kp, mint, tx, record, rec_path, keypair_path):
     return _read_back(rpc, kp, mint, record, rec_path)
 
 
+class LaunchFailed(RuntimeError):
+    """The transaction landed and reverted. A distinct type ON PURPOSE.
+
+    The loop below catches RuntimeError to survive a transient RPC failure while a transaction
+    is in flight — abandoning one that might have landed is what leads to a relaunch. But the
+    "it landed and failed" raise was ALSO a RuntimeError, so the loop caught its own exception,
+    printed it as "(rpc hiccup: … — still watching)", and went round again. Forever. On the one
+    outcome where the operator most needs the command to stop and say what happened.
+    """
+
+
 def _await_confirmation(rpc, sig, blockhash, mint_addr, rec_path, record) -> bool:
     """Wait on the BLOCKHASH, not on a wall clock.
 
@@ -999,43 +1040,52 @@ def _await_confirmation(rpc, sig, blockhash, mint_addr, rec_path, record) -> boo
     """
     print("\n  confirming (waiting on the blockhash, not on a clock)…")
     while True:
+        # ONLY the RPC calls are inside the guard. Everything decided from their answers is
+        # outside it, so a decision this function makes can never be mistaken for a network
+        # failure by this function.
         try:
-            st = rpc.send("getSignatureStatuses", [[sig], {"searchTransactionHistory": True}])
-            v = (st.get("value") or [None])[0]
-            if v and v.get("confirmationStatus") in ("confirmed", "finalized"):
-                if v.get("err"):
-                    record["status"] = "landed-and-failed"
-                    write_record(rec_path, record)
-                    raise RuntimeError(
-                        "the transaction landed and FAILED on chain: %r\n"
-                        "  Nothing was created and the dev buy was not spent — a Solana\n"
-                        "  transaction is atomic. The fee was. Fix the cause and resume with\n"
-                        "  the SAME mint." % v["err"])
-                record["status"] = "landed"
-                write_record(rec_path, record)
-                return True
+            status = rpc.send("getSignatureStatuses",
+                              [[sig], {"searchTransactionHistory": True}])
             still_possible = rpc.blockhash_valid(blockhash)
         except RuntimeError as e:
-            # A transient RPC failure while a transaction is in flight is not a reason to
-            # abandon it — abandoning is what leads to a relaunch. Report and keep polling.
             print("    (rpc hiccup: %s — still watching)" % e)
             time.sleep(3)
             continue
-        if not still_possible:
-            # One last look: the transaction could have landed in the block that expired it.
-            st = rpc.send("getSignatureStatuses", [[sig], {"searchTransactionHistory": True}])
-            v = (st.get("value") or [None])[0]
-            if v:
-                continue
+
+        v = (status.get("value") or [None])[0]
+        if v and v.get("confirmationStatus") in ("confirmed", "finalized"):
+            if v.get("err"):
+                record["status"] = "landed-and-failed"
+                record["error"] = str(v["err"])
+                write_record(rec_path, record)
+                raise LaunchFailed(
+                    "the transaction landed and FAILED on chain: %r\n"
+                    "  Nothing was created and the dev buy was not spent — a Solana\n"
+                    "  transaction is atomic. The fee was. Fix the cause and resume with the\n"
+                    "  SAME mint:\n"
+                    "      python3 pumpfun.py resume --keypair <yours> --record %s"
+                    % (v["err"], rec_path))
+            record["status"] = "landed"
+            write_record(rec_path, record)
+            return True
+
+        if not still_possible and not v:
+            # Dead beyond recovery: the blockhash can no longer be used, so those bytes can
+            # never execute. THE SIGNATURE IS CLEARED — without that, resume finds a recorded
+            # signature, re-checks a transaction that can never land, and reports the same dead
+            # end forever instead of rebuilding.
             record["status"] = "expired-never-landed"
+            record["signature"] = None
             write_record(rec_path, record)
             print("\n  THE BLOCKHASH EXPIRED AND THE TRANSACTION NEVER LANDED.")
             print("  This is the one outcome that is safe to retry, and it is safe because it")
-            print("  is now KNOWN rather than assumed — the blockhash can no longer be used, so")
-            print("  those bytes can never execute. Retry with the SAME mint:")
-            print("      python3 pumpfun.py resume --record %s --keypair <your keypair>\n"
-                  % rec_path)
+            print("  is now KNOWN rather than assumed. Retry with the SAME mint:")
+            print("      python3 pumpfun.py resume --keypair <yours> --record %s\n" % rec_path)
             return False
+
+        # Either it is still in flight, or the blockhash is dead while a non-confirmed status
+        # lingers (a minority fork, a node lagging its own promotion). Both are "keep looking",
+        # and both need the sleep — without it this span polls as fast as the network allows.
         time.sleep(2)
 
 
@@ -1043,7 +1093,11 @@ def _read_back(rpc, kp, mint, record, rec_path):
     """Read the result at the SAME commitment the confirmation used."""
     print("\n  reading it back off the chain (at 'confirmed', matching the wait)…")
     after = rpc.balance(kp.address)
-    spent = record["balance_before"] - after
+    # .get, not [], because resume reaches here on records written by an earlier run that may
+    # not carry it — and a KeyError on a launch that HAS landed is a traceback at the worst
+    # possible moment, over a number that is only used to print a cost basis.
+    before = record.get("balance_before")
+    spent = (before - after) if before is not None else None
     held, dec = 0, None
     for acc in (rpc.send("getTokenAccountsByOwner",
                          [kp.address, {"mint": mint.address},
@@ -1056,7 +1110,8 @@ def _read_back(rpc, kp, mint, record, rec_path):
         dec = 6
     tokens = held / (10 ** dec)
     print("  mint       %s" % mint.address)
-    print("  spent      %.6f SOL" % (spent / LAMPORTS))
+    print("  spent      %s" % ("%.6f SOL" % (spent / LAMPORTS) if spent is not None
+                               else "unknown (no pre-launch balance recorded)"))
     print("  you hold   %s tokens  (%d decimals, read from the chain)"
           % (f"{tokens:,.0f}", dec))
     if held == 0:
@@ -1080,7 +1135,8 @@ def _read_back(rpc, kp, mint, record, rec_path):
     record["decimals"] = dec
     record["spent_lamports"] = spent
     write_record(rec_path, record)
-    print("  cost basis %.12f SOL per token" % (spent / LAMPORTS / tokens))
+    if spent is not None:
+        print("  cost basis %.12f SOL per token" % (spent / LAMPORTS / tokens))
     # /coin/<mint> is the current form. UNVERIFIED from here — pump.fun is not reachable
     # from this environment — so the solscan link beside it is the one that is certainly right.
     print("\n  https://pump.fun/coin/%s" % mint.address)
@@ -1120,9 +1176,17 @@ def cmd_resume(args):
 
     print("\n  no signature was recorded and the mint does not exist, so nothing landed.")
     print("  Rebuilding the same launch with the SAME mint…")
+    # FROM THE RECORD, not from this command's defaults. An operator who launched during
+    # congestion with --priority-fee 0.01 --slippage 25, then followed the error message to
+    # `resume`, silently got 0.0005 and 10 — the settings chosen because the defaults were not
+    # working. Explicit flags on resume still win.
+    slip = args.slippage if args.slippage is not None else record.get("slippage", 10)
+    prio = (args.priority_fee if args.priority_fee is not None
+            else record.get("priority_fee", 0.0005))
+    print("  slippage  %s%%   priority fee %s SOL   (from the record unless overridden)"
+          % (slip, prio))
     raw = build_create_and_buy(kp.address, mint.address, record["name"], record["symbol"],
-                              record["uri"], record["dev_buy_sol"], args.slippage,
-                              args.priority_fee)
+                              record["uri"], record["dev_buy_sol"], slip, prio)
     tx = Transaction(raw)
     need = int(record["dev_buy_sol"] * LAMPORTS)
     checks = verify_transaction(tx, kp.address, mint.address, need, rpc)
@@ -1143,7 +1207,12 @@ def cmd_resume(args):
 # checksummed addresses: a base58 pubkey carries no checksum at all, so a single wrong
 # character is a valid-looking address and nothing detects it.
 CA_PAGES = ["web/index.html"]
-CA_CONST = "const CA = "
+# The line publish rewrites. It is in the MARKUP rather than in a script, so the address
+# renders with JavaScript off — an in-app webview, a content blocker, Brave on strict — which
+# is a large share of the people who ever open a link to a token.
+CA_MARK = 'id="ca" data-ca="'
+import re as _re
+CA_LINE = _re.compile(r'^(\s*)<div class="ca(?: none)?" id="ca" data-ca="([^"]*)">.*</div>\s*$')
 
 
 def cmd_publish(args):
@@ -1205,13 +1274,18 @@ def cmd_publish(args):
         if not f.is_file():
             print("  -- %s does not exist, skipping" % rel)
             continue
-        txt = f.read_text()
-        hits = [l for l in txt.splitlines() if l.strip().startswith(CA_CONST)]
-        if not hits:
-            print("  -- %s has no '%s' line, skipping" % (rel, CA_CONST.strip()))
+        lines = f.read_text().splitlines(keepends=True)
+        hit = None
+        for i, line in enumerate(lines):
+            m = CA_LINE.match(line.rstrip("\n"))
+            if m:
+                hit = (i, m)
+                break
+        if hit is None:
+            print("  -- %s has no address line to fill, skipping" % rel)
             continue
-        cur = hits[0]
-        existing = cur.split('"')[1] if '"' in cur else ""
+        i, m = hit
+        indent, existing = m.group(1), m.group(2)
         if existing and existing != mint:
             raise RuntimeError(
                 "%s already publishes a DIFFERENT address:\n"
@@ -1222,9 +1296,10 @@ def cmd_publish(args):
         if existing == mint:
             print("  == %s already publishes it" % rel)
             continue
-        new_line = cur.replace('""', '"%s"' % mint)
+        new_line = '%s<div class="ca" id="ca" data-ca="%s">%s</div>\n' % (indent, mint, mint)
         if args.write:
-            f.write_text(txt.replace(cur, new_line))
+            lines[i] = new_line
+            f.write_text("".join(lines))
             changed.append(rel)
             print("  ++ %s" % rel)
         else:
@@ -1233,7 +1308,8 @@ def cmd_publish(args):
     if not args.write:
         print("\n  nothing was written. Re-run with --write.\n")
         return 0
-    print("\n  wrote %d page(s). Commit and deploy — the address is not published until the")
+    print("\n  wrote %d page(s). Commit and deploy — the address is not published until the"
+          % len(changed))
     print("  site is:")
     print("      git add web/index.html && git commit -m 'publish the contract address'")
     print("      git push\n")
@@ -1564,8 +1640,10 @@ def main(argv=None):
     s.set_defaults(fn=cmd_resume)
     s.add_argument("--keypair", required=True)
     s.add_argument("--record", required=True, help="the launch-<mint>.json written before send")
-    s.add_argument("--slippage", type=int, default=10)
-    s.add_argument("--priority-fee", type=float, default=0.0005, dest="priority_fee")
+    s.add_argument("--slippage", type=int, default=None,
+                   help="override the slippage the launch used (default: whatever the record says)")
+    s.add_argument("--priority-fee", type=float, default=None, dest="priority_fee",
+                   help="override the priority fee the launch used (default: from the record)")
 
     s = sub.add_parser(
         "publish", help="put the contract address on the website, after reading it back")
@@ -1590,7 +1668,9 @@ def main(argv=None):
         return 0
     try:
         return args.fn(args) or 0
-    except (RuntimeError, ValueError) as e:
+    except (RuntimeError, ValueError, OSError) as e:
+        # OSError too: a missing --image or --record is an ordinary mistake and deserves one
+        # line, not a traceback. RuntimeError covers LaunchFailed, which subclasses it.
         print("\n  %s\n" % e, file=sys.stderr)
         return 2
 

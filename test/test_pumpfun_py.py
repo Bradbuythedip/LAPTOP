@@ -62,13 +62,26 @@ class StubRpc:
         self.sent.append(method)
         raise AssertionError("this suite must never reach the cluster (%s)" % method)
 
+    # Routed through send() so a subclass that overrides send() gets these for free — and so a
+    # stub can never accidentally answer a question the real client would have asked the
+    # network for.
+    def blockhash_valid(self, bh, commitment="confirmed"):
+        return bool(self.send("isBlockhashValid", [bh, {"commitment": commitment}])["value"])
+
+    def block_height(self, commitment="confirmed"):
+        return self.send("getBlockHeight", [{"commitment": commitment}])
+
+    def blockhash(self, commitment="confirmed"):
+        return self.send("getLatestBlockhash", [{"commitment": commitment}])["value"]
+
 
 def launch_args(keypair, **over):
     a = type("A", (), {})()
     a.keypair, a.dev_buy, a.headroom, a.dry_run = keypair, 1.0, 0.5, True
     a.reserve = 0.03
     a.mint_keypair = a.grind = None
-    a.name, a.symbol, a.image, a.description = "Snooze Bear", "SNOOZE", "/dev/null", ""
+    a.name, a.symbol, a.description = "Snooze Bear", "SNOOZE", ""
+    a.image = str(ROOT / "web" / "snooze.png")
     a.twitter = a.telegram = a.website = ""
     a.slippage, a.priority_fee = 10, 0.0005
     for k, v in over.items():
@@ -261,6 +274,95 @@ ok("LAUNCH.md keeps the launch keypair out of the tree",
 ok("and the ground mint too", "cd ~/.snooze && solana-keygen grind" in LM)
 ok("and says why rather than just where", "scraped in minutes" in LM)
 
+print("── the order of operations, which is what stops a lost mint or a lost dev buy")
+with tempfile.TemporaryDirectory() as d:
+    kpf = Path(d) / "launch.json"
+    kpx = P.Keypair.generate()
+    kpf.write_text(json.dumps(list(kpx._seed + kpx.pub)))
+    os.chmod(kpf, 0o600)
+    a = launch_args(str(kpf), image=str(Path(d) / "nope.png"))
+    # The image is opened FIRST. It used to surface as an uncaught FileNotFoundError from
+    # inside upload_metadata — after a grind of several minutes — and --dry-run never opened
+    # it at all, so the rehearsal passed on the same typo the real run died on.
+    try:
+        with redirect_stdout(StringIO()):
+            with_rpc(StubRpc(int(1.2 * P.LAMPORTS)), P.cmd_launch, a)
+        ok("a missing --image is refused before anything expensive", False, "it proceeded")
+    except RuntimeError as e:
+        ok("a missing --image is refused before anything expensive", "no image at" in str(e))
+    empty = Path(d) / "empty.png"
+    empty.write_bytes(b"")
+    a = launch_args(str(kpf), image=str(empty))
+    try:
+        with redirect_stdout(StringIO()):
+            with_rpc(StubRpc(int(1.2 * P.LAMPORTS)), P.cmd_launch, a)
+        ok("an empty --image is refused too", False)
+    except RuntimeError as e:
+        ok("an empty --image is refused too", "is empty" in str(e))
+ok("and a missing file reaches the operator as one line, not a traceback",
+   "OSError" in (ROOT / "pumpfun.py").read_text().split("except (RuntimeError")[1][:120])
+
+print("── resume keeps the settings the launch was made with")
+SRC_R = (ROOT / "pumpfun.py").read_text()
+ok("resume's --slippage defaults to None so the record can win",
+   'add_argument("--slippage", type=int, default=None' in SRC_R)
+ok("and it reads slippage back off the record",
+   'record.get("slippage"' in SRC_R and 'record.get("priority_fee"' in SRC_R)
+ok("the launch writes them there in the first place",
+   '"slippage": args.slippage' in SRC_R and '"priority_fee": args.priority_fee' in SRC_R)
+
+print("── the confirmation loop cannot swallow its own verdict")
+ok("a landed-and-failed transaction raises a distinct type",
+   issubclass(P.LaunchFailed, RuntimeError))
+class FailedRpc(StubRpc):
+    def __init__(s): StubRpc.__init__(s); s.n = 0
+    def send(s, m, p=None):
+        s.n += 1
+        if s.n > 8:
+            raise AssertionError("the loop never escaped")
+        if m == "getSignatureStatuses":
+            return {"value": [{"confirmationStatus": "confirmed", "err": {"Custom": 6002}}]}
+        if m == "isBlockhashValid":
+            return {"value": True}
+        raise AssertionError(m)
+with tempfile.TemporaryDirectory() as d:
+    rp = Path(d) / "r.json"
+    P.write_record(rp, {})
+    try:
+        with redirect_stdout(StringIO()):
+            P._await_confirmation(FailedRpc(), "SIG", "BH", "MINT", rp, {})
+        ok("it stops on a failed transaction instead of looping", False, "it returned")
+    except P.LaunchFailed as e:
+        ok("it stops on a failed transaction instead of looping", "landed and FAILED" in str(e))
+    except AssertionError as e:
+        ok("it stops on a failed transaction instead of looping", False, str(e))
+    ok("and it records why", P.read_record(rp).get("status") == "landed-and-failed")
+
+class DeadRpc(StubRpc):
+    def send(s, m, p=None):
+        if m == "getSignatureStatuses": return {"value": [None]}
+        if m == "isBlockhashValid": return {"value": False}
+        raise AssertionError(m)
+with tempfile.TemporaryDirectory() as d:
+    rp = Path(d) / "r.json"
+    rec = {"signature": "SIG", "status": "sent"}
+    P.write_record(rp, rec)
+    with redirect_stdout(StringIO()):
+        landed = P._await_confirmation(DeadRpc(), "SIG", "BH", "MINT", rp, rec)
+    ok("an expired blockhash with nothing on chain is not 'landed'", landed is False)
+    # WITHOUT THIS, resume finds a recorded signature, re-checks a transaction that can never
+    # land, reports the same dead end, and never rebuilds. Forever.
+    ok("and the dead signature is CLEARED so resume rebuilds instead of re-checking it",
+       P.read_record(rp)["signature"] is None)
+    ok("with the reason recorded", P.read_record(rp)["status"] == "expired-never-landed")
+
+print("── the verifier's ceiling clears the script's own cost estimate")
+import inspect
+sig = inspect.signature(P.verify_transaction)
+ceiling = sig.parameters["fee_ceiling"].default
+ok("the fee ceiling is at least the default --reserve, or a correct launch fails itself",
+   ceiling >= 0.03 * P.LAMPORTS, "%d lamports vs a 0.03 SOL reserve" % ceiling)
+
 print("── the transaction is decoded before a key touches it")
 payer, mint, other = P.Keypair.generate(), P.Keypair.generate(), P.Keypair.generate()
 
@@ -361,21 +463,37 @@ ok("it holds no signing or sending code",
    not re.search(r"eth_send|personal_sign|signTransaction|signMessage|signAndSend", SITE))
 ok("it says outright that it cannot send a transaction",
    "cannot send a transaction" in SITE)
-ok("it reaches only pump.fun, solscan and dexscreener",
+# snoogebear.xyz appears in og:url and og:image, which must be absolute to unfurl at all.
+ok("it reaches only pump.fun, solscan, dexscreener and its own origin",
    set(re.findall(r"https://([a-z0-9.]+)", SITE))
-   == {"pump.fun", "solscan.io", "dexscreener.com"},
+   == {"pump.fun", "solscan.io", "dexscreener.com", "snoozebear.xyz"},
    sorted(set(re.findall(r"https://([a-z0-9.]+)", SITE))))
+ok("the link preview image is absolute, or it does not unfurl",
+   'og:image" content="https://' in SITE)
 ok("it warns that a Solana address has no checksum",
    "no checksum" in SITE)
 ok("and it says the thing most token sites do not",
    "nothing behind it" in SITE and "go to zero" in SITE)
-# Counted on the ANCHORS, not on the whole file: the stylesheet carries
-# .btn[aria-disabled="true"] too, so a naive count is three and always was.
-ok("the buy and sell buttons are inert until a CA is published",
-   len(re.findall(r'<a\b[^>]*aria-disabled="true"', SITE)) == 2,
-   len(re.findall(r'<a\b[^>]*aria-disabled="true"', SITE)))
-ok("the page declares the CA constant publish writes to",
-   re.search(r"^const CA = \"\";", SITE, re.M) is not None)
+# NO href, not aria-disabled. aria-disabled is announced but does not stop a click, and
+# pointer-events:none does not stop the keyboard — Tab then Enter opened pump.fun's homepage,
+# where the first search result for a token name is not necessarily the token. An anchor
+# without href is not focusable and not activatable, with or without CSS.
+BTNS = re.findall(r'<a class="btn (?:buy|sell)"[^>]*>', SITE)
+ok("there are two trade buttons", len(BTNS) == 2, BTNS)
+ok("and neither has an href until an address is published",
+   all("href=" not in b for b in BTNS), BTNS)
+# EITHER EMPTY OR A REAL ADDRESS. Asserting it is empty made `sh test/run.sh` fail the moment
+# the address was published — at step 7 of LAUNCH.md, the step the runbook calls a
+# minutes-long window, where the operator's next instruction is to commit and push. A test
+# that goes red on success trains people to ignore it exactly when it matters.
+CA_LINE = re.search(r'<div class="ca(?: none)?" id="ca" data-ca="([^"]*)">', SITE)
+ok("the page has the address line publish rewrites", CA_LINE is not None)
+ok("and it is either unpublished or a valid 32-byte base58 address",
+   CA_LINE is not None and (CA_LINE.group(1) == ""
+                            or len(P.b58decode(CA_LINE.group(1))) == 32),
+   CA_LINE.group(1) if CA_LINE else "(absent)")
+ok("the address is in the MARKUP, not only in the script — the page works with JS off",
+   'data-ca=' in SITE.split("<script>")[0])
 ok("web/ holds exactly one page", sorted(
    x.name for x in (ROOT / "web").glob("*.html")) == ["index.html"],
    sorted(x.name for x in (ROOT / "web").glob("*.html")))
@@ -411,14 +529,17 @@ with tempfile.TemporaryDirectory() as d:
             with_rpc(PubRpc(), P.cmd_publish, a)
         ok("a dry publish reports what it would write and writes nothing",
            "would write" in out.getvalue()
-           and 'const CA = "";' in (Path(d) / "web/index.html").read_text())
+           and 'data-ca=""' in (Path(d) / "web/index.html").read_text())
         a.write = True
         with redirect_stdout(StringIO()):
             with_rpc(PubRpc(), P.cmd_publish, a)
         wrote = (Path(d) / "web/index.html").read_text()
-        ok("--write puts the mint in the page", ('const CA = "%s";' % MINT) in wrote)
+        ok("--write puts the mint in the page",
+           ('data-ca="%s"' % MINT) in wrote and (">%s</div>" % MINT) in wrote)
+        ok("and it is readable with no JavaScript at all",
+           MINT in wrote.split("<script>")[0])
         ok("and nothing else on the page moved",
-           len(wrote) == len(SITE) + len(MINT))
+           len(wrote.splitlines()) == len(SITE.splitlines()))
         # Running it again is a no-op, not a second edit.
         with redirect_stdout(StringIO()):
             with_rpc(PubRpc(), P.cmd_publish, a)
