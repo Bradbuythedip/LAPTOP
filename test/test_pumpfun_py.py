@@ -3,11 +3,11 @@
 Two things are different about this script from everything else in the repository, and both
 are why this file exists.
 
-  IT HOLDS A KEY. Base's deploy console never did: a browser wallet signed and the scripts
-  only ever built bytes. Solana has no equivalent path — a script that submits a transaction
-  must sign it — so the rule became a set of narrower ones (a FILE, never an argument; a fresh
-  wallet, never a main one; a mode check; halves that must agree), and a rule nobody tests is
-  a comment. Every one of them is driven here, including the refusals.
+  IT HOLDS A KEY. A script that submits a Solana transaction must sign it, and there is no
+  browser-wallet path that would let something else do the signing. So the rule became a set of
+  narrower ones — a FILE, never an argument; a fresh wallet, never a main one; a mode check;
+  halves that must agree — and a rule nobody tests is a comment. Every one of them is driven
+  here, including the refusals.
 
   IT SIGNS BYTES SOMEBODY ELSE COMPOSED. pump.fun's builder returns the transaction. So the
   transaction is decoded and checked before a key touches it, and the decoder is exercised
@@ -307,6 +307,138 @@ ok("`size` says there is no size that is both meaningful and invisible",
    "no size that is both" in out.getvalue())
 ok("and names wallet-splitting as the thing it is refusing",
    "wallet-splitting" in out.getvalue())
+
+print("── the site is Solana-only, and nothing drags Base back into it")
+SITE = (ROOT / "web" / "index.html").read_text()
+ok("the page carries no Base blue", "0052ff" not in SITE.lower())
+ok("it does not mention Base", not re.search(r"\bBase\b", SITE),
+   (re.findall(r".{40}\bBase\b.{40}", SITE) or [""])[0])
+ok("it does not mention $DREAM, which cannot exist on a pump.fun token",
+   "DREAM" not in SITE)
+ok("no EVM anything — no 0x addresses, no chainId, no eth_ methods",
+   not re.search(r"\b0x[0-9a-fA-F]{40}\b|chainId|\beth_[a-z]", SITE))
+ok("it holds no signing or sending code",
+   not re.search(r"eth_send|personal_sign|signTransaction|signMessage|signAndSend", SITE))
+ok("it says outright that it cannot send a transaction",
+   "cannot send a transaction" in SITE)
+ok("it reaches only pump.fun, solscan and dexscreener",
+   set(re.findall(r"https://([a-z0-9.]+)", SITE))
+   == {"pump.fun", "solscan.io", "dexscreener.com"},
+   sorted(set(re.findall(r"https://([a-z0-9.]+)", SITE))))
+ok("it warns that a Solana address has no checksum",
+   "no checksum" in SITE)
+ok("and it says the thing most token sites do not",
+   "nothing behind it" in SITE and "go to zero" in SITE)
+# Counted on the ANCHORS, not on the whole file: the stylesheet carries
+# .btn[aria-disabled="true"] too, so a naive count is three and always was.
+ok("the buy and sell buttons are inert until a CA is published",
+   len(re.findall(r'<a\b[^>]*aria-disabled="true"', SITE)) == 2,
+   len(re.findall(r'<a\b[^>]*aria-disabled="true"', SITE)))
+ok("the page declares the CA constant publish writes to",
+   re.search(r"^const CA = \"\";", SITE, re.M) is not None)
+ok("web/ holds exactly one page", sorted(
+   x.name for x in (ROOT / "web").glob("*.html")) == ["index.html"],
+   sorted(x.name for x in (ROOT / "web").glob("*.html")))
+
+print("── publish writes the address into the page, and refuses to overwrite a different one")
+{
+}
+class PubRpc(StubRpc):
+    def __init__(self, kind="mint", decimals=6, mint_auth=None):
+        StubRpc.__init__(self)
+        self._kind, self._dec, self._ma = kind, decimals, mint_auth
+    def send(self, method, params=None):
+        if method == "getAccountInfo":
+            if self._kind is None:
+                return {"value": None}
+            return {"value": {"data": {"parsed": {
+                "type": self._kind,
+                "info": {"decimals": self._dec, "supply": "1000000000000000",
+                         "mintAuthority": self._ma, "freezeAuthority": None}}}}}
+        raise AssertionError("unexpected " + method)
+
+MINT = P.Keypair.generate().address
+import shutil
+with tempfile.TemporaryDirectory() as d:
+    shutil.copytree(str(ROOT / "web"), str(Path(d) / "web"))
+    real_here = P.HERE
+    P.HERE = Path(d)
+    try:
+        a = type("A", (), {})()
+        a.mint, a.record, a.write = MINT, None, False
+        out = StringIO()
+        with redirect_stdout(out):
+            with_rpc(PubRpc(), P.cmd_publish, a)
+        ok("a dry publish reports what it would write and writes nothing",
+           "would write" in out.getvalue()
+           and 'const CA = "";' in (Path(d) / "web/index.html").read_text())
+        a.write = True
+        with redirect_stdout(StringIO()):
+            with_rpc(PubRpc(), P.cmd_publish, a)
+        wrote = (Path(d) / "web/index.html").read_text()
+        ok("--write puts the mint in the page", ('const CA = "%s";' % MINT) in wrote)
+        ok("and nothing else on the page moved",
+           len(wrote) == len(SITE) + len(MINT))
+        # Running it again is a no-op, not a second edit.
+        with redirect_stdout(StringIO()):
+            with_rpc(PubRpc(), P.cmd_publish, a)
+        ok("running it twice is not an error and not a second edit",
+           (Path(d) / "web/index.html").read_text() == wrote)
+        # THE PROTECTION THAT MATTERS: a live address is never silently replaced.
+        a.mint = P.Keypair.generate().address
+        try:
+            with redirect_stdout(StringIO()):
+                with_rpc(PubRpc(), P.cmd_publish, a)
+            ok("it refuses to overwrite a DIFFERENT published address", False, "it overwrote")
+        except RuntimeError as e:
+            ok("it refuses to overwrite a DIFFERENT published address",
+               "Refusing to overwrite" in str(e))
+    finally:
+        P.HERE = real_here
+
+with tempfile.TemporaryDirectory() as d:
+    shutil.copytree(str(ROOT / "web"), str(Path(d) / "web"))
+    real_here = P.HERE
+    P.HERE = Path(d)
+    try:
+        a = type("A", (), {})()
+        a.record, a.write = None, True
+        a.mint = MINT
+        try:
+            with redirect_stdout(StringIO()):
+                with_rpc(PubRpc(kind=None), P.cmd_publish, a)
+            ok("it refuses an address with no account behind it", False)
+        except RuntimeError as e:
+            ok("it refuses an address with no account behind it", "no account at" in str(e))
+        try:
+            with redirect_stdout(StringIO()):
+                with_rpc(PubRpc(kind="account"), P.cmd_publish, a)
+            ok("it refuses an address that is not a token mint", False)
+        except RuntimeError as e:
+            ok("it refuses an address that is not a token mint", "not a token mint" in str(e))
+        a.mint = "not!base58!"
+        try:
+            with redirect_stdout(StringIO()):
+                with_rpc(PubRpc(), P.cmd_publish, a)
+            ok("it refuses something that is not base58", False)
+        except RuntimeError as e:
+            ok("it refuses something that is not base58", "not base58" in str(e))
+        a.mint = P.b58encode(bytes(31))
+        try:
+            with redirect_stdout(StringIO()):
+                with_rpc(PubRpc(), P.cmd_publish, a)
+            ok("it refuses a 31-byte address", False)
+        except RuntimeError as e:
+            ok("it refuses a 31-byte address", "32" in str(e))
+        # A mint that can still be minted is not a fixed supply, and the page must not imply one.
+        a.mint = MINT
+        out = StringIO()
+        with redirect_stdout(out):
+            with_rpc(PubRpc(mint_auth="SoMeAuTh"), P.cmd_publish, a)
+        ok("it warns loudly when the mint authority is still set",
+           "mintAuthority is STILL SET" in out.getvalue())
+    finally:
+        P.HERE = real_here
 
 print("── its own selftest passes, which is what a downloaded copy can run")
 buf = StringIO()

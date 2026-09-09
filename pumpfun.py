@@ -28,9 +28,9 @@ WHAT IT WILL NOT DO, and these are refusals rather than omissions:
   sniper — by the time you sell, they already hold, and your sells are their cheaper
   re-entry. Atomicity is the only real answer and it is the one implemented.
 
-THE KEY, WHICH IS THE PART TO READ TWICE. Base's deploy console never touched a key because a
-browser wallet signed. Solana has no equivalent path here: a script that submits a transaction
-must hold a key. So the rule changes shape rather than relaxing:
+THE KEY, WHICH IS THE PART TO READ TWICE. A script that submits a Solana transaction must sign
+it, and there is no browser-wallet path that would let something else do the signing. So this
+file holds a key, and the rule changes shape rather than relaxing:
 
   · the key is read from a FILE, in the standard Solana CLI format, and from nowhere else —
     never an argument, never an environment variable, never a prompt, so it cannot land in
@@ -66,7 +66,11 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
-VERSION = "1.0.0"
+VERSION = "1.1.0"
+# Where this file lives, which is where `publish` looks for web/. It was missing entirely and
+# cmd_publish referenced it anyway, so publishing the contract address died with a NameError
+# before it read a single thing — on the one command whose whole job is launch-day.
+HERE = Path(__file__).resolve().parent
 LAMPORTS = 1_000_000_000
 
 # pump.fun's curve opens here. Both are public constants of the program, and the only thing
@@ -550,11 +554,11 @@ def verify_transaction(tx: Transaction, payer: str, mint: str, authorised_lampor
 # command again, which generates a DIFFERENT mint and creates a SECOND token while the first
 # one is live and being bought.
 #
-# So the record is written BEFORE the transaction is sent, not after. The Base side of this
-# repository takes the opposite rule — deploy/scripts/lib/state.mjs records only what was READ
-# BACK, "nothing writes it on the strength of a transaction having been sent" — and that is
-# right there and wrong here, because on Base a lost address is re-derivable from the wallet's
-# nonce and on Solana a lost mint keypair is not derivable from anything.
+# So the record is written BEFORE the transaction is sent, not after. The usual rule is the
+# opposite — record only what was READ BACK, never what was merely sent
+# — and it is the right rule almost everywhere. It is wrong here for one specific reason: a
+# lost mint keypair is not derivable from anything, so "we did not record it because we were
+# not sure it worked" loses the only handle on a token that may well exist.
 #
 # IT CONTAINS THE MINT'S SECRET KEY, deliberately. That key signs the create and has no
 # authority afterwards: it is not a mint authority, not a freeze authority, and it holds
@@ -594,7 +598,7 @@ def read_record(path: Path) -> dict:
 # evidence is a mistake the site should say out loud rather than exploit. But NOT having it is
 # also not evidence, and being the only token on the page without it costs more than the grind
 # does. Four base58 characters is 58^4 = 11.3M keypairs on average; each is an ed25519 public
-# key derivation, so this is minutes rather than the seconds a hex grind takes on Base.
+# key derivation, so this is minutes where a native, threaded grinder takes seconds.
 
 # Measured on this machine at import time would be a startup cost, so it is measured when a
 # grind is actually asked for. Pure-Python ed25519 does roughly 500-700 derivations a second;
@@ -1107,10 +1111,10 @@ def cmd_resume(args):
 
 # The pages that carry the contract address, and the exact line each one holds it on. A
 # line-anchored edit makes "fill a blank" and "overwrite a live address" different events,
-# which is the property tools/publish.mjs relies on for Base and the reason it can refuse the
-# second one. Solana needs it MORE, not less: an EVM address carries an EIP-55 checksum so a
-# single mistyped character is detectable, and a base58 pubkey carries nothing at all.
-CA_PAGES = ["web/index.html", "web/ca.html", "web/dream.html"]
+# which is what lets this refuse the second one. It matters more on Solana than anywhere with
+# checksummed addresses: a base58 pubkey carries no checksum at all, so a single wrong
+# character is a valid-looking address and nothing detects it.
+CA_PAGES = ["web/index.html"]
 CA_CONST = "const CA = "
 
 
@@ -1119,10 +1123,10 @@ def cmd_publish(args):
     root = HERE
     mint = args.mint
 
-    # THE ADDRESS IS NEVER TYPED IF A RECORD EXISTS. tools/publish.mjs refuses to take one as
-    # input at all, for the reason its own comments give: an address typed by hand verifies
-    # just as happily against somebody else's deployment, or against a typo that happens to
-    # land on a real account.
+    # THE ADDRESS IS NEVER TYPED IF A RECORD EXISTS. An address typed by hand verifies just as
+    # happily against somebody else's token, or against a typo that happens to land on a real
+    # account — so when the launch record is there, it is the source and a typed one that
+    # disagrees is a refusal rather than an override.
     if args.record:
         rec = read_record(Path(args.record).expanduser())
         if mint and mint != rec["mint"]:
@@ -1201,9 +1205,10 @@ def cmd_publish(args):
     if not args.write:
         print("\n  nothing was written. Re-run with --write.\n")
         return 0
-    print("\n  wrote %d page(s). The README's per-page hashes are now stale, and the clone")
-    print("  defence rests on them, so restamp:")
-    print("      node tools/stamp.mjs\n")
+    print("\n  wrote %d page(s). Commit and deploy — the address is not published until the")
+    print("  site is:")
+    print("      git add web/index.html && git commit -m 'publish the contract address'")
+    print("      git push\n")
     return 0
 
 
