@@ -758,6 +758,25 @@ native.instructions[0]["data"] = bytes.fromhex("66063d1201daebea") + b"\x00" * 1
 ok("and the same instruction to pump.fun itself is not",
    "is not pump.fun's" not in native.describe(), native.describe())
 
+def _ns(**kw):
+    import types
+    return types.SimpleNamespace(**kw)
+
+
+def _capture(fn, rpc=None):
+    import io, contextlib
+    real = P.Rpc
+    if rpc is not None:
+        P.Rpc = lambda *a, **k: rpc
+    buf = io.StringIO()
+    try:
+        with contextlib.redirect_stdout(buf):
+            fn()
+    finally:
+        P.Rpc = real
+    return buf.getvalue()
+
+
 def _raises(fn, exc):
     try:
         fn()
@@ -1241,6 +1260,78 @@ ok("and none is set when none was asked for",
            if _s2.program_of(i) == P.COMPUTE_BUDGET))
 ok("table pays one by default rather than nothing",
    P.build_parser().parse_args(["table", "--keypair", "k"]).priority_fee > 0)
+
+# ── reading a real transaction instead of guessing at one
+#
+# THE METHOD WAS WRONG, not just the seed. Four required accounts were found by deriving from
+# a published IDL, sending, and reading the error back — a loop that only works when the IDL
+# matches the program, and pump.fun's does not, in the repo or on chain. Thousands of buys
+# succeed on this program every hour and each is an authoritative statement of what it
+# accepts. `trace` reads one.
+print("── the accounts a real successful buy actually passed")
+
+
+class TraceRpc(P.Rpc):
+    def __init__(self, keys, ixaccounts, loaded=None):
+        self.url = "https://fake.invalid"
+        self.keys = keys
+        self.ixaccounts = ixaccounts
+        self.loaded = loaded or {"writable": [], "readonly": []}
+
+    @property
+    def host(self):
+        return "fake.invalid"
+
+    def account(self, addr, commitment="confirmed"):
+        import base64 as b
+        return {"data": [b.b64encode(_mk_global(buyback=BUYBACK)).decode(), "base64"],
+                "executable": False, "owner": SYS_ADDR, "lamports": 1}
+
+    def send(self, method, params=None):
+        if method == "getSignaturesForAddress":
+            return [{"signature": "s1", "err": None}]
+        if method == "getTransaction":
+            return {"meta": {"err": None, "loadedAddresses": self.loaded},
+                    "transaction": {"message": {
+                        "accountKeys": self.keys,
+                        "instructions": [{"programIdIndex": self.keys.index(P.PUMP_PROGRAM),
+                                          "accounts": self.ixaccounts,
+                                          "data": P.b58encode(P.DISC_BUY + bytes(18))}]}}}
+        raise AssertionError("unexpected RPC " + method)
+
+
+_tmint = P.Keypair.generate().address
+_tuser = P.Keypair.generate().address
+_mystery = P.find_program_address([b"bonding-curve-v2", P.b58decode(_tmint)], P.PUMP_PROGRAM)
+_tbc = P.find_program_address([b"bonding-curve", P.b58decode(_tmint)], P.PUMP_PROGRAM)
+_tkeys = [P.PUMP_PROGRAM, SYS_ADDR, _tmint, _tuser, _mystery, _tbc]
+# indices 2 and 6 of a buy's account list are the mint and the buyer, which is how trace
+# learns which token and which wallet it is looking at; 3 is the bonding curve.
+_tix = [1, 1, 2, 5, 1, 1, 3, 1, 1, 1, 1, 0, 1, 1, 1, 1, 4]
+_out = _capture(lambda: P.cmd_trace(_ns(mint=_tmint, signature=None, limit=5)),
+                rpc=TraceRpc(_tkeys, _tix))
+ok("it reports the mint and buyer it read out of the instruction",
+   _tmint in _out and _tuser in _out)
+ok("it lists every account the real buy passed, in order", _out.count("\n    ") >= 17)
+ok("it names the ones this script can already derive", "bonding_curve" in _out)
+ok("and flags the ones it cannot, which are the answer",
+   "NOT ONE THIS SCRIPT DERIVES" in _out)
+ok("a trailing account that matches a candidate seed is identified as such",
+   'PDA["bonding-curve-v2", mint]' in _out)
+
+_odd = P.Keypair.generate().address
+_out2 = _capture(lambda: P.cmd_trace(_ns(mint=_tmint, signature=None, limit=5)),
+                 rpc=TraceRpc([P.PUMP_PROGRAM, SYS_ADDR, _tmint, _tuser, _odd, _tbc], _tix))
+ok("and one that matches nothing says so rather than inventing a name",
+   "no candidate seed matches" in _out2)
+
+# Accounts a transaction loaded from a lookup table have to be appended in the runtime's
+# order — writable then readonly — or every index past the static keys names the wrong one.
+_out3 = _capture(lambda: P.cmd_trace(_ns(mint=_tmint, signature=None, limit=5)),
+                 rpc=TraceRpc([P.PUMP_PROGRAM, SYS_ADDR, _tmint, _tuser, _tbc], _tix,
+                              loaded={"writable": [], "readonly": [_mystery]}))
+ok("an account the transaction loaded from a table is resolved too",
+   'PDA["bonding-curve-v2", mint]' in _out3)
 
 # ── bonding_curve_v2, which no IDL mentions
 #

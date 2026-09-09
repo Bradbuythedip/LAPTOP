@@ -2562,6 +2562,115 @@ def cmd_idl(args):
     return 0
 
 
+# Candidate seeds for an account nobody documents. Guessing is not a method, but a guess
+# CHECKED against a real transaction is just a lookup with extra steps — and the checking is
+# what `trace` does.
+BCV2_CANDIDATES = [
+    ("bonding-curve-v2", lambda m: [b"bonding-curve-v2", b58decode(m)]),
+    ("bonding_curve_v2", lambda m: [b"bonding_curve_v2", b58decode(m)]),
+    ("bonding-curve-v2 (mint first)", lambda m: [b58decode(m), b"bonding-curve-v2"]),
+    ("bonding-curve2", lambda m: [b"bonding-curve2", b58decode(m)]),
+    ("curve-v2", lambda m: [b"curve-v2", b58decode(m)]),
+    ("bonding-curve-sol", lambda m: [b"bonding-curve-sol", b58decode(m)]),
+    ("creator-vault-v2", lambda m: [b"creator-vault-v2", b58decode(m)]),
+    ("volume-accumulator", lambda m: [b"volume-accumulator", b58decode(m)]),
+]
+
+
+def known_buy_accounts(mint: str, user: str, g: dict) -> dict:
+    """Every account in a buy this script can already name, so `trace` can show the rest."""
+    bc = find_program_address([b"bonding-curve", b58decode(mint)], PUMP_PROGRAM)
+    return {
+        g["address"]: "global", g["fee_recipient"]: "fee_recipient", mint: "mint",
+        bc: "bonding_curve", ata(bc, mint): "associated_bonding_curve",
+        ata(user, mint): "associated_user", user: "user",
+        SYSTEM_PROGRAM: "system_program", TOKEN_PROGRAM: "token_program",
+        find_program_address([b"creator-vault", b58decode(user)], PUMP_PROGRAM):
+            "creator_vault (if the creator is the buyer)",
+        find_program_address([b"__event_authority"], PUMP_PROGRAM): "event_authority",
+        PUMP_PROGRAM: "program",
+        find_program_address([b"global_volume_accumulator"], PUMP_PROGRAM):
+            "global_volume_accumulator",
+        find_program_address([b"user_volume_accumulator", b58decode(user)], PUMP_PROGRAM):
+            "user_volume_accumulator",
+        find_program_address([b"fee_config", b58decode(PUMP_PROGRAM)], PUMP_FEE_PROGRAM):
+            "fee_config",
+        PUMP_FEE_PROGRAM: "fee_program",
+    }
+
+
+def cmd_trace(args):
+    """Read a real, successful buy off the chain and print the accounts it actually passed.
+
+    THIS IS THE COMMAND THAT SHOULD HAVE EXISTED FIRST. Four required accounts were found by
+    deriving from a published IDL, sending, and reading the error — a loop that only works
+    when the IDL is right, and pump.fun's is four months behind the deployed program in both
+    the repo and the on-chain copy. Meanwhile thousands of buys succeed on this program every
+    hour, and each one is a complete, authoritative statement of what the program accepts.
+
+    So: take a working transaction, print its buy instruction's accounts in order, name the
+    ones this script can already derive, and show what is left. The leftovers are the answer.
+    Where a leftover matches a candidate derivation, say which — a guess checked against a
+    real transaction is not a guess any more.
+    """
+    rpc = Rpc()
+    g = read_global(rpc)
+    if args.signature:
+        sigs = [args.signature]
+    else:
+        bc = find_program_address([b"bonding-curve", b58decode(args.mint)], PUMP_PROGRAM)
+        print("\n  bonding curve  %s" % bc)
+        got = rpc.send("getSignaturesForAddress", [bc, {"limit": args.limit}])
+        sigs = [x["signature"] for x in got if not x.get("err")]
+        if not sigs:
+            raise RuntimeError("no successful transactions touch %s" % bc)
+
+    for sig in sigs:
+        tx = rpc.send("getTransaction",
+                      [sig, {"encoding": "json", "maxSupportedTransactionVersion": 0,
+                             "commitment": "confirmed"}])
+        if not tx or (tx.get("meta") or {}).get("err"):
+            continue
+        msg = tx["transaction"]["message"]
+        loaded = (tx.get("meta") or {}).get("loadedAddresses") or {}
+        # Static keys, then writable from tables, then readonly: the runtime's order, which is
+        # what the instruction indices mean.
+        keys = (list(msg.get("accountKeys", []))
+                + list(loaded.get("writable", [])) + list(loaded.get("readonly", [])))
+        for ix in msg.get("instructions", []):
+            if keys[ix["programIdIndex"]] != PUMP_PROGRAM:
+                continue
+            data = b58decode(ix["data"])
+            if data[:8] != DISC_BUY:
+                continue
+            accs = [keys[i] for i in ix["accounts"]]
+            mint = accs[2] if len(accs) > 2 else None
+            user = accs[6] if len(accs) > 6 else None
+            print("\n  signature  %s" % sig)
+            print("  mint       %s" % mint)
+            print("  buyer      %s" % user)
+            print("  the buy passed %d accounts:" % len(accs))
+            known = known_buy_accounts(mint, user, g) if mint and user else {}
+            unknown = []
+            for n, a in enumerate(accs):
+                label = known.get(a, "")
+                if not label:
+                    unknown.append((n, a))
+                print("    %2d. %-44s %s" % (n, a, label or "?  NOT ONE THIS SCRIPT DERIVES"))
+            if unknown and mint:
+                print("\n  the accounts this script cannot name, and what they might be:")
+                for n, a in unknown:
+                    hit = ""
+                    for name, seeds in BCV2_CANDIDATES:
+                        if find_program_address(seeds(mint), PUMP_PROGRAM) == a:
+                            hit = 'PDA["%s", mint]' % name
+                            break
+                    print("    %2d. %s  %s" % (n, a, hit or "no candidate seed matches"))
+            print()
+            return 0
+    raise RuntimeError("none of the %d transactions checked contained a pump.fun buy" % len(sigs))
+
+
 def cmd_program(args):
     """What an unidentified program id actually is, from the chain and nothing else.
 
@@ -2933,6 +3042,11 @@ def build_parser():
                         "drop, which is exactly what happened the first time")
     s.add_argument("--yes", action="store_true")
     s.set_defaults(fn=cmd_table)
+    s = sub.add_parser("trace", help="the accounts a REAL successful buy passed, from the chain")
+    s.add_argument("--mint", help="any pump.fun token that is currently trading")
+    s.add_argument("--signature", help="a specific transaction instead")
+    s.add_argument("--limit", type=int, default=20)
+    s.set_defaults(fn=cmd_trace)
     s = sub.add_parser("idl", help="a program's IDL, read from the chain rather than a repo")
     s.add_argument("address")
     s.add_argument("--out", help="write the whole IDL here")
