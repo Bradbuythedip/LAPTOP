@@ -123,6 +123,10 @@ do not change one.
 
 ## 6 · Rehearse
 
+**`--keypair` and `--dev-buy` are prompted for if you leave them out**, so the short form is
+fine and the summary before the irreversible step is the same either way. The keypair prompt
+asks for a **path**; nothing here accepts a pasted private key, and it says so if one arrives.
+
 ```
 python3 pumpfun.py launch \
   --keypair ~/.snooze/launch.json \
@@ -133,7 +137,7 @@ python3 pumpfun.py launch \
   --description @description.txt \
   --image ./web/token.jpg \
   --website https://snoozebear.xyz \
-  --twitter https://x.com/<your handle> \
+  --twitter https://x.com/snoozebearxyz \
   --dry-run
 ```
 

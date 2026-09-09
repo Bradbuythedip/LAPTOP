@@ -803,6 +803,65 @@ def build_create_and_buy(payer: str, mint: str, name: str, symbol: str, uri: str
     return raw
 
 
+# ──────────────────────────────────────────────────────────── asking, and what is not asked
+#
+# THE KEY IS NEVER PROMPTED FOR, and that is the one thing this file will not become
+# interactive about. A prompt looks safer than an argument — getpass does not echo and does not
+# reach shell history — but the risk it leaves is the one that actually happens: pasting secret
+# key material somewhere. A clipboard holding a private key gets pasted into the wrong window,
+# and "the wrong window" is a chat, an issue, a support thread. The file path is prompted for
+# instead, because a path is not a secret and a file is already what solana-keygen writes.
+
+def ask(question: str, default: str | None = None) -> str:
+    suffix = " [%s]: " % default if default else ": "
+    try:
+        got = input("  " + question + suffix).strip()
+    except EOFError:
+        raise RuntimeError("no answer, and there is no default for this") from None
+    return got or (default or "")
+
+
+def ask_float(question: str) -> float:
+    while True:
+        raw = ask(question)
+        try:
+            v = float(raw)
+        except ValueError:
+            print("    that is not a number")
+            continue
+        if v <= 0:
+            print("    it has to be more than zero")
+            continue
+        return v
+
+
+# Roughly the shape of a base58-encoded 64-byte secret key, which is what a wallet's "export
+# private key" gives you. If one of those arrives where a PATH was asked for, it has been
+# pasted out of a wallet and it must not be accepted, echoed back, or written anywhere.
+def looks_like_secret(text: str) -> bool:
+    t = text.strip()
+    return (len(t) >= 80 and "/" not in t and "." not in t
+            and all(c in _B58 for c in t))
+
+
+def ask_keypair_path(default: str) -> str:
+    while True:
+        got = ask("keypair FILE (a path, not a key)", default)
+        if looks_like_secret(got):
+            # Deliberately does not print what was typed.
+            print("\n    That is a PRIVATE KEY, not a path. Nothing here accepts one and it has\n"
+                  "    not been stored — but it is in your clipboard and your terminal now, so\n"
+                  "    treat that wallet as compromised and move its funds.\n\n"
+                  "    A launch wallet is a FILE, made fresh for one launch:\n"
+                  "        solana-keygen new -o ~/.snooze/launch.json\n"
+                  "        chmod 600 ~/.snooze/launch.json\n")
+            continue
+        if not got:
+            print("    a path is needed")
+            continue
+        return got
+
+
 # ──────────────────────────────────────────────────────────────────────── commands
 
 def cmd_size(args):
@@ -831,6 +890,17 @@ def cmd_launch(args):
         print("        export SOLANA_RPC='https://…your-provider…/your-key'\n")
         if not args.dry_run:
             raise RuntimeError("refusing to launch through the public endpoint")
+
+    # PROMPTED WHEN NOT GIVEN. Both of these are things to decide, not defaults to inherit —
+    # the dev buy is money and the keypair is which wallet gets spent — so the prompt has no
+    # default for the amount and a conventional one for the path.
+    if not args.keypair:
+        args.keypair = ask_keypair_path("~/.snooze/launch.json")
+    if args.dev_buy is None:
+        print("\n  The dev buy is your opening position, taken in the same transaction that")
+        print("  creates the token. R SOL takes R/(30+R) of the float: 1.0 is 3.2%, 1.5 is")
+        print("  4.8%, 2.0 is 6.25% and starts reading as dev-owned. `size` has the table.")
+        args.dev_buy = ask_float("dev buy, in SOL")
 
     kp = Keypair.load(args.keypair)
     print("\n  payer     %s" % kp.address)
@@ -1021,6 +1091,29 @@ def cmd_launch(args):
             "  land. Nothing was signed and nothing was sent. Re-run to get a fresh one — the\n"
             "  metadata is already pinned, so pass --mint-keypair to keep the same mint."
             % tx.recent_blockhash)
+
+    # THE LAST DOOR. Everything above this line is reversible — nothing has been signed and
+    # the metadata, though pinned, is attached to no token. Everything below is permanent, so
+    # it is confirmed by typing the ticker rather than by pressing a key, because a
+    # yes/no prompt is answered reflexively and typing the symbol requires reading the summary.
+    if not args.yes:
+        print("\n  " + "─" * 68)
+        print("  ABOUT TO CREATE THE TOKEN AND SPEND %.4f SOL. None of this can be edited,"
+              % args.dev_buy)
+        print("  reverted, or relaunched onto the same address.")
+        print("    name        %s" % args.name)
+        print("    symbol      %s" % args.symbol)
+        print("    mint        %s" % mint.address)
+        print("    dev buy     %.4f SOL from %s" % (args.dev_buy, kp.address))
+        print("    website     %s" % args.website)
+        print("    metadata    %s" % uri)
+        print("  " + "─" * 68)
+        if ask("type the ticker to launch, anything else to stop") != args.symbol:
+            print("\n  Stopped. Nothing was signed and nothing was sent. The metadata is\n"
+                  "  pinned and the mint is recorded, so re-running with --mint-keypair %s\n"
+                  "  continues this launch rather than starting a different one.\n"
+                  % rec_path)
+            return 1
 
     # ── everything the send needs is now known
     record["blockhash"] = tx.recent_blockhash
@@ -1656,10 +1749,12 @@ def main(argv=None):
                "transaction, simulates it against the cluster, prints what your balance does, "
                "and stops without signing.")
     s.set_defaults(fn=cmd_launch)
-    s.add_argument("--keypair", required=True, help="path to a Solana CLI keypair JSON file")
-    s.add_argument("--dev-buy", type=float, required=True, dest="dev_buy",
-                   help="SOL to spend on the opening buy. REQUIRED — see `size`, and note "
-                        "that there is no default because this is money")
+    s.add_argument("--keypair", default=None,
+                   help="path to a Solana CLI keypair JSON file. Prompted for if omitted. A "
+                        "PATH — never a key; nothing here accepts key material typed or pasted")
+    s.add_argument("--dev-buy", type=float, default=None, dest="dev_buy",
+                   help="SOL to spend on the opening buy. Prompted for if omitted, and there "
+                        "is no default either way because this is money — see `size`")
     s.add_argument("--name", required=True)
     s.add_argument("--symbol", required=True)
     s.add_argument("--image", required=True, help="path to the token image")
@@ -1678,6 +1773,9 @@ def main(argv=None):
     s.add_argument("--headroom", type=float, default=0.5,
                    help="SOL the launch wallet may hold above the dev buy before this refuses "
                         "to sign with it (default 0.5)")
+    s.add_argument("--yes", action="store_true",
+                   help="skip the final confirmation. For a scripted launch; if you are typing "
+                        "this by hand you want to read the summary instead")
     s.add_argument("--dry-run", action="store_true",
                    help="build and verify, then STOP. Nothing is signed, nothing is sent, and "
                         "no metadata is published")
