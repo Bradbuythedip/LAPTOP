@@ -925,21 +925,31 @@ console.log("── it never shows a stale number when a read fails");
 {
   LOG_MODE = "ok";
   LOGS = [];
-  node.close();
+  /* UNREACHABLE IS MADE AT THE BROWSER, NOT BY CLOSING A PORT. This used to be node.close(),
+     and it failed intermittently under run-all.sh in a way that looked like a timing flake and
+     was not: close() FREES the ephemeral port, twenty-two sibling suites are binding ephemeral
+     ports at that moment, and if one of them takes it the page's read SUCCEEDS against a
+     stranger's server. The chart then never reaches mode=error and the three assertions below
+     read a box nothing ever wrote. Aborting the route is the same condition with no race, and
+     it is the pattern this file already uses for the p3 fixture. */
+  await page.route(NODE + "**", r => r.abort("connectionrefused"));
   await load("?pool=1");
   // load() returns as soon as the chart has ANY mode, and showRuleCurve() sets "arithmetic"
   // before a single read is attempted. That was close enough while the page made one request
   // on load; the buy card makes three more, and against a closed node each one waits out its
   // own failure first, so the error path landed after this block had already read an empty
   // box and called it a missing message. Waited for rather than slept on.
+  let waited = true;
   await page.waitForFunction(() => window.__CHART && window.__CHART.mode === "error",
-                             { timeout: 15000 }).catch(() => {});
+                             { timeout: 30000 }).catch(() => { waited = false; });
   const c = await page.evaluate(() => ({ ...window.__CHART }));
   ok("an unreachable node produces no market series", c.marketSeries.length === 0, c.mode);
   const e = flat(await txt("#chartEmpty"));
-  ok("it says the chain could not be read", /Could not read the chain/i.test(e), e);
+  ok("it says the chain could not be read", /Could not read the chain/i.test(e),
+     waited ? e : "the chart never reached mode=error within 30s — timing, not copy");
   ok("and says nothing is drawn rather than something stale",
      /rather than something stale/i.test(e), e);
+  node.close();
 }
 
 ok("no page errors during the run", pageErrors.length === 0, pageErrors.join("; "));

@@ -96,7 +96,7 @@ sha256(web/snooze.html)  = 774fc77328903db238f4e99862360ad71b1463a0d411728dd3640
 sh test/run-all.sh         # everything below, no network touched
 ```
 
-**2173 assertions across twenty-three suites.**
+**2179 assertions across twenty-three suites.**
 
 `test/run.mjs` — 372, drives the real page in Chromium against `test/mock-rpc.mjs`: Keccak vectors,
 the four EIP-55 reference addresses, the v4 poolId derivation checked against a real Base pool
@@ -191,7 +191,7 @@ distribution still cannot complete: `claim()` is an outbound transfer and the 20
 applies to it. Also carries the axiomatics — the decay condition, depth-versus-appreciation,
 and what a large supply does and does not buy.
 
-`test/run-curve.mjs` — 81, compiles `contracts/SnoozeCurve.sol` and executes it. The virtual
+`test/run-curve.mjs` — 87, compiles `contracts/SnoozeCurve.sol` and executes it. The virtual
 curve's ETH side starts imaginary, so most of this suite is one property attacked from several
 directions: **the curve can only ever pay out ETH that arrived.** That rests entirely on it never
 buying back more than it sold — tokens exist outside the curve, and on a Snooze launch the

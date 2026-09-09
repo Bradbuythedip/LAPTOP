@@ -44,7 +44,14 @@ interface ITwapOracle {
 contract Snooze {
     string public constant name = "Snooze Bear";
     string public constant symbol = "SNOOZE";
-    uint8  public constant decimals = 18;
+    /// NINE, not eighteen, and the reason is the venue rather than taste. A Uniswap V2 reserve
+    /// is uint112 = 5.192e33 base units, and `UniswapV2Pair._update` reverts above it. At 18
+    /// decimals this token's 100 quadrillion units are 1e35 base units, so the pool could hold
+    /// at most 5% of supply and bond() fed it 1.85e34 — a graduation that reverts forever, with
+    /// the raise sealed in a curve whose parameters are immutable. At 9 the same 100 quadrillion
+    /// tokens are 1e26 base units, 52 million times inside the ceiling, and no sell into the
+    /// pool afterwards can ever reach it either. The count people see is unchanged.
+    uint8  public constant decimals = 9;
 
     uint256 public totalSupply;
     mapping(address => uint256) public balanceOf;

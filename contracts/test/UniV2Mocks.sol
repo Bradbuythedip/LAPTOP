@@ -53,6 +53,16 @@ contract MockV2Pair {
         require(liquidity > 0, "INSUFFICIENT_LIQUIDITY_MINTED");
         totalSupply += liquidity;
         balanceOf[to] += liquidity;
+        // THE CHECK THIS MOCK WAS MISSING, and the reason a curve that could never graduate
+        // passed every suite in this repository. A V2 reserve is uint112; the real
+        // UniswapV2Pair._update opens with
+        //     require(balance0 <= uint112(-1) && balance1 <= uint112(-1), 'UniswapV2: OVERFLOW')
+        // and reverts. `r0 = uint112(b0)` is an EXPLICIT cast, which in Solidity 0.8 truncates
+        // silently rather than reverting — so this mock banked a wrapped-around reserve and
+        // reported success at exactly the amounts where Base would refuse. At 1e35 base units
+        // of supply with 80% through the curve, bond() feeds the pair 1.85e34 against a
+        // ceiling of 5.19e33 and reverts, permanently, with the whole raise inside the curve.
+        require(b0 <= type(uint112).max && b1 <= type(uint112).max, "UniswapV2: OVERFLOW");
         r0 = uint112(b0); r1 = uint112(b1);
     }
 

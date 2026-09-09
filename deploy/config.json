@@ -22,9 +22,9 @@
   "token": {
     "name": "Snooze Bear",
     "symbol": "SNOOZE",
-    "decimals": 18,
-    "_supply": "1e35 base units = 100 QUADRILLION whole tokens. It is a units choice and NOTHING ELSE: price is E/T, so raising supply lowers the unit price and changes nobody's share of the token. It does not make the token harder to accumulate — curve.virtualEth is the only dial that does, and its comment has the arithmetic. What a high supply does buy is that floor-division dust in the cap and in any future claim is proportionally smaller, and that a buyer's balance reads as a number rather than a decimal. The hard ceiling is the uint192 Rule 2 baseline at ~6.3e57 base units, 22 orders of magnitude above this.",
-    "supply": "100000000000000000000000000000000000",
+    "decimals": 9,
+    "_supply": "1e26 base units = 100 QUADRILLION whole tokens, at 9 decimals. The token count is the same one this launch always wanted; the DECIMALS moved, and that is the whole change. WHY: a Uniswap V2 reserve is uint112 = 5.192e33 base units and UniswapV2Pair._update reverts above it. At 18 decimals the same 100 quadrillion tokens are 1e35 base units, bond() feeds the pair 1.85e34, and graduation reverts FOREVER with the raise sealed inside a curve whose virtualEth and bondTarget are immutable and whose token's setPool() reverts after freeze(). Both earlier configs were over: the live launch by 3.33x, the relaunch by 3.57x. The repo's own mock hid it by writing `r0 = uint112(b0)`, an explicit cast that TRUNCATES in Solidity 0.8 where the real pair reverts. An earlier version of this comment named the uint192 Rule 2 baseline at 6.3e57 as the hard ceiling; that was the wrong ceiling by 24 orders of magnitude, and naming it is what let the real one pass unnoticed. The bound is on TOTAL SUPPLY, not on the seed: the pool keeps accumulating tokens as people sell into it after graduation, and a pool that overflows on a later swap is bricked just as thoroughly as one that never opened. test/run-curve.mjs bonds at these exact numbers against a pair that checks uint112, so a config edit that breaks graduation fails there instead of on Base. Everything the old comment said about supply being a units choice still holds: price is E/T, so this changes nobody's share, and curve.virtualEth remains the only dial that makes early accumulation expensive.",
+    "supply": "100000000000000000000000000",
     "_devBps": "0 keeps 'supply only falls' exactly true. Up to 2000 is a share OF THE HAIRCUT, never of the trade.",
     "devBps": 0,
     "_ownerExempt": "true sends setCapExempt(owner, true) in step 5, before freeze(): the owner's wallet is then outside Rule 2's 20%/day cap AND Rule 1's haircut when it sells into a registered pool. It is exactly one wallet and it is public — capExempt(owner) reads true on chain forever — so the site says it rather than letting somebody find it. Everybody else's wallet is under both rules. The curve's 1% fee is paid by the seller and goes to fees.curveFeeTo, so at devBps 0 the owner's sells cost the owner nothing net.",
@@ -93,8 +93,8 @@
     "factory": "0x8909Dc15e40173Ff4699343b6eB8132c65e18eC6",
     "weth": "0x4200000000000000000000000000000000000006",
     "lpTo": "0x000000000000000000000000000000000000dEaD",
-    "_curveSupply": "What the curve may sell — 80% of supply. Not the total supply, and the curve never holds the rest. bondPreview()'s leftover is curveSupply/m, so at the m=10 this bondTarget encodes, 8e33 base units (8% of supply) come back to curveFeeTo when it graduates. The other 20% sits in the owner's wallet from block one, under both rules exactly like anybody else's.",
-    "curveSupply": "80000000000000000000000000000000000"
+    "_curveSupply": "What the curve may sell \u2014 80% of supply, 8e25 base units. Not the total supply, and the curve never holds the rest. bondPreview()'s leftover is curveSupply/m, so at the multiple this bondTarget encodes that share comes back to curveFeeTo when it graduates. The other 20% sits in the owner's wallet from block one, under both rules exactly like anybody else's. This number is also half of the uint112 arithmetic in _supply: it is what actually reaches the pair, via tokensToPool = curveSupply * R*E0/(E0+R)^2.",
+    "curveSupply": "80000000000000000000000000"
   },
 
   "gate": {
