@@ -8,9 +8,9 @@
 <link rel="icon" type="image/png" href="/snoozebase.png">
 <link rel="apple-touch-icon" href="/snoozebase.png">
 <title>$SNOOZE</title>
-<meta name="description" content="Two rules, in code. Selling into a spike burns most of what you would have taken, and nobody moves more than a fifth of their bag a day.">
+<meta name="description" content="Nobody dumps more than a fifth of their bag a day. At 10x the LP burns itself. On Base.">
 <meta property="og:title" content="Snooze Bear — you snooze, you win">
-<meta property="og:description" content="Two rules, in code. Selling into a spike burns most of what you would have taken.">
+<meta property="og:description" content="Nobody dumps more than a fifth of their bag a day. At 10x the LP burns itself.">
 <meta property="og:image" content="/hero.png">
 <meta name="twitter:card" content="summary_large_image">
 <style>
@@ -508,17 +508,18 @@ tbody tr:last-child td{border-bottom:0}
   </div></div>
   <div class="step"><div class="n">3</div><div>
     <h3>At 10&times; it
-      <button class="d" data-t="Bonding" data-d="Enough real ETH arrives and the token graduates: the ETH and a token allocation go into a real pool, and the curve retires.">bonds</button></h3>
-    <p>The real ETH and a token allocation go into a real pool at the price the curve closed
-    at. Takes <b>2.16&times;</b> the
-    <button class="d" data-t="Virtual ETH" data-d="The imaginary ETH the curve starts with. It sets both how deep the book feels and how much real money bonding takes — one dial, not two.">virtual ETH</button>
-    in real buys.</p>
+      <button class="d" data-t="Bonding" data-d="Enough real ETH arrives and the curve retires: the ETH and the tokens move into a Uniswap pool in one transaction, and the curve stops trading.">bonds</button>
+      and the LP burns</h3>
+    <p>The ETH and the tokens go into a Uniswap pool and the
+    <button class="d" data-t="LP tokens" data-d="The receipt for liquidity in a pool. Whoever holds it can pull the money out. Burned means nobody holds it and nobody can.">LP</button>
+    goes to the dead address. Nobody picks where it goes, including us.
+    Takes <b>21.6 ETH</b> of buys.</p>
   </div></div>
   <div class="step"><div class="n">4</div><div>
-    <h3>Selling into a spike burns</h3>
-    <p>Above the
-    <button class="d" data-t="24-hour average" data-d="The average price over the last day. Sell above it and the difference is destroyed; at or below it, nothing is.">24-hour average</button>,
-    the difference is destroyed. Below it, nothing.</p>
+    <h3>Nobody dumps more than a fifth a day</h3>
+    <p>The
+    <button class="d" data-t="Daily cap" data-d="At most 20% of what a wallet held at the start of its own 24-hour window may go into the pool. It resets on what is left.">daily cap</button>,
+    on every wallet. One exception, <a class="ext" href="#no">named below</a>.</p>
   </div></div>
 </div>
 
@@ -537,7 +538,7 @@ tbody tr:last-child td{border-bottom:0}
   <div class="tok">
     <div class="th"><span class="sym blue">LAPTOP</span><span class="badge warn">not open</span></div>
     <p class="what">A separate token, on its own. You cannot buy it yet. When it opens,
-    $SNOOZE holders go first and an allocation is already set aside for them.</p>
+    $SNOOZE holders go first.</p>
     <div class="ca"><span class="k">contract</span>
       <code class="v" id="lapAddr2">not deployed</code></div>
   </div>
@@ -545,49 +546,32 @@ tbody tr:last-child td{border-bottom:0}
 
 <div class="card">
   <div class="hdr"><h2>What connects them</h2></div>
-  <p style="margin:0;font-size:14.5px">One thing, and it is a
+  <p style="margin:0;font-size:14.5px">One
   <button class="d" data-t="Snapshot" data-d="A single block, fixed in advance, at which balances are read. What you hold then is what you get; what you do after does not change it.">snapshot</button>:
   <b>whatever $SNOOZE you hold at one block, fixed in advance, is your place in LAPTOP.</b>
   You claim it yourself, from your own wallet. Nothing is locked and nothing is taken.</p>
-  <p class="tiny dim" style="margin:10px 0 0">Buying $SNOOZE the hour before and selling the
-  hour after is the worst way to use it: everyone doing that at once pushes the price above its
-  own average, which is exactly when selling burns most. It pays holders, not renters.</p>
+  <p class="tiny dim" style="margin:10px 0 0">Buy the hour before and sell the hour after and
+  the cap still holds you to a fifth a day. It pays holders, not renters.</p>
 </div>
 
-<div class="card">
-  <div class="hdr"><h2>Depth costs speed. Pick one.</h2></div>
-  <p class="tiny" style="margin:0 0 8px">More virtual ETH means cheaper
-  <button class="d" data-t="Slippage" data-d="The gap between the price you see and the price you get. Bigger trades against a thinner book pay more of it.">slippage</button>
-  and a proportionally bigger raise. The number of buys does not move:</p>
-  <div class="scroll"><table>
-    <thead><tr><th>slippage per buy</th><th>buys to bond at 10&times;</th><th>at 10 virtual ETH</th><th>at 25</th></tr></thead>
-    <tbody>
-      <tr><td class="n">0.5%</td><td class="n">433</td><td class="n">433</td><td class="n">433</td></tr>
-      <tr><td class="n">2%</td><td class="n">109</td><td class="n">109</td><td class="n">109</td></tr>
-      <tr><td class="n">5%</td><td class="n">44</td><td class="n">44</td><td class="n">44</td></tr>
-    </tbody>
-  </table></div>
-  <p class="tiny dim" style="margin:8px 0 0">The last two columns are the same on purpose.
-  Virtual ETH sets what a comfortable buy is <i>denominated</i> in. It does not buy depth.</p>
-</div>
-
-<div class="card no disc">
+<div class="card no disc" id="no">
   <div class="hdr"><h2 style="color:var(--warn)">What this does not do</h2></div>
   <ul style="margin:0;padding-left:18px;font-size:13px;color:var(--dim);line-height:1.6">
-    <li><b>Virtual liquidity is not liquidity.</b> Before bonding, the only ETH behind the
-    price is what buyers put in. The curve cannot pay out more than that, and it does not
-    pretend to.</li>
-    <li><b>The burn is also your instant loss.</b> A 41% dial means selling burns 41%,
-    including ten minutes after you bought.</li>
-    <li><b>A falling market burns nothing.</b> The rule only bites above the average.</li>
-    <li><b>One wallet is outside both rules</b> &mdash; the launcher's, which has to be exempt
-    to seed at all. <a class="ext" href="/snooze.html">the detail</a></li>
+    <li><b>Nothing is ever burned on a sale.</b> The token can cut sales above a 24-hour
+    average, but that needs an oracle and this one answers "not ready" forever. Immutable.
+    That rule never fires. <a class="ext" href="/snooze.html">the detail</a></li>
+    <li><b>Virtual liquidity is not liquidity.</b> Before bonding the only ETH behind the
+    price is what buyers put in.</li>
+    <li><b>One wallet skips the daily cap</b> &mdash; the dev's. One address, public,
+    <span class="mono">capExempt</span> reads true for it on chain.</li>
+    <li><b>1% of every buy and every sell goes to the dev</b>, in ETH.</li>
     <li><b>Slippage gets 46% worse at bonding, not better.</b> Only the real ETH goes into the
-    pool; the virtual part does not exist to move. The curve is the deepest the book ever is.</li>
-    <li><b>It is not permissionless yet.</b> One wallet can deploy, and that wallet is the
-    launcher's. Anyone can BUY; nobody else can launch until a different contract ships.</li>
-    <li><b>Most tokens never bond.</b> That is the normal outcome, not the failure case.</li>
-    <li><b>No audit, no testnet run.</b> Nothing here has been either.</li>
+    pool, and more virtual ETH does not buy depth &mdash;
+    <a class="ext" href="/size.html">what a size gets</a>.</li>
+    <li><b>It is not permissionless yet.</b> One wallet can deploy and nobody else can launch.
+    Anyone can BUY.</li>
+    <li><b>Most tokens never bond.</b> Normal outcome, not the failure case.</li>
+    <li><b>No audit, no testnet run.</b></li>
   </ul>
 </div>
 
@@ -791,24 +775,29 @@ function setStats(rows){
   for(const [k, v] of rows) s.appendChild(stat(k, v));
 }
 
-/* Rule 1 as a curve. Identical arithmetic to burnBps() in contracts/Snooze.sol and to the dial
-   on /snooze.html: (P - T) / P, zero at or below the average, capped at 90%. It is exact, it
-   is checkable against the contract, and it is the thing worth understanding before there is
-   a price to look at. */
-function burnAt(ratio){
-  if(!(ratio > 1)) return 0;
-  return Math.min(0.9, (ratio - 1) / ratio);
+/* THE CURVE, which is the thing there is to understand before there is a price to look at.
+   It used to draw Rule 1's haircut, and that became a picture of something that will never
+   happen: this launch's oracle answers "not ready" forever, so no sale is ever burned, and a
+   chart of the burn was the most prominent false claim on the page.
+
+   What is drawn instead is the price the contract actually charges. SnoozeCurve holds
+   k = E*T with E starting at virtualEth, so the multiple after R real ETH is
+   ((E0+R)/E0)^2 — the token side cancels. Identical to priceMultipleBps() in
+   contracts/SnoozeCurve.sol, in bps there and as a multiple here, and checked against it. */
+const VIRTUAL_ETH = 10, BOND_AT = 21.622776601683793;
+function priceAt(raised){
+  const e = (VIRTUAL_ETH + Math.max(0, raised)) / VIRTUAL_ETH;
+  return e * e;
 }
 function showRuleCurve(){
   CHART.mode = "arithmetic"; CHART.marketSeries = [];
   const pts = [];
-  for(let r = 1.0; r <= 3.0001; r += 0.02) pts.push([r, burnAt(r) * 100]);
+  for(let r = 0; r <= BOND_AT + 1e-9; r += BOND_AT / 100) pts.push([r, priceAt(r)]);
   plot(pts, {zeroBased:true, market:false,
-             label:"How much of a sale burns, as a function of price over its 24-hour average"});
-  setStrap("This is arithmetic, not a market. No price data exists yet — the line is Rule 1 " +
-           "itself, the same expression the contract runs.");
-  setAxes("price \u00f7 24-hour average: 1\u00d7 \u2192 3\u00d7",
-          "burned on sale: 0% \u2192 67%");
+             label:"Price, as a multiple of the opening price, against real ETH bought"});
+  setStrap("Arithmetic, not a market. No price data exists yet \u2014 the line is the curve " +
+           "the contract runs, and it ends where the LP burns itself.");
+  setAxes("ETH bought: 0 \u2192 21.6", "price: 1\u00d7 \u2192 10\u00d7");
 }
 
 /* Deposited(address indexed who, uint256 amount). Verified against the repo's own keccak in
@@ -924,7 +913,7 @@ function showPool(){
 })();
 
 window.__CHART = CHART;
-window.__SNOOZE = { burnAt, POOL, TOKEN };
+window.__SNOOZE = { priceAt, POOL, TOKEN };
 
 /* ------------------------------------------------------------------------ click to define.
    Every definition is in the markup beside the word it defines, so there is no dictionary to
@@ -989,11 +978,10 @@ const GATE_MIN_TEXT = "$SNOOZE";   // set to the real minimum once the curve is 
        function that reverts, which is the worst kind of broken because the page still looks
        right. One eth_call decides it, and it is read rather than assumed.
 
-       What it does NOT do is point at Uniswap. bond(pool) hands the ETH and the tokens to an
-       address the CALLER names and creates no pool of any kind — read the function. So where
-       $SNOOZE trades after graduation is a fact about what somebody did, not something this
-       page is entitled to claim. A token page that shows whatever pool exists is the honest
-       shape of that, and it shows nothing if nobody made one. */
+       Where it points afterwards is the token's page on an aggregator, not a hardcoded
+       exchange URL: bond() feeds the Uniswap V2 pair the curve's constructor created and burns
+       the LP, so there IS a pool — but a token page shows it by reading the chain, and stays
+       honest if the factory address in config ever changes. */
     one("eth_call", [{ to: SNOOZE_CURVE, data: "0xe88dc357" }, "latest"]).then(r => {
       if(!r.ok || typeof r.data !== "string" || r.data.length < 66) return;
       if(BigInt(r.data.slice(0, 66)) !== 1n) return;

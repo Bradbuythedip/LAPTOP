@@ -7,6 +7,23 @@ interface IERC20 {
     function transferFrom(address, address, uint256) external returns (bool);
 }
 
+/// The three calls graduation needs, and no more. Uniswap V2's factory and pair, which on Base
+/// are at addresses this repository already treats as verified (web/checker.html). Not the
+/// router: addLiquidityETH refunds any excess ETH to msg.sender, and this contract refuses ETH
+/// it did not price — so the pair is fed directly and `mint` is called on it, which is what the
+/// router does underneath anyway, minus the refund path that would have reverted graduation.
+interface IUniswapV2Factory {
+    function getPair(address, address) external view returns (address);
+    function createPair(address, address) external returns (address);
+}
+interface IUniswapV2Pair {
+    function mint(address to) external returns (uint256 liquidity);
+}
+interface IWETH {
+    function deposit() external payable;
+    function transfer(address, uint256) external returns (bool);
+}
+
 /// @title SnoozeCurve
 /// @notice A constant-product curve whose ETH side starts out imaginary, so a launch needs no
 ///         liquidity from anybody. Buyers send real ETH; the curve prices against virtual plus
@@ -53,6 +70,23 @@ contract SnoozeCurve {
     address public immutable feeTo;
     address public immutable token;
 
+    /// WHERE GRADUATION GOES, fixed at construction and readable by anybody before a single
+    /// buy. The first version took `pool` as an argument to bond(): "chosen at call time
+    /// because the pool does not exist until now". It does not need to — a V2 pair's address is
+    /// a function of the factory and the two tokens, so it can be created here, in the
+    /// constructor, before the curve has sold anything. That closes the hole the argument
+    /// opened, which was that the first stranger to call bond() after the target named
+    /// themselves and received the whole raise. Now nobody names anything: bond() is still
+    /// permissionless, and all it can do is the one thing it says.
+    address public immutable factory;
+    address public immutable weth;
+    /// The pair, created by this constructor if the factory had none. Register it as a pool on
+    /// the token (setPool) before freeze(), or sells into it are outside both rules forever.
+    address public immutable pair;
+    /// Who receives the LP tokens. The dead address burns them, which is what "LP burned"
+    /// means on every launch page that says it; the fee address keeps the pool's trading fees.
+    address public immutable lpTo;
+
     uint256 public constant MAX_FEE_BPS = 500;   // 5%. Above this it is not a fee.
 
     // ---------------------------------------------------------------------------- the gate
@@ -91,7 +125,8 @@ contract SnoozeCurve {
                  uint256 newReserve);
     event Sold(address indexed who, uint256 tokensIn, uint256 ethOut, uint256 fee,
                uint256 newReserve);
-    event Bonded(address indexed by, uint256 ethToPool, uint256 tokensToPool, uint256 leftover);
+    event Bonded(address indexed by, address indexed pair, uint256 ethToPool,
+                 uint256 tokensToPool, uint256 leftover, uint256 liquidity);
 
     error BadConfig();
     error AlreadyBonded();
@@ -104,17 +139,29 @@ contract SnoozeCurve {
 
     constructor(address _token, uint256 _virtualEth, uint256 _curveSupply,
                 uint256 _bondTarget, uint256 _feeBps, address _feeTo,
-                address _gateToken, uint256 _gateMin, uint64 _gateUntil) {
+                address _gateToken, uint256 _gateMin, uint64 _gateUntil,
+                address _factory, address _weth, address _lpTo) {
         if (_token == address(0) || _virtualEth == 0 || _curveSupply == 0) revert BadConfig();
         if (_bondTarget == 0) revert BadConfig();
         if (_feeBps > MAX_FEE_BPS) revert BadConfig();
         if (_feeBps > 0 && _feeTo == address(0)) revert BadConfig();
+        if (_factory == address(0) || _weth == address(0) || _lpTo == address(0)) revert BadConfig();
         token = _token;
         virtualEth = _virtualEth;
         curveSupply = _curveSupply;
         bondTarget = _bondTarget;
         feeBps = _feeBps;
         feeTo = _feeTo;
+        factory = _factory;
+        weth = _weth;
+        lpTo = _lpTo;
+        // Created now, so the address is a fact before the first buy rather than a promise at
+        // the last one. A factory with no code at it makes this revert in the constructor,
+        // which is the cheapest possible moment to find out. If somebody already created the
+        // pair, it is used: anything they put in it is priced against the raise on the way in.
+        address p = IUniswapV2Factory(_factory).getPair(_token, _weth);
+        if (p == address(0)) p = IUniswapV2Factory(_factory).createPair(_token, _weth);
+        pair = p;
         // A gate token with no minimum, or a minimum with no token, is a gate that gates
         // nothing while looking on the explorer like one that does.
         if ((_gateToken == address(0)) != (_gateMin == 0)) revert BadConfig();
@@ -279,18 +326,26 @@ contract SnoozeCurve {
 
     // --------------------------------------------------------------------------- graduation
 
-    /// @notice Retire the curve into a real pool. Permissionless once the target is reached.
-    /// @dev Permissionless on purpose: graduation must not wait on anybody being awake, and
-    ///      there is nothing to gain by calling it — the caller receives nothing and cannot
-    ///      choose the price, which is fixed by the curve's own closing state.
-    /// @param pool the address the ETH and tokens are handed to. Chosen at call time rather
-    ///        than fixed at construction ONLY because the pool does not exist until now; a
-    ///        deployment wires this through a launchpad that pins it. That is a real trust
-    ///        edge and it is stated rather than hidden.
-    function bond(address pool) external returns (uint256 ethToPool, uint256 tokensToPool) {
+    /// @notice Retire the curve into the real pool. Permissionless once the target is reached.
+    /// @dev Permissionless on purpose: graduation must not wait on anybody being awake. And it
+    ///      takes NO ARGUMENT, on purpose: the first version took `pool` and handed the whole
+    ///      raise to whatever the caller named, which made "permissionless" mean "a race the
+    ///      first stranger wins". Every destination here is immutable and was public before
+    ///      the first buy — the pair from the constructor, lpTo from the constructor.
+    ///
+    ///      The pair is fed directly and mint() is called on it, rather than going through the
+    ///      router: addLiquidityETH refunds excess ETH to msg.sender, and this contract's
+    ///      receive() reverts, so a router path could have reverted graduation on a pair
+    ///      somebody pre-seeded at a different price. Feeding the pair takes whatever is there
+    ///      as it is; a pre-seeder's contribution is repriced against the raise and their LP
+    ///      share is what they paid for.
+    ///
+    ///      The token transfer to the pair runs through Snooze._move with the curve as sender.
+    ///      setPool(curve) made the curve capExempt, so neither rule fires on it — which is
+    ///      also why the curve must be registered before anything is sent to it (step 5).
+    function bond() external returns (uint256 ethToPool, uint256 tokensToPool) {
         if (bonded) revert AlreadyBonded();
         if (reserveEth < bondTarget) revert NotBondable();
-        if (pool == address(0)) revert BadConfig();
 
         uint256 leftover;
         (ethToPool, tokensToPool, leftover) = bondPreview();
@@ -298,12 +353,13 @@ contract SnoozeCurve {
         sold += tokensToPool;          // those tokens have left the curve's book
         reserveEth = 0;
 
-        if (tokensToPool > 0 && !IERC20(token).transfer(pool, tokensToPool))
-            revert TransferFailed();
         if (leftover > 0 && !IERC20(token).transfer(feeTo, leftover)) revert TransferFailed();
-        (bool ok, ) = pool.call{value: ethToPool}("");
-        if (!ok) revert TransferFailed();
-        emit Bonded(msg.sender, ethToPool, tokensToPool, leftover);
+        if (tokensToPool > 0 && !IERC20(token).transfer(pair, tokensToPool))
+            revert TransferFailed();
+        IWETH(weth).deposit{value: ethToPool}();
+        if (!IWETH(weth).transfer(pair, ethToPool)) revert TransferFailed();
+        uint256 liquidity = IUniswapV2Pair(pair).mint(lpTo);
+        emit Bonded(msg.sender, pair, ethToPool, tokensToPool, leftover, liquidity);
     }
 
     /// Nothing else may send ETH here. A stranger's transfer would be counted by nobody and

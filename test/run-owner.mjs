@@ -28,7 +28,12 @@ const STRANGER = "0x00000000000000000000000000000000deadbeef";
 
 const { all, warnings } = compile(["contracts/SnoozeDeployer.sol", "contracts/SnoozeCurve.sol",
   "contracts/Snooze.sol", "contracts/SnoozeGate.sol", "contracts/test/Mocks.sol",
-  "contracts/test/SnoozeMocks.sol"]);
+  "contracts/test/SnoozeMocks.sol", "contracts/test/UniV2Mocks.sol"]);
+// Graduation's venue, which the curve's constructor now needs to exist.
+const DEAD = "0x000000000000000000000000000000000000dEaD";
+const venue = async (evm) => [
+  (await deploy(all.MockV2Factory.evm.bytecode.object, "", { evm })).address.toString(),
+  (await deploy(all.MockWETH.evm.bytecode.object, "", { evm })).address.toString(), DEAD];
 
 console.log("── the config says one address, and it is the one you gave");
 ok("config.json names an owner", /^0x[0-9a-f]{40}$/.test(OWNER), OWNER);
@@ -128,7 +133,7 @@ console.log("── every fee lands on the owner's address");
   const tok = await deploy(all.PlainToken.evm.bytecode.object, w(10n ** 27n), { evm: evm2 });
   const curve = await deploy(all.SnoozeCurve.evm.bytecode.object,
     [tok.address.toString(), 3n * E, 10n ** 26n, 6n * E, 100, OWNER,
-     "0x" + "0".repeat(40), 0, 0].map(w).join(""), { evm: evm2, timestamp: 1000 });
+     "0x" + "0".repeat(40), 0, 0, ...(await venue(evm2))].map(w).join(""), { evm: evm2, timestamp: 1000 });
   const C = { evm: evm2, address: curve.address };
   await call({ evm: evm2, address: tok.address }, "transfer(address,uint256)",
              [curve.address.toString(), 10n ** 26n]);
@@ -174,7 +179,7 @@ console.log("── the gate: hold SNOOZE to bid at launch");
   const MIN = 500n * E, UNTIL = 5000;
   const curve = await deploy(all.SnoozeCurve.evm.bytecode.object,
     [lap.address.toString(), 3n * E, 10n ** 26n, 6n * E, 100, OWNER,
-     gateTok.address.toString(), MIN, UNTIL].map(w).join(""),
+     gateTok.address.toString(), MIN, UNTIL, ...(await venue(evm3))].map(w).join(""),
     { evm: evm3, timestamp: 1000 });
   const C = { evm: evm3, address: curve.address };
   await call({ evm: evm3, address: lap.address }, "transfer(address,uint256)",

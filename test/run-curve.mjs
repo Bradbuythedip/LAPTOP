@@ -23,7 +23,7 @@ const E = 10n ** 18n;
 const w = v => (typeof v === "string" && v.startsWith("0x") ? v.slice(2)
                 : BigInt(v).toString(16)).padStart(64, "0");
 const { all, warnings } = compile(["contracts/SnoozeCurve.sol", "contracts/Snooze.sol",
-  "contracts/test/Mocks.sol", "contracts/test/SnoozeMocks.sol"]);
+  "contracts/test/Mocks.sol", "contracts/test/SnoozeMocks.sol", "contracts/test/UniV2Mocks.sol"]);
 
 console.log("── it compiles clean and fits");
 ok("SnoozeCurve compiles", !!all.SnoozeCurve);
@@ -36,26 +36,33 @@ ok("and is well under the EIP-170 limit",
 const ALICE = "0x00000000000000000000000000000000000000a1";
 const BOB   = "0x00000000000000000000000000000000000000b1";
 const FEETO = "0x00000000000000000000000000000000000000fe";
-const POOL  = "0x00000000000000000000000000000000000000b0";
+const DEAD  = "0x000000000000000000000000000000000000dEaD";
 
 // A plain ERC-20 with no rules, so the curve is measured on its own before Snooze is added.
 const NO_ADDR = "0x" + "0".repeat(40);
 async function fixture({ vEth = 3n * E, supply = 1_000_000_000n * E, target = 6n * E,
                          feeBps = 0, gateToken = NO_ADDR, gateMin = 0,
-                         gateUntil = 0 } = {}) {
+                         gateUntil = 0, lpTo = DEAD } = {}) {
   const evm = await createEVM();
   const tok = await deploy(all.PlainToken.evm.bytecode.object, w(supply * 2n), { evm });
+  // The venue graduation goes into: a V2 factory and a WETH, the two things the constructor
+  // needs to exist. The pair is created BY the curve's constructor, which is the point.
+  const factory = await deploy(all.MockV2Factory.evm.bytecode.object, "", { evm });
+  const weth = await deploy(all.MockWETH.evm.bytecode.object, "", { evm });
   // Gate off by default: a token, a minimum and a deadline of zero is "anybody may buy".
   // Constructed with three arguments fewer, this used to revert with no explanation.
   const c = await deploy(all.SnoozeCurve.evm.bytecode.object,
     [tok.address.toString(), vEth, supply, target, feeBps, FEETO,
-     gateToken, gateMin, gateUntil].map(w).join(""), { evm, timestamp: 1000 });
+     gateToken, gateMin, gateUntil, factory.address.toString(), weth.address.toString(),
+     lpTo].map(w).join(""), { evm, timestamp: 1000 });
   await call({ evm, address: tok.address }, "transfer(address,uint256)",
              [c.address.toString(), supply]);
   await fund(evm, ALICE, 1000n * E);
   await fund(evm, BOB, 1000n * E);
   return { evm, tok: { evm, address: tok.address }, c: { evm, address: c.address },
-           addr: c.address.toString(), tokAddr: tok.address.toString() };
+           addr: c.address.toString(), tokAddr: tok.address.toString(),
+           factory: { evm, address: factory.address }, weth: { evm, address: weth.address },
+           factoryAddr: factory.address.toString(), wethAddr: weth.address.toString() };
 }
 
 console.log("── the arithmetic, against the closed forms in bond_model.py");
@@ -205,44 +212,95 @@ console.log("── fees leave immediately, so the reserve is only ever the curv
   ok("which is exactly what the contract holds", held === res.words[0], String(held));
 }
 
-console.log("── bonding");
+console.log("── bonding, into a pool the curve made itself");
 {
   const f = await fixture({ vEth: 3n * E, supply: 1_000_000_000n * E, target: 6n * E });
+  const pair = (await call(f.c, "pair()", [])).words[0];
+  const pairAddr = "0x" + pair.toString(16).padStart(40, "0");
+  ok("the constructor created the pair, so its address is a fact before the first buy",
+     pairAddr !== NO_ADDR, pairAddr);
+  const got = (await call(f.factory, "getPair(address,address)", [f.tokAddr, f.wethAddr])).words[0];
+  ok("and it is the factory's pair for (token, WETH)", got === pair, got.toString(16));
   ok("not bondable before the target", !(await call(f.c, "bondable()", [])).words[0]);
-  const early = await call(f.c, "bond(address)", [POOL], { from: BOB });
+  const early = await call(f.c, "bond()", [], { from: BOB });
   ok("and bond() refuses early", !early.ok, early.revert);
   await call(f.c, "buy(uint256,address)", [0, ALICE], { from: ALICE, value: 6n * E });
   ok("bondable once the real ETH has arrived", !!(await call(f.c, "bondable()", [])).words[0]);
   const pre = await call(f.c, "bondPreview()", []);
-  const r = await call(f.c, "bond(address)", [POOL], { from: BOB });
+  // A stranger calls it. That used to be the whole problem; now it is the point.
+  const r = await call(f.c, "bond()", [], { from: BOB });
   ok("anybody may bond it, not only the launcher", r.ok, r.revert);
-  const poolEth = await balance(f.evm, POOL);
-  ok("the pool receives the whole real reserve", poolEth === pre.words[0], String(poolEth));
-  const poolTok = await call(f.tok, "balanceOf(address)", [POOL]);
-  ok("and the seed tokens", poolTok.words[0] === pre.words[1], String(poolTok.words[0]));
+  ok("bond() takes no argument — there is no destination for a caller to name",
+     !all.SnoozeCurve.abi.some(x => x.name === "bond" && x.inputs.length));
+  const pairWeth = (await call(f.weth, "balanceOf(address)", [pairAddr])).words[0];
+  ok("the pair received the whole real reserve, as WETH", pairWeth === pre.words[0], String(pairWeth));
+  const pairTok = (await call(f.tok, "balanceOf(address)", [pairAddr])).words[0];
+  ok("and the seed tokens", pairTok === pre.words[1], String(pairTok));
+  const lp = { evm: f.evm, address: f.c.address.constructor.fromString
+    ? f.c.address.constructor.fromString(pairAddr) : null };
+  const lpBal = (await call({ evm: f.evm, address: (await import("@ethereumjs/util")).createAddressFromString(pairAddr) },
+                            "balanceOf(address)", [DEAD])).words[0];
+  ok("the LP tokens were minted to the dead address — the LP is burned", lpBal > 0n, String(lpBal));
+  const bobLp = (await call({ evm: f.evm, address: (await import("@ethereumjs/util")).createAddressFromString(pairAddr) },
+                            "balanceOf(address)", [BOB])).words[0];
+  ok("and the caller got none of it", bobLp === 0n, String(bobLp));
+  ok("the stranger who called it received no ETH", (await balance(f.evm, BOB)) <= 1000n * E);
   const feeTok = await call(f.tok, "balanceOf(address)", [FEETO]);
   ok("the leftover goes to the fee address, and is the only token revenue",
      feeTok.words[0] === pre.words[2], String(feeTok.words[0]));
   ok("the curve keeps no ETH", (await balance(f.evm, f.addr)) === 0n);
-  const again = await call(f.c, "bond(address)", [POOL], { from: ALICE });
+  const again = await call(f.c, "bond()", [], { from: ALICE });
   ok("it cannot be bonded twice", !again.ok, again.revert);
   const buyAfter = await call(f.c, "buy(uint256,address)", [0, ALICE],
                               { from: ALICE, value: 1n * E });
   ok("and the curve is closed to trading afterwards", !buyAfter.ok, buyAfter.revert);
+
+  // lpTo is a dial: the fee address instead of the dead one keeps the pool's fees.
+  const g = await fixture({ vEth: 3n * E, supply: 1_000_000_000n * E, target: 6n * E, lpTo: FEETO });
+  await call(g.c, "buy(uint256,address)", [0, ALICE], { from: ALICE, value: 6n * E });
+  await call(g.c, "bond()", [], { from: BOB });
+  const gPair = "0x" + (await call(g.c, "pair()", [])).words[0].toString(16).padStart(40, "0");
+  const feeLp = (await call({ evm: g.evm, address: (await import("@ethereumjs/util")).createAddressFromString(gPair) },
+                            "balanceOf(address)", [FEETO])).words[0];
+  ok("with lpTo set to the fee address, the LP goes there instead", feeLp > 0n, String(feeLp));
+
+  // A pair somebody pre-seeded does not brick graduation — it is fed and repriced.
+  const h = await fixture({ vEth: 3n * E, supply: 1_000_000_000n * E, target: 6n * E });
+  const hPair = "0x" + (await call(h.c, "pair()", [])).words[0].toString(16).padStart(40, "0");
+  const hPairObj = { evm: h.evm, address: (await import("@ethereumjs/util")).createAddressFromString(hPair) };
+  await call(h.tok, "transfer(address,uint256)", [hPair, 1_000n * E]);      // dust from the deployer's spare supply
+  await call(h.weth, "deposit()", [], { from: BOB, value: 1n * E });
+  await call(h.weth, "transfer(address,uint256)", [hPair, 1n * E], { from: BOB });
+  await call(hPairObj, "mint(address)", [BOB], { from: BOB });
+  await call(h.c, "buy(uint256,address)", [0, ALICE], { from: ALICE, value: 6n * E });
+  const rr = await call(h.c, "bond()", [], { from: ALICE });
+  ok("a pre-seeded pair still graduates", rr.ok, rr.revert);
+  const res = await call(hPairObj, "getReserves()", []);
+  ok("and the raise is in it, on top of whatever was there", res.words[0] > 0n && res.words[1] > 0n);
 }
 
 console.log("── it refuses the configurations that would hurt somebody");
 {
   const evm = await createEVM();
   const tok = await deploy(all.PlainToken.evm.bytecode.object, w(1000n * E), { evm });
-  const mk = async (v, s, t, fee, to, gt = NO_ADDR, gm = 0, gu = 0) => {
+  const fac = (await deploy(all.MockV2Factory.evm.bytecode.object, "", { evm })).address.toString();
+  const wth = (await deploy(all.MockWETH.evm.bytecode.object, "", { evm })).address.toString();
+  const mk = async (v, s, t, fee, to, gt = NO_ADDR, gm = 0, gu = 0,
+                    factory = fac, weth = wth, lpTo = DEAD) => {
     try {
       await deploy(all.SnoozeCurve.evm.bytecode.object,
-        [tok.address.toString(), v, s, t, fee, to, gt, gm, gu].map(w).join(""),
+        [tok.address.toString(), v, s, t, fee, to, gt, gm, gu, factory, weth, lpTo].map(w).join(""),
         { evm, timestamp: 1000 });
       return null;
     } catch (e) { return String(e.message || e); }
   };
+  ok("a zero factory is refused", !!(await mk(E, 1000, 10, 0, FEETO, NO_ADDR, 0, 0, NO_ADDR)));
+  ok("a zero WETH is refused", !!(await mk(E, 1000, 10, 0, FEETO, NO_ADDR, 0, 0, fac, NO_ADDR)));
+  ok("a zero lpTo is refused — LP minted to nobody is LP minted to nobody, forever",
+     !!(await mk(E, 1000, 10, 0, FEETO, NO_ADDR, 0, 0, fac, wth, NO_ADDR)));
+  // A factory with no code answers getPair with nothing, and decoding nothing reverts.
+  ok("a factory that is not a contract reverts the constructor, which is the cheapest moment",
+     !!(await mk(E, 1000, 10, 0, FEETO, NO_ADDR, 0, 0, "0x00000000000000000000000000000000000000f0")));
   ok("zero virtual ETH is refused — the price would be undefined",
      !!(await mk(0, 1000, 10, 0, FEETO)));
   ok("zero curve supply is refused", !!(await mk(E, 0, 10, 0, FEETO)));

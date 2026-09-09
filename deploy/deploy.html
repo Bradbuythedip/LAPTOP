@@ -246,6 +246,11 @@ var SNOOZE = (function(){
     "sold()":                      "0x02c7e7af",
     "reserveEth()":                "0x899b1528",
     "bonded()":                    "0xe88dc357",
+    "pair()":                      "0xa8aa1b31",
+    "factory()":                   "0xc45a0155",
+    "weth()":                      "0x3fc8cef3",
+    "lpTo()":                      "0xd5aa4e1c",
+    "setCapExempt(address,bool)":  "0xe99ba6b5",
     "addressOf(bytes32,bytes32)":  "0xe68c9567",
     "ready()":                     "0x6defbf80",
     "spot()":                      "0x6f265b93",
@@ -301,7 +306,8 @@ var SNOOZE = (function(){
     return addressWord(token) + uintWord(L.curve.virtualEth) + uintWord(L.curve.curveSupply) +
            uintWord(L.curve.bondTarget) + uintWord(L.curve.feeBps) + addressWord(L.curve.feeTo) +
            addressWord(L.curve.gateToken) + uintWord(L.curve.gateMin) +
-           uintWord(L.curve.gateUntil, 64);
+           uintWord(L.curve.gateUntil, 64) + addressWord(L.curve.factory) +
+           addressWord(L.curve.weth) + addressWord(L.curve.lpTo);
   }
   function curveInitCode(A, L, token){
     return A.contracts.SnoozeCurve.initCode + curveArgs(L, token);
@@ -333,6 +339,17 @@ var SNOOZE = (function(){
         return { to:st.token, from:L.owner, value:"0x0",
                  data: callData("setPool(address,bool)",
                                 addressWord(st.curve) + uintWord(1)) };
+      /* The pair the curve's constructor created. Registered as a pool in its own right —
+         setPool is closed by freeze(), so a pool that is not registered before then is
+         outside both rules for the life of the token. */
+      case "5.registerPair":
+        return { to:st.token, from:L.owner, value:"0x0",
+                 data: callData("setPool(address,bool)",
+                                addressWord(st.pair) + uintWord(1)) };
+      case "5.exemptOwner":
+        return { to:st.token, from:L.owner, value:"0x0",
+                 data: callData("setCapExempt(address,bool)",
+                                addressWord(L.owner) + uintWord(1)) };
       case "6.freeze":
         return { to:st.token, from:L.owner, value:"0x0", data: callData("freeze()") };
       case "6.seal":
@@ -427,10 +444,10 @@ function load(){
     var s = raw ? JSON.parse(raw) : {};
     return { oracle:s.oracle||null, deployer:s.deployer||null, token:s.token||null,
              salt:s.salt||null, initCodeHash:s.initCodeHash||null, predicted:s.predicted||null,
-             curve:s.curve||null, verified:s.verified||{}, sent:s.sent||{} };
+             curve:s.curve||null, pair:s.pair||null, verified:s.verified||{}, sent:s.sent||{} };
   }catch(e){
     return { oracle:null, deployer:null, token:null, salt:null, initCodeHash:null,
-             predicted:null, curve:null, verified:{}, sent:{} };
+             predicted:null, curve:null, pair:null, verified:{}, sent:{} };
   }
 }
 function save(){
@@ -478,7 +495,7 @@ function importProgress(text){
      a 39-character address. One character short is not an address, and it would be carried
      straight into a constructor argument by the step that reads it. */
   var ADDR = /^0x[0-9a-fA-F]{40}$/, W32 = /^0x[0-9a-fA-F]{64}$/;
-  var addrs = ["oracle", "deployer", "token", "curve", "predicted"];
+  var addrs = ["oracle", "deployer", "token", "curve", "predicted", "pair"];
   for(var i = 0; i < addrs.length; i++)
     if(s[addrs[i]] != null && s[addrs[i]] !== "" && !ADDR.test(s[addrs[i]]))
       return { ok:false, why:addrs[i] + " is not a 20-byte address: " + s[addrs[i]] };
@@ -490,7 +507,7 @@ function importProgress(text){
   return { ok:true, state:{
     oracle: s.oracle || null, deployer: s.deployer || null, token: s.token || null,
     salt: s.salt || null, initCodeHash: s.initCodeHash || null, predicted: s.predicted || null,
-    curve: s.curve || null, verified: obj(s.verified), sent: obj(s.sent) } };
+    curve: s.curve || null, pair: s.pair || null, verified: obj(s.verified), sent: obj(s.sent) } };
 }
 
 /* ------------------------------------------------------------------------------- the steps */
@@ -729,7 +746,19 @@ function STEPS(){
           "the curve must have received its whole allocation. Verify step 5 after funding — " +
           "once setPool lands, a transfer into the curve is a sell, and Rule 2 rejects it " +
           "while Rule 1 burns part of a retry. A buy in the meantime is fine: it moves tokens " +
-          "from the balance into sold() and leaves the sum alone."; } }
+          "from the balance into sold() and leaves the sum alone."; } },
+      { key:"5.registerPair", label:"Register the pool the curve made",
+        about:function(){ return "setPool(" + (ST.pair || "?") + ", true) — the Uniswap V2 pair " +
+          "the curve's constructor created. Without this, sells into it after graduation are " +
+          "outside both rules forever, because freeze() closes setPool."; },
+        needs:function(){ return ST.pair ? null :
+          "the pair's address is read off the curve when its deployment lands, or by Verify"; } },
+      { key:"5.exemptOwner", label:"Exempt the owner's wallet from both rules",
+        about:function(){ return "setCapExempt(" + L.owner + ", true) — this one wallet sells " +
+          "into a registered pool with no daily cap and no haircut. Public: capExempt(owner) " +
+          "reads true on chain forever, and the site says so."; },
+        needs:function(){ return L.token.ownerExempt ? null :
+          "token.ownerExempt is false in deploy/config.json, so this is not sent"; } }
     ],
     irreversible:[
       "feeTo is immutable. There is no setFeeTo: a fee address that can be repointed later is an admin key with a different name.",
@@ -737,7 +766,8 @@ function STEPS(){
       "The gate halves are immutable. This curve has no gate, because there is no SNOOZE to hold before SNOOZE exists.",
       "Tokens sent to the curve are the curve's. There is no rescue, sweep or withdraw.",
       "setPool also sets capExempt for the curve, permanently, so the curve can pay buyers out. That is required — without it nobody could buy more than 20% of its float a day.",
-      "bond() is permissionless AND the caller names the destination. The first stranger to call it once reserveEth passes bondTarget receives the whole raise and the pool's token side, at an address they chose. Nothing on this page can prevent that."
+      "factory, weth and lpTo are immutable. The constructor creates the pair; bond() — permissionless, no argument — feeds it and mints the LP to lpTo. Nobody can point graduation anywhere else, including you. With lpTo the dead address the LP is burned forever.",
+      "capExempt(owner) becomes permanent at freeze(): with ownerExempt on, that one wallet is outside Rule 2's daily cap and Rule 1's haircut forever, and it is public."
     ],
     confirm:"the curve parameters and the fee address are immutable and I have checked them",
     blocked: function(){ return ST.verified.salt ? null : "step 4 has not been verified yet"; },
@@ -754,13 +784,23 @@ function STEPS(){
       { sig:"sold()",        to:ST.curve, data:SNOOZE.callData("sold()") },
       { sig:"reserveEth()",  to:ST.curve, data:SNOOZE.callData("reserveEth()") },
       { sig:"bonded()",      to:ST.curve, data:SNOOZE.callData("bonded()") },
+      { sig:"factory()",     to:ST.curve, data:SNOOZE.callData("factory()") },
+      { sig:"weth()",        to:ST.curve, data:SNOOZE.callData("weth()") },
+      { sig:"lpTo()",        to:ST.curve, data:SNOOZE.callData("lpTo()") },
+      { sig:"pair()",        to:ST.curve, data:SNOOZE.callData("pair()") },
+      { sig:"token.capExempt(owner)", to:ST.token,
+        data:SNOOZE.callData("capExempt(address)", SNOOZE.addressWord(L.owner)) }
+    ].concat(ST.pair ? [
+      { sig:"token.isPool(pair)", to:ST.token,
+        data:SNOOZE.callData("isPool(address)", SNOOZE.addressWord(ST.pair)) }
+    ] : []).concat([
       { sig:"token.balanceOf(curve)", to:ST.token,
         data:SNOOZE.callData("balanceOf(address)", SNOOZE.addressWord(ST.curve)) },
       { sig:"token.isPool(curve)", to:ST.token,
         data:SNOOZE.callData("isPool(address)", SNOOZE.addressWord(ST.curve)) },
       { sig:"token.capExempt(curve)", to:ST.token,
         data:SNOOZE.callData("capExempt(address)", SNOOZE.addressWord(ST.curve)) }
-    ] : []; },
+    ]) : []; },
     code: function(){ return ST.curve; },
     check: function(r, code){
       var c = [];
@@ -806,6 +846,22 @@ function STEPS(){
              "isPool(curve) is true, so both Snooze rules are on");
       boolIs(c, r, "token.capExempt(curve)", true,
              "capExempt(curve) is true, so the curve can pay buyers out");
+      addrIs(c, r, "factory()", L.curve.factory);
+      addrIs(c, r, "weth()", L.curve.weth);
+      addrIs(c, r, "lpTo()", L.curve.lpTo);
+      var pairRead = got(r, "pair()", SNOOZE.readAddress);
+      push(c, !!pairRead && !SNOOZE.same(pairRead, SNOOZE.ZERO),
+           "pair() is an address — the constructor created the pool", pairRead || "");
+      /* Learned here as well as at send time, so a page restored from a copy still knows it. */
+      if(pairRead && !SNOOZE.same(pairRead, SNOOZE.ZERO)) ST.pair = pairRead;
+      if(ST.pair && r["token.isPool(pair)"])
+        boolIs(c, r, "token.isPool(pair)", true,
+               "isPool(pair) is true, so sells into the pool after graduation are under both rules");
+      else push(c, false, "isPool(pair) is true, so sells into the pool after graduation are under both rules",
+                "the pair is not registered yet — send 5.registerPair");
+      boolIs(c, r, "token.capExempt(owner)", !!L.token.ownerExempt, L.token.ownerExempt
+             ? "capExempt(owner) is true — the owner's wallet is outside both rules, as configured"
+             : "capExempt(owner) is false — no wallet is exempt, as configured");
       /* The gate that unlocks 5.register, recorded from a read rather than from having sent
          the funding transaction. */
       try{
@@ -856,14 +912,13 @@ function STEPS(){
 }
 
 var AFTER = [
-  ["bond() is a race you can lose",
-   "SnoozeCurve.bond(pool) is permissionless and the CALLER chooses where the ETH and the token " +
-   "side go. It becomes callable the instant reserveEth reaches bondTarget, and whoever calls it " +
-   "first takes the raise — measured against these exact parameters, a stranger calling " +
-   "bond(theirOwnAddress) receives all of reserveEth and the whole pool allocation. Nothing in " +
-   "these scripts can prevent it; the fix is a contract change that pins the pool at " +
-   "construction. Until then, either watch for the target and be first, or accept the race — " +
-   "and do not let anyone find out about it after they have bought."],
+  ["Graduation is automatic, and nobody chooses where it goes",
+   "bond() is permissionless and takes no argument. The curve's constructor created the Uniswap " +
+   "V2 pair for (token, WETH) before the first buy; bond() wraps the raise into WETH, feeds the " +
+   "pair with it and the seed tokens at the curve's closing price, and mints the LP tokens to " +
+   "lpTo — the dead address as configured, so the LP is burned. Anyone may call it once " +
+   "reserveEth passes bondTarget; all they can do is the one thing it says. Register the pair " +
+   "(5.registerPair) BEFORE freeze(), or sells into it after graduation are outside both rules."],
   ["Where the supply ends up, which nothing else on this page adds up for you",
    "The curve is funded with curveSupply and the rest stays in your wallet from the block the " +
    "token is deployed — at the configured 8e34 of a 1e35 supply that is 20%. If the curve " +
@@ -1303,6 +1358,17 @@ async function send(step, tx, card){
       out.appendChild(el("div", "okbox",
         (rc.contractAddress ? "created " : "deployed at ") + created +
         (logged ? " (from the deployer's own log)" : "")));
+      /* The curve knows its pair; this page does not until it asks. One read, so the
+         registerPair button lights up without a round trip through Verify. */
+      if(slot === "curve"){
+        try{
+          var pr = await W.prov.request({ method:"eth_call",
+            params:[{ to:created, data:SNOOZE.callData("pair()") }, "latest"] });
+          var pa = SNOOZE.readAddress(pr);
+          if(pa && !SNOOZE.same(pa, SNOOZE.ZERO)){ ST.pair = pa; save();
+            out.appendChild(el("div", "okbox", "pair " + pa + " (the pool the constructor created)")); }
+        }catch(e){ /* Verify reads it again; nothing is lost */ }
+      }
     }else if(slot && !created){
       out.appendChild(el("div", "badbox",
         "That transaction created nothing and emitted no Deployed log, so there is no address " +
