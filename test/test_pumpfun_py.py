@@ -1024,6 +1024,111 @@ ok("and pumpportal is still reachable, so the refusal stays reproducible",
        ["launch", "--name", "n", "--symbol", "s", "--image", "i",
         "--builder", "pumpportal"]).builder == "pumpportal")
 
+# ── the v0 message, which exists only because the legacy one stopped fitting
+#
+# With cashback on, a buy carries eight trailing fee recipients and the launch touches 30
+# accounts — 161 bytes past the 1232-byte limit. The fixed accounts move into a table this
+# wallet owns. The danger is not the table: it is that an index is what an instruction MEANS,
+# and a v0 message has two index spaces (static keys, then the table's) that must line up.
+print("── the launch does not fit in a legacy transaction, so: v0 against our own table")
+
+BIG_URI = "https://ipfs.io/ipfs/bafkreihhf5tfio7n2wvsmwsbuwvlvvjwt3ptbq7pwk4uqnurptqfnj6dhq"
+big_ixs, big_d = P.build_create_and_buy_direct(
+    payer.address, mint.address, "Snooze Bear", "SNOOZE", BIG_URI, 600_000_000, 10.0, gg,
+    250_000, 100, True)
+legacy = P._shortvec_encode(2) + bytes(64) * 2 + P._compile(payer.address, SYS_ADDR, big_ixs)
+ok("a real launch genuinely does not fit in a legacy transaction",
+   len(legacy) > P.MAX_TX_BYTES, len(legacy))
+
+TABLE_ADDRS = P.launch_static_accounts(gg)
+ok("the table holds only accounts that are the same for every launch",
+   not ({mint.address, payer.address, big_d["bonding_curve"], big_d["associated_user"],
+         big_d["metadata"], big_d["user_volume_accumulator"]} & set(TABLE_ADDRS)))
+ok("and it has no duplicates, which would waste an index and confuse the count",
+   len(TABLE_ADDRS) == len(set(TABLE_ADDRS)))
+
+v0raw = (P._shortvec_encode(2) + bytes(64) * 2
+         + P._compile_v0(payer.address, SYS_ADDR, big_ixs, "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM", TABLE_ADDRS))
+ok("and the v0 form does fit, with room to spare", len(v0raw) <= P.MAX_TX_BYTES, len(v0raw))
+v0 = P.Transaction(v0raw)
+ok("it declares exactly one table", v0.lookups == 1 and v0.lookup_tables[0]["key"] == "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM")
+
+# SIGNERS CAN NEVER BE LOOKED UP: a signature is checked against a key in the message itself.
+static_keys = v0.account_keys
+ok("the fee payer stays in the message, never in the table", static_keys[0] == payer.address)
+ok("the mint stays in the message too, because it signs",
+   mint.address in static_keys and mint.address not in TABLE_ADDRS)
+ok("no signer was moved into the table",
+   all(k not in TABLE_ADDRS for k in static_keys[:v0.num_required_signatures]))
+
+class TableRpc(P.Rpc):
+    def __init__(self, addrs):
+        self.addrs = addrs
+        self.url = "https://fake.invalid"
+
+    @property
+    def host(self):
+        return "fake.invalid"
+
+    def lookup_table(self, addr, commitment="confirmed"):
+        return list(self.addrs)
+
+
+pulled = TableRpc(TABLE_ADDRS).resolve_lookups(v0)
+ok("every account the table supplies comes back", len(pulled) == len(TABLE_ADDRS), len(pulled))
+
+# THE SAME COMPILER CHECK AS THE LEGACY PATH, and it matters more here: two index spaces.
+bad = []
+for ix, (prog, accs, data) in zip(v0.instructions, big_ixs):
+    if v0.program_of(ix) != prog:
+        bad.append(("program", prog, v0.program_of(ix)))
+    if [v0.keys[k] for k in ix["accounts"]] != [a.key for a in accs]:
+        bad.append(("order", prog))
+    if ix["data"] != data:
+        bad.append(("data", prog))
+ok("every index in the v0 message resolves back to the account that was asked for", not bad,
+   bad)
+ok("and the programs are pump.fun's once the table is read",
+   [v0.program_of(i) for i in v0.instructions][2] == P.PUMP_PROGRAM
+   and [v0.program_of(i) for i in v0.instructions][5] == P.PUMP_PROGRAM)
+ok("so the whole thing passes structural verification once resolved",
+   all(g for g, _ in P._structural_only(v0, payer.address, mint.address,
+                                        TableRpc(TABLE_ADDRS))))
+
+# The header describes the STATIC keys only; lookups are not counted in it. Getting that wrong
+# produces a message this parser accepts and the cluster rejects, after the fee is paid.
+ok("the header counts only the static keys it describes",
+   v0.num_required_signatures + v0.num_readonly_unsigned <= len(static_keys),
+   (v0.num_required_signatures, v0.num_readonly_unsigned, len(static_keys)))
+ok("writable table entries are listed before readonly ones",
+   len(v0.lookup_tables[0]["writable"]) + len(v0.lookup_tables[0]["readonly"])
+   == len(TABLE_ADDRS))
+# A table that does not hold an account the message wants must not silently drop it: the
+# account has to stay in the static keys instead.
+partial = P.Transaction(
+    P._shortvec_encode(2) + bytes(64) * 2
+    + P._compile_v0(payer.address, SYS_ADDR, big_ixs, "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM", TABLE_ADDRS[:4]))
+TableRpc(TABLE_ADDRS[:4]).resolve_lookups(partial)
+ok("an account the table does not hold stays in the message rather than vanishing",
+   all(g for g, _ in P._structural_only(partial, payer.address, mint.address,
+                                        TableRpc(TABLE_ADDRS[:4]))))
+ok("a v0 message with no fee payer among its accounts is refused",
+   _raises(lambda: P._compile_v0(other.address, SYS_ADDR, big_ixs, "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM", TABLE_ADDRS),
+           RuntimeError))
+
+# The table's address is a PDA over the authority and the slot, so it is known before the
+# transaction lands — and two tables from one wallet cannot collide.
+ix1, t1 = P.alt_create_ix(payer.address, payer.address, 100)
+_, t2 = P.alt_create_ix(payer.address, payer.address, 101)
+ok("a table's address is derivable before it exists", len(P.b58decode(t1)) == 32)
+ok("and a different slot gives a different table", t1 != t2)
+ok("create carries the slot and bump the address was derived from",
+   ix1[2][:4] == (0).to_bytes(4, "little")
+   and ix1[2][4:12] == (100).to_bytes(8, "little"))
+ok("extend is append-only, so an index can never come to mean something else",
+   P.alt_extend_ix(t1, payer.address, payer.address, [SYS_ADDR])[2][:4]
+   == (2).to_bytes(4, "little"))
+
 print("── the endpoint is a credential and is treated as one")
 ok("SOLANA_RPC is read from the environment",
    'os.environ.get("SOLANA_RPC")' in SRC)

@@ -54,6 +54,28 @@ and folds the addresses in, so the program check above sees the whole transactio
 only when a table cannot be read, which is its own answer.
 
 
+---
+
+## 0.5 · Create the lookup table, once
+
+A launch does not fit in a plain transaction any more. With cashback enabled a buy carries
+eight trailing fee recipients, so the whole thing touches 30 accounts — about 160 bytes past
+Solana's 1232-byte limit. The fixed accounts (the programs, the sysvars, the global PDAs, the
+eight recipients) move into an address lookup table; the per-launch ones stay in the message.
+
+```
+python3 pumpfun.py table --keypair ~/.snooze/launch.json
+```
+
+It costs one small transaction and a little rent. The table belongs to your launch wallet,
+holds nothing launch-specific, is append-only, and is reused by every launch from that wallet.
+`launch` picks it up automatically from `lookup-table.json` beside the keypair.
+
+Owning it removes a dependency, not the need to check: `launch` still resolves every index
+back through the chain and re-checks the programs against the allowlist, exactly as it would
+for a table somebody else built.
+
+
 ## 1 · Pick the dev buy
 
 pump.fun's curve opens at ~30 virtual SOL, so a buy of `R` SOL takes `R/(30+R)` of the float.

@@ -71,6 +71,7 @@ VERSION = "1.1.0"
 # cmd_publish referenced it anyway, so publishing the contract address died with a NameError
 # before it read a single thing — on the one command whose whole job is launch-day.
 HERE = Path(__file__).resolve().parent
+MAX_TX_BYTES = 1232
 LAMPORTS = 1_000_000_000
 
 # pump.fun's curve opens here. Both are public constants of the program, and the only thing
@@ -419,6 +420,9 @@ class Rpc:
     def balance(self, addr: str, commitment: str = "confirmed") -> int:
         return self.send("getBalance", [addr, {"commitment": commitment}])["value"]
 
+    def slot(self, commitment: str = "confirmed") -> int:
+        return self.send("getSlot", [{"commitment": commitment}])
+
     def blockhash(self, commitment: str = "confirmed") -> dict:
         return self.send("getLatestBlockhash", [{"commitment": commitment}])["value"]
 
@@ -606,6 +610,142 @@ def _compile(payer: str, blockhash: str, instructions: list) -> bytes:
         out.append(_shortvec_encode(len(data)))
         out.append(data)
     return b"".join(out)
+
+
+ALT_PROGRAM = "AddressLookupTab1e1111111111111111111111111"
+
+
+def alt_create_ix(authority: str, payer: str, recent_slot: int) -> tuple:
+    """CreateLookupTable. The table's address is a PDA over the authority and the slot.
+
+    The slot is part of the seed, which is what stops two tables from the same authority
+    colliding — and what makes the address derivable rather than random, so the caller knows
+    where the table will be before the transaction lands.
+    """
+    seed_slot = int(recent_slot).to_bytes(8, "little")
+    addr, bump = _find_pda_with_bump([b58decode(authority), seed_slot], ALT_PROGRAM)
+    data = (0).to_bytes(4, "little") + seed_slot + bytes([bump])
+    return (ALT_PROGRAM, [
+        Account(addr, writable=True),
+        Account(authority, signer=True),
+        Account(payer, signer=True, writable=True),
+        Account(SYSTEM_PROGRAM),
+    ], data), addr
+
+
+def alt_extend_ix(table: str, authority: str, payer: str, addrs: list) -> tuple:
+    """ExtendLookupTable. Appends only — an index, once written, can never mean anything else.
+
+    That is the property that makes a table safe to reference: the authority can add entries
+    and can close the whole table (which makes a transaction fail, not misbehave), but cannot
+    rewrite entry 3 into a different account after a transaction has been built against it.
+    """
+    data = ((2).to_bytes(4, "little") + len(addrs).to_bytes(8, "little")
+            + b"".join(b58decode(a) for a in addrs))
+    return (ALT_PROGRAM, [
+        Account(table, writable=True),
+        Account(authority, signer=True),
+        Account(payer, signer=True, writable=True),
+        Account(SYSTEM_PROGRAM),
+    ], data)
+
+
+def _find_pda_with_bump(seeds: list, program_id: str) -> tuple:
+    pid = b58decode(program_id)
+    for bump in range(255, -1, -1):
+        h = hashlib.sha256(b"".join(seeds) + bytes([bump]) + pid
+                           + b"ProgramDerivedAddress").digest()
+        if not _is_on_curve(h):
+            return b58encode(h), bump
+    raise RuntimeError("no off-curve address for these seeds")
+
+
+def _compile_v0(payer: str, blockhash: str, instructions: list, table: str,
+                table_addrs: list) -> bytes:
+    """A versioned message that reaches `table_addrs` by index instead of by 32 bytes each.
+
+    A LEGACY message would be better and does not fit: with cashback enabled a buy carries
+    eight trailing fee recipients, and the launch touches 30 accounts, which is 161 bytes over
+    the 1232-byte limit. So the fixed accounts — the programs, the sysvars, the global PDAs,
+    the eight recipients — move into a table this wallet OWNS and created, and the per-launch
+    accounts stay in the message.
+
+    Signers can never be looked up: a signature is checked against a key in the message
+    itself, so the fee payer and the mint stay static no matter what the table holds.
+
+    THE SAFETY ARGUMENT IS NOT "WE MADE THE TABLE". It is that verify_transaction resolves
+    every index back through the chain afterwards and checks the resulting programs against
+    the allowlist, exactly as it does for a table somebody else built. Owning it removes a
+    dependency, not the need to check.
+    """
+    merged: dict = {}
+    for prog, accs, _ in instructions:
+        for a in accs:
+            cur = merged.get(a.key)
+            if cur is None:
+                merged[a.key] = Account(a.key, a.signer, a.writable)
+            else:
+                cur.signer = cur.signer or a.signer
+                cur.writable = cur.writable or a.writable
+        merged.setdefault(prog, Account(prog))
+    fee = merged.pop(payer, None)
+    if fee is None:
+        raise RuntimeError("the fee payer is not among the accounts")
+    fee.signer = True
+    fee.writable = True
+    rest = list(merged.values())
+    pos = {a: i for i, a in enumerate(table_addrs)}
+
+    def lookupable(a) -> bool:
+        return (not a.signer) and a.key in pos
+
+    ws = [a for a in rest if a.signer and a.writable]
+    rs = [a for a in rest if a.signer and not a.writable]
+    wn = [a for a in rest if not a.signer and a.writable and not lookupable(a)]
+    rn = [a for a in rest if not a.signer and not a.writable and not lookupable(a)]
+    lw = [a for a in rest if a.writable and lookupable(a)]
+    lr = [a for a in rest if not a.writable and lookupable(a)]
+    static = [fee] + ws + rs + wn + rn
+    order = static + lw + lr
+    index = {a.key: i for i, a in enumerate(order)}
+    header = bytes([1 + len(ws) + len(rs), len(rs), len(rn)])
+    out = [bytes([0x80]), header, _shortvec_encode(len(static)),
+           b"".join(b58decode(a.key) for a in static), b58decode(blockhash),
+           _shortvec_encode(len(instructions))]
+    for prog, accs, data in instructions:
+        out.append(bytes([index[prog]]))
+        out.append(_shortvec_encode(len(accs)))
+        out.append(bytes(index[a.key] for a in accs))
+        out.append(_shortvec_encode(len(data)))
+        out.append(data)
+    out.append(_shortvec_encode(1))
+    out.append(b58decode(table))
+    out.append(_shortvec_encode(len(lw)) + bytes(pos[a.key] for a in lw))
+    out.append(_shortvec_encode(len(lr)) + bytes(pos[a.key] for a in lr))
+    return b"".join(out)
+
+
+def launch_static_accounts(g: dict) -> list:
+    """Every account a launch touches that is the SAME for every launch — table material.
+
+    The per-launch accounts (the mint, its curve, the token accounts, the metadata, the
+    creator vault, this wallet's volume accumulator) are deliberately not here: they differ
+    each time, so putting them in a table would mean a new table for every launch.
+    """
+    out = [PUMP_PROGRAM, PUMP_FEE_PROGRAM, MPL_TOKEN_METADATA, SYSTEM_PROGRAM, TOKEN_PROGRAM,
+           ATA_PROGRAM, SYSVAR_RENT, COMPUTE_BUDGET, g["address"], g["fee_recipient"],
+           find_program_address([b"mint-authority"], PUMP_PROGRAM),
+           find_program_address([b"__event_authority"], PUMP_PROGRAM),
+           find_program_address([b"global_volume_accumulator"], PUMP_PROGRAM),
+           find_program_address([b"fee_config", b58decode(PUMP_PROGRAM)], PUMP_FEE_PROGRAM)]
+    if g.get("is_cashback_enabled"):
+        out += list(g.get("buyback_fee_recipients") or [])
+    seen, uniq = set(), []
+    for a in out:
+        if a not in seen:
+            seen.add(a)
+            uniq.append(a)
+    return uniq
 
 
 def read_global(rpc) -> dict:
@@ -1279,7 +1419,7 @@ def build_create_and_buy(payer: str, mint: str, name: str, symbol: str, uri: str
 
 def build_launch_tx(rpc, payer: str, mint: str, name: str, symbol: str, uri: str,
                     sol: float, slippage: float, priority_fee: float,
-                    builder: str = "direct") -> bytes:
+                    builder: str = "direct", table: dict | None = None) -> bytes:
     """Assemble the launch, either here or at PumpPortal. `direct` is the default and why.
 
     PumpPortal's create+buy addressed the BUY instruction to
@@ -1313,8 +1453,25 @@ def build_launch_tx(rpc, payer: str, mint: str, name: str, symbol: str, uri: str
                                               slippage, g, limit, micro, needs_init)
     bh = rpc.blockhash()["blockhash"]
     msg = _compile(payer, bh, ixs)
-    print("  built here, against pump.fun's own program — no third-party builder")
-    print("  fee recipient      %s  (read from pump.fun's global account)" % g["fee_recipient"])
+    # A legacy message is preferred and does not always fit: with cashback on, a buy carries
+    # eight trailing fee recipients and the launch touches 30 accounts. When it does not fit,
+    # the fixed accounts move into this wallet's own lookup table — and are then resolved and
+    # re-checked from the chain by verify_transaction exactly as anybody else's table would be.
+    over = len(msg) + 1 + 128 - MAX_TX_BYTES
+    if over > 0:
+        if not table:
+            raise RuntimeError(
+                "this launch is %d bytes over the %d-byte transaction limit, because a buy\n"
+                "  with cashback enabled carries eight extra fee recipients. Create the\n"
+                "  lookup table it needs, once, and launch again:\n"
+                "      python3 pumpfun.py table --keypair <your keypair file>"
+                % (over, MAX_TX_BYTES))
+        msg = _compile_v0(payer, bh, ixs, table["table"], table["accounts"])
+        print("  built here, against pump.fun's own program — no third-party builder")
+        print("  lookup table       %s  (yours, %d fixed accounts)"
+              % (table["table"], len(table["accounts"])))
+    else:
+        print("  fee recipient      %s  (read from pump.fun's global account)" % g["fee_recipient"])
     if needs_init:
         print("  this wallet has never bought on pump.fun, so its volume account is created")
         print("  in the same transaction — pump.fun does not create it on the way past")
@@ -1584,9 +1741,23 @@ def cmd_launch(args):
         write_record(rec_path, record)
 
     print("\n  building create + buy as ONE transaction…")
+    tbl = None
+    tp = table_path(args.keypair)
+    if tp.exists():
+        tbl = json.loads(tp.read_text())
     raw = build_launch_tx(rpc, kp.address, mint.address, args.name, args.symbol, uri,
-                          args.dev_buy, args.slippage, args.priority_fee, args.builder)
+                          args.dev_buy, args.slippage, args.priority_fee, args.builder, tbl)
     tx = Transaction(raw)
+    # Resolve the lookup tables BEFORE describing it. Without this the description shows every
+    # instruction as "(behind an unresolved lookup table) UNKNOWN PROGRAM", which is true and
+    # useless — it is the display that has not looked yet, not a finding about the
+    # transaction. A failure here is left alone: verify_transaction resolves again and reports
+    # it as the refusal it is.
+    if tx.lookups:
+        try:
+            rpc.resolve_lookups(tx)
+        except RuntimeError:
+            pass
     print(tx.describe())
 
     print("\n  BEFORE ANYTHING IS SIGNED:")
@@ -1857,7 +2028,9 @@ def cmd_resume(args):
           % (slip, prio))
     raw = build_launch_tx(rpc, kp.address, mint.address, record["name"], record["symbol"],
                           record["uri"], record["dev_buy_sol"], slip, prio,
-                          record.get("builder", "direct"))
+                          record.get("builder", "direct"),
+                          json.loads(table_path(args.keypair).read_text())
+                          if table_path(args.keypair).exists() else None)
     tx = Transaction(raw)
     need = int(record["dev_buy_sol"] * LAMPORTS)
     checks = verify_transaction(tx, kp.address, mint.address, need, rpc)
@@ -2096,6 +2269,106 @@ def cmd_watch(args):
     print("\n  Concentration is a fact, not a verdict. A high top-10 share on a launch this")
     print("  young is usually snipers rather than anything you did — what it tells you is how")
     print("  much of the float is in hands that are looking for an exit inside the hour.\n")
+    return 0
+
+
+def table_path(keypair_path: str) -> Path:
+    return Path(keypair_path).expanduser().resolve().parent / "lookup-table.json"
+
+
+def cmd_table(args):
+    """Create the address lookup table this wallet's launches reference.
+
+    Needed because a launch does not fit in a legacy transaction any more. With cashback
+    enabled a buy carries eight trailing fee recipients, and the whole thing touches 30
+    accounts — 161 bytes past the 1232-byte limit. The fixed accounts move in here; the
+    per-launch ones stay in the message.
+
+    Separate from `launch` on purpose. It costs a transaction and a little rent, it has to
+    happen a slot or more before the launch that uses it, and a launch is not the moment to
+    discover either of those.
+    """
+    rpc = Rpc()
+    kp = Keypair.from_file(args.keypair)
+    dest = table_path(args.keypair)
+    g = read_global(rpc)
+    addrs = launch_static_accounts(g)
+
+    print()
+    print("  payer     %s" % kp.address)
+    print("  cluster   %s" % rpc.host)
+    print("  balance   %.6f SOL" % (rpc.balance(kp.address) / LAMPORTS))
+    if dest.exists():
+        old = json.loads(dest.read_text())
+        print()
+        print("  A table already exists for this wallet: %s" % old["table"])
+        print("  Tables are append-only and reusable, so a second one is only rent.")
+        print("  Delete %s to make another." % dest)
+        return 0
+
+    # The slot is a seed of the table's address, so it fixes where the table will be.
+    recent = rpc.slot("finalized")
+    (create_ix, table) = alt_create_ix(kp.address, kp.address, recent)
+    print()
+    print("  table     %s" % table)
+    print("  holding   %d accounts, none of them per-launch" % len(addrs))
+    for a in addrs:
+        print("      %s" % a)
+    if not args.yes:
+        if ask("create it? type CREATE").strip() != "CREATE":
+            print("\n  stopped. Nothing was signed.\n")
+            return 1
+
+    # One transaction creates it; the extends follow in chunks, because 22 addresses plus the
+    # message overhead is close enough to the size limit that a single extend is not worth
+    # the risk of it being the thing that fails.
+    chunks = [addrs[i:i + 12] for i in range(0, len(addrs), 12)]
+    steps = [("creating", [create_ix, alt_extend_ix(table, kp.address, kp.address, chunks[0])])]
+    for c in chunks[1:]:
+        steps.append(("extending", [alt_extend_ix(table, kp.address, kp.address, c)]))
+
+    for what, ixs in steps:
+        bh = rpc.blockhash()["blockhash"]
+        msg = _compile(kp.address, bh, ixs)
+        raw = _shortvec_encode(1) + kp.sign(msg) + msg
+        print("\n  %s… (%d bytes)" % (what, len(raw)))
+        sig = rpc.send("sendTransaction",
+                       [base64.b64encode(raw).decode(),
+                        {"encoding": "base64", "preflightCommitment": "confirmed"}])
+        print("  %s" % sig)
+        deadline = time.time() + 90
+        while time.time() < deadline:
+            st = rpc.send("getSignatureStatuses", [[sig]])["value"][0]
+            if st and st.get("err"):
+                raise RuntimeError("%s failed: %s" % (what, st["err"]))
+            if st and st.get("confirmationStatus") in ("confirmed", "finalized"):
+                break
+            time.sleep(2)
+        else:
+            raise RuntimeError("%s did not confirm in 90s; check %s before retrying"
+                               % (what, sig))
+
+    dest.write_text(json.dumps({"table": table, "authority": kp.address,
+                                "accounts": addrs, "slot": recent}, indent=2))
+    dest.chmod(0o600)
+    print()
+    print("  written   %s" % dest)
+    # A table cannot be used in the slot it was extended in. Waiting here means the next
+    # command works, rather than failing with something that reads like a bug.
+    print("  waiting for the table to become usable (one slot)…")
+    start = rpc.slot("confirmed")
+    while rpc.slot("confirmed") <= start + 1:
+        time.sleep(1)
+    on = rpc.lookup_table(table)
+    if len(on) != len(addrs):
+        raise RuntimeError("the table holds %d addresses and should hold %d"
+                           % (len(on), len(addrs)))
+    if on != addrs:
+        raise RuntimeError("the table's contents are not what was sent")
+    print("  verified  %d addresses, read back from the chain and identical" % len(on))
+    print()
+    print("  launch will use it automatically.")
+    print()
     return 0
 
 
@@ -2451,6 +2724,10 @@ def build_parser():
     s.add_argument("--minutes", type=int, default=5)
     s.add_argument("--limit", type=int, default=200)
 
+    s = sub.add_parser("table", help="create the lookup table a launch needs to fit")
+    s.add_argument("--keypair", required=True)
+    s.add_argument("--yes", action="store_true")
+    s.set_defaults(fn=cmd_table)
     s = sub.add_parser("program", help="what an unidentified program id is, from the chain")
     s.add_argument("address")
     s.set_defaults(fn=cmd_program)
