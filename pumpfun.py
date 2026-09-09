@@ -2599,6 +2599,42 @@ def known_buy_accounts(mint: str, user: str, g: dict) -> dict:
     }
 
 
+def _pump_buys_in(tx) -> list:
+    """Every pump.fun buy in a transaction, top-level or reached through a CPI.
+
+    Inner instructions matter more than top-level ones here. The buy that started all of this
+    was addressed to a router, with pump.fun's own buy underneath it as a CPI — which is how
+    most volume on this program arrives. A scan that only reads top-level instructions sees
+    routers and concludes there are no buys.
+    """
+    msg = tx["transaction"]["message"]
+    loaded = (tx.get("meta") or {}).get("loadedAddresses") or {}
+    # Static keys, then writable from tables, then readonly: the runtime's order, which is
+    # what an instruction's indices mean.
+    keys = (list(msg.get("accountKeys", []))
+            + list(loaded.get("writable", [])) + list(loaded.get("readonly", [])))
+    found = []
+
+    def look(ix, where):
+        try:
+            prog = keys[ix["programIdIndex"]]
+            data = b58decode(ix["data"])
+        except Exception:
+            return
+        if prog == PUMP_PROGRAM and data[:8] == DISC_BUY:
+            try:
+                found.append(([keys[i] for i in ix["accounts"]], where))
+            except IndexError:
+                pass
+
+    for ix in msg.get("instructions", []):
+        look(ix, "top level")
+    for group in (tx.get("meta") or {}).get("innerInstructions", []) or []:
+        for ix in group.get("instructions", []):
+            look(ix, "CPI under instruction %d" % group.get("index", -1))
+    return found
+
+
 def cmd_trace(args):
     """Read a real, successful buy off the chain and print the accounts it actually passed.
 
@@ -2610,46 +2646,46 @@ def cmd_trace(args):
 
     So: take a working transaction, print its buy instruction's accounts in order, name the
     ones this script can already derive, and show what is left. The leftovers are the answer.
-    Where a leftover matches a candidate derivation, say which — a guess checked against a
-    real transaction is not a guess any more.
+
+    Defaults to scanning the PROGRAM's recent transactions rather than one token's curve. A
+    single token may have one transaction in it and no buys; the program has thousands an
+    hour and is the thing being asked about.
     """
     rpc = Rpc()
     g = read_global(rpc)
     if args.signature:
         sigs = [args.signature]
-    else:
+        source = "the transaction you named"
+    elif args.mint:
         bc = find_program_address([b"bonding-curve", b58decode(args.mint)], PUMP_PROGRAM)
-        print("\n  bonding curve  %s" % bc)
+        source = "the bonding curve of %s (%s)" % (args.mint, bc)
         got = rpc.send("getSignaturesForAddress", [bc, {"limit": args.limit}])
         sigs = [x["signature"] for x in got if not x.get("err")]
-        if not sigs:
-            raise RuntimeError("no successful transactions touch %s" % bc)
+    else:
+        source = "pump.fun's own recent transactions"
+        got = rpc.send("getSignaturesForAddress", [PUMP_PROGRAM, {"limit": args.limit}])
+        sigs = [x["signature"] for x in got if not x.get("err")]
+    print("\n  looking at %s" % source)
+    if not sigs:
+        raise RuntimeError("no successful transactions found there")
+    print("  %d successful transaction(s) to check" % len(sigs))
 
+    checked = 0
     for sig in sigs:
         tx = rpc.send("getTransaction",
                       [sig, {"encoding": "json", "maxSupportedTransactionVersion": 0,
                              "commitment": "confirmed"}])
         if not tx or (tx.get("meta") or {}).get("err"):
             continue
-        msg = tx["transaction"]["message"]
-        loaded = (tx.get("meta") or {}).get("loadedAddresses") or {}
-        # Static keys, then writable from tables, then readonly: the runtime's order, which is
-        # what the instruction indices mean.
-        keys = (list(msg.get("accountKeys", []))
-                + list(loaded.get("writable", [])) + list(loaded.get("readonly", [])))
-        for ix in msg.get("instructions", []):
-            if keys[ix["programIdIndex"]] != PUMP_PROGRAM:
-                continue
-            data = b58decode(ix["data"])
-            if data[:8] != DISC_BUY:
-                continue
-            accs = [keys[i] for i in ix["accounts"]]
+        checked += 1
+        for accs, where in _pump_buys_in(tx):
             mint = accs[2] if len(accs) > 2 else None
             user = accs[6] if len(accs) > 6 else None
             print("\n  signature  %s" % sig)
+            print("  found      a pump.fun buy, %s" % where)
             print("  mint       %s" % mint)
             print("  buyer      %s" % user)
-            print("  the buy passed %d accounts:" % len(accs))
+            print("  it passed %d accounts:" % len(accs))
             known = known_buy_accounts(mint, user, g) if mint and user else {}
             unknown = []
             for n, a in enumerate(accs):
@@ -2666,9 +2702,14 @@ def cmd_trace(args):
                             hit = 'PDA["%s", mint]' % name
                             break
                     print("    %2d. %s  %s" % (n, a, hit or "no candidate seed matches"))
+            elif mint:
+                print("\n  every account is one this script already derives.")
             print()
             return 0
-    raise RuntimeError("none of the %d transactions checked contained a pump.fun buy" % len(sigs))
+    raise RuntimeError(
+        "checked %d successful transaction(s) and none contained a pump.fun buy, at the top\n"
+        "  level or under a CPI. Try a larger --limit, or --mint a token that is actively\n"
+        "  trading right now." % checked)
 
 
 def cmd_program(args):
@@ -3045,7 +3086,7 @@ def build_parser():
     s = sub.add_parser("trace", help="the accounts a REAL successful buy passed, from the chain")
     s.add_argument("--mint", help="any pump.fun token that is currently trading")
     s.add_argument("--signature", help="a specific transaction instead")
-    s.add_argument("--limit", type=int, default=20)
+    s.add_argument("--limit", type=int, default=60)
     s.set_defaults(fn=cmd_trace)
     s = sub.add_parser("idl", help="a program's IDL, read from the chain rather than a repo")
     s.add_argument("address")

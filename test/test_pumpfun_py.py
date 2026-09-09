@@ -1287,16 +1287,27 @@ class TraceRpc(P.Rpc):
         return {"data": [b.b64encode(_mk_global(buyback=BUYBACK)).decode(), "base64"],
                 "executable": False, "owner": SYS_ADDR, "lamports": 1}
 
+    inner = False
+
     def send(self, method, params=None):
         if method == "getSignaturesForAddress":
             return [{"signature": "s1", "err": None}]
         if method == "getTransaction":
-            return {"meta": {"err": None, "loadedAddresses": self.loaded},
-                    "transaction": {"message": {
-                        "accountKeys": self.keys,
-                        "instructions": [{"programIdIndex": self.keys.index(P.PUMP_PROGRAM),
-                                          "accounts": self.ixaccounts,
-                                          "data": P.b58encode(P.DISC_BUY + bytes(18))}]}}}
+            buy = {"programIdIndex": self.keys.index(P.PUMP_PROGRAM),
+                   "accounts": self.ixaccounts,
+                   "data": P.b58encode(P.DISC_BUY + bytes(18))}
+            meta = {"err": None, "loadedAddresses": self.loaded}
+            if self.inner:
+                # A router at the top level with pump.fun's buy underneath it as a CPI —
+                # which is how most volume on this program actually arrives.
+                top = [{"programIdIndex": self.keys.index(SYS_ADDR), "accounts": [],
+                        "data": P.b58encode(b"\x00")}]
+                meta["innerInstructions"] = [{"index": 0, "instructions": [buy]}]
+            else:
+                top = [buy]
+            return {"meta": meta,
+                    "transaction": {"message": {"accountKeys": self.keys,
+                                                "instructions": top}}}
         raise AssertionError("unexpected RPC " + method)
 
 
@@ -1332,6 +1343,31 @@ _out3 = _capture(lambda: P.cmd_trace(_ns(mint=_tmint, signature=None, limit=5)),
                               loaded={"writable": [], "readonly": [_mystery]}))
 ok("an account the transaction loaded from a table is resolved too",
    'PDA["bonding-curve-v2", mint]' in _out3)
+
+# MOST BUYS ARRIVE AS A CPI. The transaction that started all of this was addressed to a
+# router with pump.fun's buy underneath it — a scan that only reads top-level instructions
+# sees routers and reports that there are no buys, which is what the first version did.
+_r = TraceRpc(_tkeys, _tix)
+_r.inner = True
+_out4 = _capture(lambda: P.cmd_trace(_ns(mint=None, signature=None, limit=5)), rpc=_r)
+ok("a buy reached through a CPI is found, not skipped",
+   'PDA["bonding-curve-v2", mint]' in _out4 and "CPI" in _out4)
+ok("and it says where it found it, so the shape of the transaction is visible",
+   "CPI under instruction 0" in _out4)
+
+
+class EmptyRpc(TraceRpc):
+    def send(self, method, params=None):
+        if method == "getSignaturesForAddress":
+            return []
+        return super().send(method, params)
+
+
+ok("nothing to look at is an error that says so, not an empty success",
+   _raises(lambda: _capture(lambda: P.cmd_trace(_ns(mint=None, signature=None, limit=5)),
+                            rpc=EmptyRpc(_tkeys, _tix)), RuntimeError))
+ok("with no mint given it scans the program itself, which always has traffic",
+   "pump.fun's own recent transactions" in _out4)
 
 # ── bonding_curve_v2, which no IDL mentions
 #
