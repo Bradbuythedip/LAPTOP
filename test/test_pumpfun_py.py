@@ -912,18 +912,20 @@ ok("and an account that is not Global at all is refused",
 cash_ixs, _ = P.build_create_and_buy_direct(
     payer.address, mint.address, "Snooze Bear", "SNOOZE", "u", 500_000_000, 10.0, gg, 250_000)
 buy_accs = [a.key for pr, ac, dt in cash_ixs if dt[:8] == P.DISC_BUY for a in ac]
-ok("a buy under cashback carries exactly eight trailing accounts",
-   len(buy_accs) == 24, len(buy_accs))
-ok("and they are the eight from Global, in order, at the end",
-   buy_accs[-8:] == BUYBACK, buy_accs[-8:])
+# 16 named, then the eight, then bonding_curve_v2 last. The eight are "exactly 8 remaining
+# accounts" counted from the end of the named list, so what sits AFTER them still matters.
+ok("a buy under cashback carries eight buyback recipients plus the v2 curve",
+   len(buy_accs) == 25, len(buy_accs))
+ok("and the eight from Global are in order, right after the named accounts",
+   buy_accs[16:24] == BUYBACK, buy_accs[16:24])
 ok("they are writable, because they receive lamports",
    all(a.writable for pr, ac, dt in cash_ixs if dt[:8] == P.DISC_BUY for a in ac[-8:]))
 
 nocash = P.read_global(GlobalRpc(_mk_global(cashback=False, buyback=BUYBACK)))
 plain, _ = P.build_create_and_buy_direct(
     payer.address, mint.address, "Snooze Bear", "SNOOZE", "u", 500_000_000, 10.0, nocash)
-ok("with cashback off it carries none of them, which the program also accepts",
-   len([a for pr, ac, dt in plain if dt[:8] == P.DISC_BUY for a in ac]) == 16)
+ok("with cashback off it carries none of them, just the named accounts and the v2 curve",
+   len([a for pr, ac, dt in plain if dt[:8] == P.DISC_BUY for a in ac]) == 17)
 
 # THE SEED THAT WAS WRONG. buy's fee_config is a PDA of the FEE program whose second seed is
 # the 32 bytes of the BONDING CURVE program's id. It was first written as an 8-byte hex
@@ -1239,6 +1241,37 @@ ok("and none is set when none was asked for",
            if _s2.program_of(i) == P.COMPUTE_BUDGET))
 ok("table pays one by default rather than nothing",
    P.build_parser().parse_args(["table", "--keypair", "k"]).priority_fee > 0)
+
+# ── bonding_curve_v2, which no IDL mentions
+#
+# The deployed program throws 6074, InvalidBondingCurveV2: "bonding_curve_v2 remaining account
+# is missing or invalid". It is a required trailing account on every buy and sell since a
+# February upgrade, and it appears in NO published IDL — not the repo's and not the one the
+# program stores about itself. It is derivable only because the simulation logs named it.
+print("── bonding_curve_v2, a required account no IDL declares")
+BCV2 = P.find_program_address([b"bonding-curve-v2", P.b58decode(mint.address)], P.PUMP_PROGRAM)
+_bix, _bd = P.build_create_and_buy_direct(
+    payer.address, mint.address, "Snooze Bear", "SNOOZE", "u", 500_000_000, 10.0, gg)
+_buy = [ac for pr, ac, dt in _bix if dt[:8] == P.DISC_BUY][0]
+ok("the buy carries it", BCV2 in [a.key for a in _buy], BCV2)
+ok("and it is the LAST account, which is where the program looks",
+   _buy[-1].key == BCV2, [a.key for a in _buy[-3:]])
+ok("it is writable, because a buy moves the curve", _buy[-1].writable)
+ok("its seeds are the mint's, so a different mint gives a different curve",
+   BCV2 != P.find_program_address([b"bonding-curve-v2", P.b58decode(payer.address)],
+                                  P.PUMP_PROGRAM))
+ok("it is not the v1 bonding curve", BCV2 != _bd["bonding_curve"])
+# The eight buyback recipients still come before it: they are "exactly 8 remaining accounts",
+# counted from the end of the named list, and an account inserted among them breaks that.
+ok("the eight buyback recipients still sit between the named accounts and it",
+   [a.key for a in _buy[-9:-1]] == BUYBACK, [a.key for a in _buy[-9:-1]])
+ok("so a cashback buy carries 16 named accounts, then 8, then 1",
+   len(_buy) == 25, len(_buy))
+_nc, _ = P.build_create_and_buy_direct(
+    payer.address, mint.address, "Snooze Bear", "SNOOZE", "u", 500_000_000, 10.0, nocash)
+_nbuy = [ac for pr, ac, dt in _nc if dt[:8] == P.DISC_BUY][0]
+ok("and with cashback off, 16 named accounts and then it, with nothing between",
+   len(_nbuy) == 17 and _nbuy[-1].key == BCV2, len(_nbuy))
 
 # ── a failing simulation's logs
 #

@@ -938,12 +938,23 @@ def build_create_and_buy_direct(payer: str, mint: str, name: str, symbol: str, u
         Account(find_program_address([b"fee_config", b58decode(PUMP_PROGRAM)],
                                      PUMP_FEE_PROGRAM)),
         Account(PUMP_FEE_PROGRAM),
-    ] + buyback, DISC_BUY + _u64(amount) + _u64(max_sol_cost) + bytes([1, 1])))
+    ] + buyback + [
+        # bonding_curve_v2, LAST. A February upgrade made this a required trailing account on
+        # every buy and sell, cashback or not, and it is in no published IDL — not the repo's
+        # and not the one the deployed program stores about itself, both of which stop at
+        # error 6071 while the program throws 6074, InvalidBondingCurveV2. The only reason
+        # this is derivable at all is that the simulation's logs name it; the logs are worth
+        # more here than the documentation.
+        Account(find_program_address([b"bonding-curve-v2", b58decode(mint)], PUMP_PROGRAM),
+                writable=True),
+    ], DISC_BUY + _u64(amount) + _u64(max_sol_cost) + bytes([1, 1])))
 
     return ixs, {"amount": amount, "max_sol_cost": max_sol_cost,
                  "bonding_curve": bonding_curve, "associated_user": associated_user,
                  "metadata": metadata, "user_volume_accumulator": uva,
-                 "init_user_volume": init_user_volume}
+                 "init_user_volume": init_user_volume,
+                 "bonding_curve_v2": find_program_address(
+                     [b"bonding-curve-v2", b58decode(mint)], PUMP_PROGRAM)}
 
 # Every program this launch is allowed to invoke. Anything else and the transaction is not the
 # one that was asked for — a transfer to a stranger, a SetAuthority, a delegate — and it is
