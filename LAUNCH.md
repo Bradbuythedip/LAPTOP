@@ -12,6 +12,37 @@ python3 pumpfun.py --help
 
 ---
 
+---
+
+## 0 · If a check fails, nothing was signed
+
+`launch` verifies the transaction before a key touches it, and a failure means it stopped —
+no token, no spend, nothing to undo. Two of those checks are about what the transaction
+actually contains:
+
+**"every program it invokes is one this launch needs"** — a create+buy uses six programs and
+they are all on the allowlist in `pumpfun.py`. Anything else means the builder returned a
+transaction that does something nobody asked for. Find out what the id is before deciding:
+
+```
+python3 pumpfun.py program <the id it printed>
+```
+
+That reports, from the cluster and not from anybody's documentation: whether the address holds
+executable code at all, which loader owns it, the slot it was last deployed at, and **who can
+upgrade it**. A live upgrade authority means the code can be replaced after you have read it.
+
+Being deployed, being frozen and being busy are not evidence of anything. If you cannot
+identify a program from a source that is *not* the service that handed you the transaction,
+do not sign it. Adding the id to `KNOWN_PROGRAMS` to get past the refusal is the one thing
+that turns this check into decoration.
+
+**"every account behind an address lookup table was resolved and shown"** — a v0 transaction
+names most of its accounts by index into an on-chain table. The script fetches those tables
+and folds the addresses in, so the program check above sees the whole transaction. This fails
+only when a table cannot be read, which is its own answer.
+
+
 ## 1 · Pick the dev buy
 
 pump.fun's curve opens at ~30 virtual SOL, so a buy of `R` SOL takes `R/(30+R)` of the float.
