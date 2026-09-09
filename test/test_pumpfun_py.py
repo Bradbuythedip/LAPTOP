@@ -1240,6 +1240,61 @@ ok("and none is set when none was asked for",
 ok("table pays one by default rather than nothing",
    P.build_parser().parse_args(["table", "--keypair", "k"]).priority_fee > 0)
 
+# ── a failing simulation's logs
+#
+# For three rounds a failed dry run reported a bare number: {'Custom': 6074}. The name was in
+# the same RPC response the whole time — an Anchor program prints "Error Message: <what it
+# is>" into its logs — and this code was discarding it. That matters most exactly when the
+# IDL cannot help, which is the situation pump.fun is in: its published error table stops at
+# 6071 and the deployed program has moved past it.
+print("── a failing simulation says what failed")
+
+
+class SimRpc(P.Rpc):
+    def __init__(self, err, logs):
+        self.url = "https://fake.invalid"
+        self.err = err
+        self.logs = logs
+
+    @property
+    def host(self):
+        return "fake.invalid"
+
+    def balance(self, addr, commitment="confirmed"):
+        return 10 ** 9
+
+    def resolve_lookups(self, tx, commitment="confirmed"):
+        tx.resolved_keys = list(tx.account_keys)
+        return []
+
+    def send(self, method, params=None):
+        if method == "simulateTransaction":
+            return {"value": {"err": self.err, "logs": self.logs,
+                              "accounts": [{"lamports": 10 ** 9}]}}
+        raise AssertionError("unexpected RPC " + method)
+
+
+_LOGS = ["Program 6EF8rre invoke [1]",
+         "Program log: AnchorError occurred. Error Code: SomethingNew. Error Number: 6074. "
+         "Error Message: the thing no IDL knows about.",
+         "Program 6EF8rre failed"]
+_simtx = P.Transaction(build([payer.pub, mint.pub, PUMP]))
+_names = [nm for g_, nm in P.verify_transaction(
+    _simtx, payer.address, mint.address, 10 ** 8,
+    SimRpc({"InstructionError": [5, {"Custom": 6074}]}, _LOGS)) if not g_]
+_joined = "\n".join(_names)
+ok("a failed simulation reports the error number", "6074" in _joined, _names)
+ok("AND the name the program printed, which no IDL here has",
+   "SomethingNew" in _joined and "the thing no IDL knows about" in _joined, _joined)
+ok("a simulation with no logs at all still reports the raw error",
+   "6074" in "\n".join(nm for g_, nm in P.verify_transaction(
+       _simtx, payer.address, mint.address, 10 ** 8,
+       SimRpc({"InstructionError": [5, {"Custom": 6074}]}, [])) if not g_))
+ok("and a simulation that succeeds says nothing about errors",
+   all(g_ for g_, nm in P.verify_transaction(
+       _simtx, payer.address, mint.address, 10 ** 8, SimRpc(None, []))
+       if "reverting" in nm))
+
 # ── the IDL the program itself publishes
 #
 # The buy was built from pump.fun's public IDL, last committed in May. The deployed program
