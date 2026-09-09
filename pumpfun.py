@@ -2567,19 +2567,122 @@ def cmd_idl(args):
     return 0
 
 
+WSOL = "So11111111111111111111111111111111111111112"
+SHARING_CONFIG_SEED = b"sharing-config"
+
+# The account list of every instruction this script needs to READ or BUILD, in order, from
+# pump.fun's IDL. Positional, because an account's position is its meaning — the trace that
+# unblocked this printed 27 addresses and 27 question marks until it had these names.
+IX_ACCOUNTS = {
+    "buy": [
+        "global", "fee_recipient", "mint", "bonding_curve", "associated_bonding_curve",
+        "associated_user", "user", "system_program", "token_program", "creator_vault",
+        "event_authority", "program", "global_volume_accumulator", "user_volume_accumulator",
+        "fee_config", "fee_program"],
+    "buy_v2": [
+        "global", "base_mint", "quote_mint", "base_token_program", "quote_token_program",
+        "associated_token_program", "fee_recipient", "associated_quote_fee_recipient",
+        "buyback_fee_recipient", "associated_quote_buyback_fee_recipient", "bonding_curve",
+        "associated_base_bonding_curve", "associated_quote_bonding_curve", "user",
+        "associated_base_user", "associated_quote_user", "creator_vault",
+        "associated_creator_vault", "sharing_config", "global_volume_accumulator",
+        "user_volume_accumulator", "associated_user_volume_accumulator", "fee_config",
+        "fee_program", "system_program", "event_authority", "program"],
+    "create": [
+        "mint", "mint_authority", "bonding_curve", "associated_bonding_curve", "global",
+        "mpl_token_metadata", "metadata", "user", "system_program", "token_program",
+        "associated_token_program", "rent", "event_authority", "program"],
+    "create_v2": [
+        "mint", "mint_authority", "bonding_curve", "associated_bonding_curve", "global",
+        "user", "system_program", "token_program", "associated_token_program",
+        "mayhem_program_id", "global_params", "sol_vault", "mayhem_state",
+        "mayhem_token_vault", "event_authority", "program"],
+    "init_user_volume_accumulator": [
+        "payer", "user", "user_volume_accumulator", "system_program", "event_authority",
+        "program"],
+}
+IX_ACCOUNTS["buy_exact_quote_in_v2"] = IX_ACCOUNTS["buy_v2"]
+IX_ACCOUNTS["buy_exact_sol_in"] = IX_ACCOUNTS["buy"]
+IX_ACCOUNTS["sell_v2"] = [a for a in IX_ACCOUNTS["buy_v2"] if a != "global_volume_accumulator"]
+
+
+def derive_v2_accounts(base_mint: str, user: str, g: dict, base_token_program: str,
+                       buyback_recipient: str) -> dict:
+    """Every account buy_v2 takes, derived.
+
+    VERIFIED AGAINST A REAL MAINNET BUY, not against the IDL that describes one — all ten
+    derivable accounts in transaction 4tq5fgiY… reproduce exactly. That check found the one
+    that was wrong: sharing_config is a PDA of the FEE program, not of pump.fun. The IDL says
+    so, in a field naming the program by its raw bytes, which is exactly the kind of thing
+    that is read past.
+    """
+    bc = find_program_address([b"bonding-curve", b58decode(base_mint)], PUMP_PROGRAM)
+    uva = find_program_address([b"user_volume_accumulator", b58decode(user)], PUMP_PROGRAM)
+    creator_vault = find_program_address([b"creator-vault", b58decode(user)], PUMP_PROGRAM)
+    return {
+        "global": g["address"], "base_mint": base_mint, "quote_mint": WSOL,
+        "base_token_program": base_token_program, "quote_token_program": TOKEN_PROGRAM,
+        "associated_token_program": ATA_PROGRAM,
+        "fee_recipient": g["fee_recipient"],
+        "associated_quote_fee_recipient": ata(g["fee_recipient"], WSOL),
+        "buyback_fee_recipient": buyback_recipient,
+        "associated_quote_buyback_fee_recipient": ata(buyback_recipient, WSOL),
+        "bonding_curve": bc,
+        "associated_base_bonding_curve": ata(bc, base_mint, base_token_program),
+        "associated_quote_bonding_curve": ata(bc, WSOL),
+        "user": user,
+        "associated_base_user": ata(user, base_mint, base_token_program),
+        "associated_quote_user": ata(user, WSOL),
+        "creator_vault": creator_vault,
+        "associated_creator_vault": ata(creator_vault, WSOL),
+        "sharing_config": find_program_address(
+            [SHARING_CONFIG_SEED, b58decode(base_mint)], PUMP_FEE_PROGRAM),
+        "global_volume_accumulator": find_program_address(
+            [b"global_volume_accumulator"], PUMP_PROGRAM),
+        "user_volume_accumulator": uva,
+        "associated_user_volume_accumulator": ata(uva, WSOL),
+        "fee_config": find_program_address([b"fee_config", b58decode(PUMP_PROGRAM)],
+                                           PUMP_FEE_PROGRAM),
+        "fee_program": PUMP_FEE_PROGRAM, "system_program": SYSTEM_PROGRAM,
+        "event_authority": find_program_address([b"__event_authority"], PUMP_PROGRAM),
+        "program": PUMP_PROGRAM,
+    }
+
+
 # Candidate seeds for an account nobody documents. Guessing is not a method, but a guess
 # CHECKED against a real transaction is just a lookup with extra steps — and the checking is
 # what `trace` does.
-BCV2_CANDIDATES = [
-    ("bonding-curve-v2", lambda m: [b"bonding-curve-v2", b58decode(m)]),
-    ("bonding_curve_v2", lambda m: [b"bonding_curve_v2", b58decode(m)]),
-    ("bonding-curve-v2 (mint first)", lambda m: [b58decode(m), b"bonding-curve-v2"]),
-    ("bonding-curve2", lambda m: [b"bonding-curve2", b58decode(m)]),
-    ("curve-v2", lambda m: [b"curve-v2", b58decode(m)]),
-    ("bonding-curve-sol", lambda m: [b"bonding-curve-sol", b58decode(m)]),
-    ("creator-vault-v2", lambda m: [b"creator-vault-v2", b58decode(m)]),
-    ("volume-accumulator", lambda m: [b"volume-accumulator", b58decode(m)]),
-]
+BCV2_CANDIDATES = [(t, t.encode()) for t in (
+    "bonding-curve-v2", "bonding_curve_v2", "bonding-curve-2", "bonding-curve2",
+    "bonding_curve-v2", "curve-v2", "curve_v2", "bcv2", "bonding-curve-sol",
+    "bonding-curve-quote", "quote-bonding-curve", "bonding-curve-state", "v2-bonding-curve",
+    "bonding-curve-extension", "bonding_curve_extension", "curve-extension",
+)]
+
+
+def solve_pda(target: str, mint: str, programs=(), seeds=()) -> str:
+    """Which seed and program produce `target` for this mint, if any of the candidates do.
+
+    Brute force over a list is not elegant and it is honest: bonding_curve_v2 is required by
+    the deployed program and named in no IDL, so the only way to derive it is to find a real
+    transaction that used it and work out what produces the same address. A candidate that
+    reproduces a real mainnet account is not a guess any more.
+    """
+    programs = programs or (PUMP_PROGRAM, PUMP_FEE_PROGRAM)
+    seeds = seeds or BCV2_CANDIDATES
+    m = b58decode(mint)
+    for prog in programs:
+        for label, raw in seeds:
+            for order in ((raw, m), (m, raw), (raw,)):
+                try:
+                    if find_program_address(list(order), prog) == target:
+                        which = "pump.fun" if prog == PUMP_PROGRAM else "the fee program"
+                        return 'PDA[%s] of %s' % (
+                            ", ".join('"%s"' % label if x is raw else "mint" for x in order),
+                            which)
+                except Exception:
+                    pass
+    return ""
 
 
 def known_buy_accounts(mint: str, user: str, g: dict) -> dict:
@@ -2705,30 +2808,40 @@ def cmd_trace(args):
     sig, ix = examples[pick]
     accs = ix["accounts"]
     name = DISCRIMINATORS.get(pick, pick)
+    names = IX_ACCOUNTS.get(name, [])
     print("\n  one real %s, %s" % (name, ix["where"]))
     print("  signature  %s" % sig)
     print("  data       %d bytes" % len(ix["data"]))
-    print("  it passed %d accounts:" % len(accs))
-    # A buy names its mint and buyer at fixed positions; anything else, do not pretend to.
-    mint = accs[2] if name.startswith("buy") and len(accs) > 2 else None
-    user = accs[6] if name == "buy" and len(accs) > 6 else (
-        accs[13] if name == "buy_v2" and len(accs) > 13 else None)
-    known = known_buy_accounts(mint, user, g) if mint and user else {}
-    unknown = []
+    print("  it passed %d accounts%s:"
+          % (len(accs), "" if not names else
+             ", and the IDL names %d of them" % len(names)))
+    named = dict(zip(names, accs))
+    mint = named.get("mint") or named.get("base_mint")
+    user = named.get("user")
+    # Derive what this script would have passed, and compare position by position. A name is
+    # a guess; an address that matches a real transaction is not.
+    mine = {}
+    if name.endswith("_v2") or name in ("buy_v2", "buy_exact_quote_in_v2"):
+        if mint and user:
+            mine = derive_v2_accounts(mint, user, g, named.get("base_token_program",
+                                                              TOKEN_PROGRAM),
+                                      named.get("buyback_fee_recipient", g["fee_recipient"]))
+    elif mint and user:
+        mine = {k: v for v, k in known_buy_accounts(mint, user, g).items()}
+    extra = []
     for n, a in enumerate(accs):
-        label = known.get(a, "")
-        if not label:
-            unknown.append((n, a))
-        print("    %2d. %-44s %s" % (n, a, label or "?"))
-    if mint and unknown:
-        print("\n  the ones this script cannot name, and what they might be:")
-        for n, a in unknown:
-            hit = ""
-            for cand, seeds in BCV2_CANDIDATES:
-                if find_program_address(seeds(mint), PUMP_PROGRAM) == a:
-                    hit = 'PDA["%s", mint]' % cand
-                    break
-            print("    %2d. %s  %s" % (n, a, hit or "no candidate seed matches"))
+        label = names[n] if n < len(names) else "(past the IDL's list — a remaining account)"
+        mark = ""
+        if label in mine:
+            mark = "  == mine" if mine[label] == a else "  != mine (%s)" % mine[label]
+        if n >= len(names):
+            extra.append((n, a))
+        print("    %2d. %-44s %-38s%s" % (n, a, label, mark))
+    if extra and mint:
+        print("\n  accounts past the IDL's list, which is where the undocumented ones are:")
+        for n, a in extra:
+            print("    %2d. %s  %s" % (n, a, solve_pda(a, mint) or "no candidate reproduces it"))
+        print("\n  mint for these: %s" % mint)
     print()
     return 0
 
