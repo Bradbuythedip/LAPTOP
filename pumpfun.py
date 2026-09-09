@@ -491,8 +491,7 @@ COMPUTE_BUDGET = "ComputeBudget111111111111111111111111111111"
 
 DISC_CREATE = bytes([24, 30, 200, 40, 5, 28, 7, 119])
 DISC_BUY = bytes([102, 6, 61, 18, 1, 218, 235, 234])
-# idl/pump.json: buy's fee_config is a PDA of the FEE program, seeded with this constant.
-FEE_CONFIG_SEED2 = bytes.fromhex("0156e0f693665acf")
+DISC_INIT_USER_VOLUME = bytes([94, 6, 202, 115, 255, 96, 232, 183])
 
 
 def _is_on_curve(pub: bytes) -> bool:
@@ -664,7 +663,8 @@ def curve_buy_amount(lamports: int, g: dict) -> int:
 def build_create_and_buy_direct(payer: str, mint: str, name: str, symbol: str, uri: str,
                                 lamports: int, slippage_pct: float, g: dict,
                                 compute_limit: int = 250_000,
-                                compute_price_micro: int = 0) -> tuple[bytes, dict]:
+                                compute_price_micro: int = 0,
+                                init_user_volume: bool = False) -> tuple[bytes, dict]:
     """create + buy against pump.fun itself, in one legacy message.
 
     The creator is the payer, which is what makes the creator_vault PDA derivable here: on a
@@ -714,6 +714,22 @@ def build_create_and_buy_direct(payer: str, mint: str, name: str, symbol: str, u
         Account(TOKEN_PROGRAM),
     ], bytes([1])))
 
+    uva = find_program_address([b"user_volume_accumulator", b58decode(payer)], PUMP_PROGRAM)
+    if init_user_volume:
+        # A buy WRITES to this account, and pump.fun does not create it on the way past —
+        # there is a separate instruction for that, and a wallet that has never bought on
+        # pump.fun does not have one. Included only when it is actually missing: running it
+        # against an account that already exists fails, which would break every launch after
+        # the first from the same wallet.
+        ixs.append((PUMP_PROGRAM, [
+            Account(payer, signer=True, writable=True),
+            Account(payer),
+            Account(uva, writable=True),
+            Account(SYSTEM_PROGRAM),
+            Account(find_program_address([b"__event_authority"], PUMP_PROGRAM)),
+            Account(PUMP_PROGRAM),
+        ], DISC_INIT_USER_VOLUME))
+
     ixs.append((PUMP_PROGRAM, [
         Account(g["address"]),
         Account(g["fee_recipient"], writable=True),
@@ -729,15 +745,22 @@ def build_create_and_buy_direct(payer: str, mint: str, name: str, symbol: str, u
         Account(find_program_address([b"__event_authority"], PUMP_PROGRAM)),
         Account(PUMP_PROGRAM),
         Account(find_program_address([b"global_volume_accumulator"], PUMP_PROGRAM)),
-        Account(find_program_address([b"user_volume_accumulator", b58decode(payer)],
-                                     PUMP_PROGRAM), writable=True),
-        Account(find_program_address([b"fee_config", FEE_CONFIG_SEED2], PUMP_FEE_PROGRAM)),
+        Account(uva, writable=True),
+        # fee_config is a PDA of the FEE program whose second seed is the 32 bytes of the
+        # BONDING CURVE program's id. Written as the decode rather than as a hex literal
+        # because a literal is what went wrong: the IDL's seed was read off a debug print
+        # that truncated it to 8 bytes, the derived address was not pump.fun's fee_config,
+        # and the buy failed simulation with AccountNotInitialized. It cost nothing because
+        # it failed in a dry run, which is the entire reason there is one.
+        Account(find_program_address([b"fee_config", b58decode(PUMP_PROGRAM)],
+                                     PUMP_FEE_PROGRAM)),
         Account(PUMP_FEE_PROGRAM),
     ], DISC_BUY + _u64(amount) + _u64(max_sol_cost) + bytes([1, 1])))
 
     return ixs, {"amount": amount, "max_sol_cost": max_sol_cost,
                  "bonding_curve": bonding_curve, "associated_user": associated_user,
-                 "metadata": metadata}
+                 "metadata": metadata, "user_volume_accumulator": uva,
+                 "init_user_volume": init_user_volume}
 
 # Every program this launch is allowed to invoke. Anything else and the transaction is not the
 # one that was asked for — a transfer to a stranger, a SetAuthority, a delegate — and it is
@@ -1247,12 +1270,20 @@ def build_launch_tx(rpc, payer: str, mint: str, name: str, symbol: str, uri: str
     # nominal 200k. Getting this wrong overpays by whatever the two numbers differ by.
     limit = 250_000
     micro = int(priority_fee * LAMPORTS * 1_000_000 // limit) if priority_fee else 0
+    # Ask the chain whether this wallet has ever bought on pump.fun, because that decides
+    # whether the transaction needs an extra instruction. A guess in either direction is a
+    # failed transaction: missing it fails the buy, adding it twice fails the init.
+    uva = find_program_address([b"user_volume_accumulator", b58decode(payer)], PUMP_PROGRAM)
+    needs_init = rpc.account(uva) is None
     ixs, detail = build_create_and_buy_direct(payer, mint, name, symbol, uri, lamports,
-                                              slippage, g, limit, micro)
+                                              slippage, g, limit, micro, needs_init)
     bh = rpc.blockhash()["blockhash"]
     msg = _compile(payer, bh, ixs)
     print("  built here, against pump.fun's own program — no third-party builder")
     print("  fee recipient      %s  (read from pump.fun's global account)" % g["fee_recipient"])
+    if needs_init:
+        print("  this wallet has never bought on pump.fun, so its volume account is created")
+        print("  in the same transaction — pump.fun does not create it on the way past")
     print("  tokens expected    %s" % f"{detail['amount']:,}")
     print("  most it may spend  %.6f SOL  (%.1f%% slippage)"
           % (detail["max_sol_cost"] / LAMPORTS, slippage))

@@ -834,6 +834,44 @@ ok("the creator recorded in create is the payer, which is what makes creator_vau
 ok("it uses no lookup tables, so every account is in the bytes that get signed",
    built.lookups == 0 and built.version == "legacy")
 
+# THE SEED THAT WAS WRONG. buy's fee_config is a PDA of the FEE program whose second seed is
+# the 32 bytes of the BONDING CURVE program's id. It was first written as an 8-byte hex
+# literal — copied from a debug print that had truncated it — which derived an address that is
+# not pump.fun's fee_config, and the buy failed simulation with Anchor 3012,
+# AccountNotInitialized. A literal cannot be checked by reading it; a decode can.
+FEE_CONFIG = P.find_program_address([b"fee_config", P.b58decode(P.PUMP_PROGRAM)],
+                                    P.PUMP_FEE_PROGRAM)
+ok("fee_config's second seed is the whole 32-byte pump program id",
+   len(P.b58decode(P.PUMP_PROGRAM)) == 32)
+ok("and the buy passes that derived fee_config, not a truncated one",
+   FEE_CONFIG in [a.key for _, accs, _ in ixs for a in accs], FEE_CONFIG)
+ok("which is a different address than the truncated seed produced",
+   FEE_CONFIG != P.find_program_address([b"fee_config", bytes.fromhex("0156e0f693665acf")],
+                                        P.PUMP_FEE_PROGRAM))
+
+# A buy WRITES to the user's volume accumulator and pump.fun does not create it on the way
+# past. A wallet that has never bought does not have one, which is every fresh launch wallet.
+uva = P.find_program_address([b"user_volume_accumulator", P.b58decode(payer.address)],
+                             P.PUMP_PROGRAM)
+with_init, d2 = P.build_create_and_buy_direct(
+    payer.address, mint.address, "Snooze Bear", "SNOOZE", "u", 500_000_000, 10.0, GLOBAL,
+    250_000, 0, True)
+discs = [i[2][:8] for i in with_init]
+ok("a wallet with no volume account gets one created in the same transaction",
+   P.DISC_INIT_USER_VOLUME in discs, [d.hex() for d in discs])
+ok("and the init comes BEFORE the buy that writes to it",
+   discs.index(P.DISC_INIT_USER_VOLUME) < discs.index(P.DISC_BUY))
+ok("the init points at the same accumulator the buy does",
+   with_init[discs.index(P.DISC_INIT_USER_VOLUME)][1][2].key == uva)
+ok("the published discriminator for it is the one used",
+   P.DISC_INIT_USER_VOLUME == bytes([94, 6, 202, 115, 255, 96, 232, 183]))
+# Running it against an account that already exists FAILS, so a wallet that has bought before
+# must not get one. Guessing either way is a failed transaction.
+ok("a wallet that already has one does not get a second init",
+   P.DISC_INIT_USER_VOLUME not in [i[2][:8] for i in ixs])
+ok("and the launch asks the chain rather than assuming",
+   "rpc.account(uva) is None" in SRC)
+
 # THE COMPILER. Every index in every instruction must resolve back to the account the builder
 # asked for, in order, with the flags it asked for. This is the check that an ordering bug
 # cannot survive, and an ordering bug is silent: it signs a different transaction.
