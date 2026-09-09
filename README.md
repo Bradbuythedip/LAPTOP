@@ -4,7 +4,7 @@ On-chain tooling built while tracing the `$LAPTOP` token before its Sept 9, 2026
 
 Two halves:
 
-- **`web/`** — eight pages for people who are about to buy, at
+- **`web/`** — nine pages for people who are about to buy, at
   [totalworlddomination.xyz](https://totalworlddomination.xyz). One self-contained HTML file
   each. They connect to Phantom to read your Base balances and they never ask you to sign
   anything. **`index.html` is the buy screen** — *which venue fills best* — and it is the
@@ -79,7 +79,7 @@ file and opening it locally removes the hosting party from the trust question en
 Published build `2026-09-09a`:
 
 ```
-sha256(web/index.html)   = 2653a731b9758d2403f3a164ceeee34a16315c1887fd43c14b315b2fb0f11ce7
+sha256(web/index.html)   = fd51651002652c197251f1acf17b56e780aab3459e6eb484f43214c7ae4acd97
 sha256(web/buy.html)     = 3f7d5bdb8a1c57e2ea36ce8411f93e4a40c904d6cf0a0b22c034217b1680500a
 sha256(web/checker.html) = 8501ac5675f3d6edc7cfc55bc00b219448744f12ec8c91b2c6c54597cb99d845
 sha256(web/size.html)    = 9089eb5de402b6d54290c0b4eb69f64ab710d42dc9cce9d5e033f5e9ad892299
@@ -87,8 +87,9 @@ sha256(web/route.html)   = 575b24cfa04c1180f77885b9ebc726f29c8aa9be917a4de65254e
 sha256(web/order.html)   = a9f0fee7f0cb4c3c7b503c1ce03ddbb3312c067a918024ed9dcad5729bcd8ddd
 sha256(web/slot.html)    = bbe664806f87849fd3e051ef4485a65b6cdf2668694db6c9a1e6790dcfe8e97f
 sha256(web/launch.html)  = d31b0383d50bad770d16ac0b66a1a7f77f3af1eb8c6e3fa33ee283270ba404e9
-sha256(web/snooze.html)  = 202b84b582ee0deac9767b0c55b654f099cca07a64f712e079ad6f03a1964933
+sha256(web/snooze.html)  = 51c34082155d164ccf74c5a377707405adc01a4cb0cf0632688e5a62fe98391c
 sha256(web/dream.html)   = 01bd15f5d8b89d6cdd1c1cb1a4966ba14b67eb4e7cfcb8a5d3bcdc2b741145b7
+sha256(web/ca.html)      = 391a982d2f80c2f2133a863e99469a9d04300310e826d7b5e2c292822b338f85
 ```
 
 ### Tests
@@ -97,9 +98,9 @@ sha256(web/dream.html)   = 01bd15f5d8b89d6cdd1c1cb1a4966ba14b67eb4e7cfcb8a5d3bcd
 sh test/run-all.sh         # everything below, no network touched
 ```
 
-**2447 assertions across twenty-six suites.**
+**2476 assertions across twenty-six suites.**
 
-`test/run.mjs` — 397, drives the real page in Chromium against `test/mock-rpc.mjs`: Keccak vectors,
+`test/run.mjs` — 415, drives the real page in Chromium against `test/mock-rpc.mjs`: Keccak vectors,
 the four EIP-55 reference addresses, the v4 poolId derivation checked against a real Base pool
 id, ABI-string decoding (including a 10-character name, whose length word contains a hex
 letter, and truncated/absurd offsets), result-length discipline, and full flows for the happy
@@ -108,7 +109,7 @@ JSON-RPC batches. It also holds the cross-page invariants: that every page says 
 you to sign and mentions no `eth_*` method outside the read set, that any page touching
 `window.phantom` uses its EVM side, that they all state the same build tag and that the README
 publishes that tag and the current hash of every page, and that `web/` serves nothing but the
-eight pages and the artwork. Plus the Phantom provider matrix (no wallet, Solana-only, both
+nine pages and the artwork. Plus the Phantom provider matrix (no wallet, Solana-only, both
 sides, injected as `window.ethereum`, inside a multi-provider array, and a non-Phantom wallet)
 and balance formatting and read discipline. Needs `playwright`.
 
@@ -125,7 +126,7 @@ of the JavaScript, plus properties a size curve lives or dies on: output rises w
 effective price strictly worsens, a fee costs exactly its rate at the limit, deeper liquidity
 fills better, and no fill can exceed the output-side virtual reserve. Emits the fixture below.
 
-`test/run-index.mjs` — 231, drives the $SNOOZE landing page. Most of it is about one
+`test/run-index.mjs` — 234, drives the $SNOOZE landing page. Most of it is about one
 distinction: a plot of a FORMULA and a plot of a MARKET look identical from three feet away, so
 the suite asserts which one is on screen. With nothing deployed the chart shows Rule 1 itself —
 exact, checkable against `burnBps()` in the contract, labelled *this is arithmetic, not a
@@ -209,7 +210,7 @@ not a float model of it, checked over 50 cases; that the curve identities agree 
 can send and no import that could sign; and that the console page references no external origin.
 It also pins the optimizer's two scoring bugs as regressions — see **`snooze.py`** below.
 
-`test/test_pumpfun_py.py` — 44, `pumpfun.py`, which is the one script here that **holds a
+`test/test_pumpfun_py.py` — 52, `pumpfun.py`, which is the one script here that **holds a
 private key** — Solana has no browser-signing path, so a script that submits a transaction must
 sign it. The narrower rules that replaced "no key anywhere" are therefore all driven here rather
 than asserted in a comment: that no flag takes a key, a seed or a mnemonic; that a malformed,
@@ -740,6 +741,85 @@ seen rather than guessed at.
 against RFC 8032 and against transactions built byte by byte in the suite. The live path is not,
 and it moves real money. Rehearse, then use the smallest dev buy you are willing to lose.
 
+### Four bugs it shipped with, and how they were found
+
+Every one of these would have cost the launch, and none of them was found by reading:
+
+1. **base58 encoded the system program wrong.** An all-zero 32-byte input produced 33 `1`s
+   instead of 32, so `11111111111111111111111111111111` — the System Program, present in every
+   transaction that creates an account, which is every launch — would have matched nothing in
+   the program allowlist. `verify_transaction` would have reported UNKNOWN PROGRAM and
+   **refused the correct transaction, every time.** It survived because the self-test asserted
+   the buggy output: the assertion was written to match the implementation instead of to match
+   base58. It now compares against the published address.
+2. **The confirmation waited at `confirmed` and the read-back queried at the default,
+   `finalized`** — which lags by roughly 13 blocks. On a launch that had *just succeeded* the
+   read-back saw pre-transaction state and reported zero tokens. Worse, it then printed "THE
+   BUY DID NOT LAND", which **describes a state that cannot exist**: a Solana transaction is
+   atomic, so the create and the buy both happened or neither did. The operator's next move
+   would have been a second token. Every read now names its commitment; there is no default.
+3. **The funding gate asked for the dev buy and nothing else.** A create also pays rent for the
+   mint, the token account and the metadata, plus fees. A wallet funded with exactly the dev buy
+   passed the check and then failed on chain — *after* the metadata was permanently pinned.
+4. **`watch` took the newest 200 signatures and called the oldest of those the creator.**
+   `getSignaturesForAddress` returns newest-first, so on any launch busy enough to be worth
+   watching the "creator" was whoever traded 200 transactions ago, and every share was measured
+   against the wrong wallet. It pages back to the create now.
+
+Two more were closed by design rather than by patch: **nothing reached disk**, so a crash lost
+the mint keypair, the signature and the metadata URI at once and the only "recovery" was a
+command that mints a second token — hence the launch record, written *before* the send. And
+**`--dry-run` uploaded the real metadata before stopping**, which publishes the name and image
+permanently before the launch exists; a rehearsal now uses a placeholder URI.
+
+## Launching on pump.fun instead — [`LAUNCH-PUMPFUN.md`](LAUNCH-PUMPFUN.md)
+
+The seven-step Base sequence and the pump.fun one are different documents because they are
+different launches, and the honest headline is the uncomfortable one:
+
+**None of the three rules can exist on a pump.fun token.** `create` takes four arguments — name,
+symbol, URI, creator — and pump.fun allocates the mint itself, so there is no transfer path to
+extend and no extension to initialise. Rules 1 and 2 are `revert` and mid-transfer diversion
+inside `Snooze._move`; Rule 3's clock is storage written in that same function, and the creator
+holds neither mint nor freeze authority afterwards, so nothing could be minted to pay it.
+
+A pump.fun launch is a plain SPL token on a bonding curve. `contracts/` does not deploy.
+`web/snooze.html` and `web/dream.html` describe a token that would not exist, and `web/index.html`
+still says `Base · 8453` and "nobody sells more than a fifth of their bag a day" on its face.
+**That is a decision to take deliberately, not a migration to do quietly.**
+
+Rule 3 has an honest substitute and it is not a rule: a snapshot airdrop computed off-chain from
+public transfer history. A pump.fun sell *is* distinguishable from a wallet-to-wallet move,
+because the counterparty of a curve trade is the bonding curve's own token account. What it
+cannot distinguish is the same set Base could not — a self-move from a CEX deposit from a gift —
+and it is weaker in one way that has to be said on the page: **an indexer can be quietly
+not-run, and a rule in code cannot.**
+
+## `web/ca.html` — the contract address, and the method to check it
+
+The canonical publication of the mint, and the answer to "reference pump.fun recursively": not a
+referral code but a **verification loop**, three hops, each independently checkable, closing on
+the chain rather than on a tracker.
+
+1. **chain → site.** The mint's metadata names `snoozebear.xyz`, pinned before the token existed
+   and not editable after. A copycat can put your name and picture on their token. They cannot
+   put their address on your site.
+2. **site → chain.** This page names the mint, written by `pumpfun.py publish` from the launch
+   record after reading the account back off the chain — never typed — and refusing to overwrite
+   a different address that is already there.
+3. **site → itself.** The README publishes this page's sha256. Hash the file you are reading and
+   compare; without that hop, "the site says so" is a claim about whatever server answered you.
+
+It also says the two things about a Solana address that will look wrong and are not:
+**it probably will not end in `pump`** (pump.fun's own frontend grinds that suffix; it proves
+nothing, and scammers grind it precisely because people read it as a credential), and **base58
+carries no checksum** — an EVM address has EIP-55 capitalisation so a mistyped character is
+detectable, and a Solana one does not, so a typo that lands on a real account is
+indistinguishable from the address you meant.
+
+The page reads no chain and connects to no wallet. It publishes a constant and tells you how to
+check it, because a page that fetched the address could be showing you one from anywhere.
+
 ## `contracts/PooledLaunchBuy.sol` — consolidate, buy once, distribute
 
 Customers deposit, the orders consolidate, one buy happens at launch, tokens are distributed
@@ -1171,11 +1251,11 @@ distinguish CORS from "host is down", so the tool does not claim to either; it s
 
 ## Branding: `web/bg.png`
 
-All eight pages carry a full-bleed background image. It is the only piece of branding on them —
+All nine pages carry a full-bleed background image. It is the only piece of branding on them —
 no ticker chips, no watermark layer, and no token named anywhere but LAPTOP. A test asserts
 that across every page.
 
-**`web/bg.png` is in the repo** (added in `bed883f`) and appears on all eight pages.
+**`web/bg.png` is in the repo** (added in `bed883f`) and appears on all nine pages.
 It is the only external asset any page loads, it is same-origin, and it is referenced from
 exactly one decorative CSS rule and never from script. So if the file is missing, blocked by
 CSP, or the HTML is saved and opened offline, the pages lose a picture and nothing else — every

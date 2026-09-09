@@ -79,12 +79,29 @@ _B58 = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
 
 
 def b58encode(b: bytes) -> str:
+    """Base58, and the leading-zero rule is the whole subtlety.
+
+    Each leading ZERO BYTE is one "1", and the rest of the value is the ordinary base-58
+    expansion of the integer. Nothing else gets a "1".
+
+    THE BUG THIS REPLACES, because it was one line and it would have stopped the launch dead.
+    The old version ended with `(out or "1" if b else "")`, which for an all-zero input appends
+    a "1" that the padding has already accounted for. Solana's SYSTEM PROGRAM ADDRESS IS 32
+    ZERO BYTES, so it encoded to 33 ones instead of 32 — and the system program appears in
+    every transaction that creates an account, which is every pump.fun launch. `KNOWN_PROGRAMS`
+    would not have matched it, `verify_transaction` would have reported "UNKNOWN PROGRAM", and
+    the script would have refused the correct transaction every single time.
+
+    It survived because the self-test asserted `b58encode(bytes(32)) == "1" * 32 + "1"` — the
+    assertion was written to match the implementation instead of to match base58, so the test
+    agreed with the bug. The test below now compares against the real published address.
+    """
     n = int.from_bytes(b, "big")
     out = ""
     while n:
         n, r = divmod(n, 58)
         out = _B58[r] + out
-    return "1" * (len(b) - len(b.lstrip(b"\0"))) + (out or "1" if b else "")
+    return "1" * (len(b) - len(b.lstrip(b"\0"))) + out
 
 
 def b58decode(s: str) -> bytes:
@@ -307,11 +324,33 @@ class Rpc:
                                % (self.host, out["error"].get("message", "?")))
         return out.get("result")
 
-    def balance(self, addr: str) -> int:
-        return self.send("getBalance", [addr])["value"]
+    # EVERY READ NAMES ITS COMMITMENT, and that is not tidiness — it is the bug that would
+    # have cost a launch. The confirmation loop below accepts "confirmed"; the read-back used
+    # to call getBalance and getTokenAccountsByOwner with no commitment at all, which defaults
+    # to FINALIZED. Finalized lags confirmed by roughly 13 blocks, so on a launch that had just
+    # succeeded the read-back saw the state from BEFORE the transaction: zero tokens. The
+    # script then printed "THE BUY DID NOT LAND" and told the operator to investigate before
+    # resending — on a token that existed and was already trading. There is no default that is
+    # safe here, so there is no default.
+    def balance(self, addr: str, commitment: str = "confirmed") -> int:
+        return self.send("getBalance", [addr, {"commitment": commitment}])["value"]
 
-    def blockhash(self) -> str:
-        return self.send("getLatestBlockhash", [{"commitment": "finalized"}])["value"]["blockhash"]
+    def blockhash(self, commitment: str = "confirmed") -> dict:
+        return self.send("getLatestBlockhash", [{"commitment": commitment}])["value"]
+
+    def block_height(self, commitment: str = "confirmed") -> int:
+        return self.send("getBlockHeight", [{"commitment": commitment}])
+
+    def blockhash_valid(self, bh: str, commitment: str = "confirmed") -> bool:
+        """Whether a transaction carrying this blockhash could still land.
+
+        THE ONLY HONEST ANSWER TO "did it land?". A wall clock cannot tell "expired, never
+        landed" from "landed and I did not see it", and guessing wrong in the second direction
+        mints a second token. A blockhash is valid for 150 blocks; once it is invalid AND the
+        signature is not found, the transaction is dead beyond recovery and a retry is safe.
+        Until then it is still in flight and a retry is not.
+        """
+        return bool(self.send("isBlockhashValid", [bh, {"commitment": commitment}])["value"])
 
 
 # ─────────────────────────────────────────────────────── transactions, taken apart
@@ -470,7 +509,12 @@ def verify_transaction(tx: Transaction, payer: str, mint: str, authorised_lampor
         checks.append((bool(cond), name + (("  — " + detail) if detail and not cond else "")))
 
     # ── the economic check, which needs no instruction layout at all
-    before = rpc.balance(payer)
+    #
+    # AT THE SAME COMMITMENT AS THE SIMULATION. simulateTransaction below runs at "processed";
+    # taking the before-balance at anything later means any transfer that is confirmed but not
+    # yet included in the older view is counted as if this transaction spent it. That reads as
+    # the launch spending more than it does, and it fails the ceiling on a correct transaction.
+    before = rpc.balance(payer, "processed")
     sim = rpc.send("simulateTransaction", [
         base64.b64encode(tx.raw).decode(),
         {"sigVerify": False, "replaceRecentBlockhash": True, "encoding": "base64",
@@ -495,6 +539,125 @@ def verify_transaction(tx: Transaction, payer: str, mint: str, authorised_lampor
            % (spent / LAMPORTS, limit / LAMPORTS))
         checks.append((True, "  (simulated: %.6f SOL leaves your wallet)" % (spent / LAMPORTS)))
     return checks
+
+
+# ────────────────────────────────────────────────────── the launch record, and why
+#
+# NOTHING ABOUT A LAUNCH USED TO REACH DISK, and that is the difference between a recoverable
+# accident and a second token. The mint is a keypair generated in memory; the metadata URI
+# comes back from an upload; the signature comes back from a send. Close the terminal at the
+# wrong moment and all three are gone at once — and the only way to "recover" is to run the
+# command again, which generates a DIFFERENT mint and creates a SECOND token while the first
+# one is live and being bought.
+#
+# So the record is written BEFORE the transaction is sent, not after. The Base side of this
+# repository takes the opposite rule — deploy/scripts/lib/state.mjs records only what was READ
+# BACK, "nothing writes it on the strength of a transaction having been sent" — and that is
+# right there and wrong here, because on Base a lost address is re-derivable from the wallet's
+# nonce and on Solana a lost mint keypair is not derivable from anything.
+#
+# IT CONTAINS THE MINT'S SECRET KEY, deliberately. That key signs the create and has no
+# authority afterwards: it is not a mint authority, not a freeze authority, and it holds
+# nothing. Its only value is that re-sending with the SAME mint is a retry and re-sending with
+# a new one is a second token. It is written 0600 and it is not the launch wallet's key.
+
+def record_path(keypair_path: str, mint_addr: str) -> Path:
+    return Path(keypair_path).expanduser().resolve().parent / ("launch-%s.json" % mint_addr)
+
+
+def existing_records(keypair_path: str) -> list[Path]:
+    d = Path(keypair_path).expanduser().resolve().parent
+    return sorted(d.glob("launch-*.json"))
+
+
+def write_record(path: Path, data: dict) -> None:
+    # 0600 before a byte is written, not after: a world-readable window of even a moment is a
+    # window, and os.open with the mode is the only way to have none.
+    fd = os.open(str(path), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as f:
+        json.dump(data, f, indent=2)
+        f.write("\n")
+
+
+def read_record(path: Path) -> dict:
+    return json.loads(Path(path).read_text())
+
+
+# ────────────────────────────────────────────────────────── the mint address itself
+#
+# WHY THIS IS NOT JUST os.urandom. Essentially every pump.fun token a trader has ever seen has
+# a mint address ending in "pump", because pump.fun's own frontend grinds for that suffix. A
+# launch that does not have it looks unlike every other token on the site, at exactly the
+# moment somebody is deciding in two seconds whether the address they were sent is real.
+#
+# The suffix is cosmetic and proves nothing — anybody can grind one, and treating it as
+# evidence is a mistake the site should say out loud rather than exploit. But NOT having it is
+# also not evidence, and being the only token on the page without it costs more than the grind
+# does. Four base58 characters is 58^4 = 11.3M keypairs on average; each is an ed25519 public
+# key derivation, so this is minutes rather than the seconds a hex grind takes on Base.
+
+# Measured on this machine at import time would be a startup cost, so it is measured when a
+# grind is actually asked for. Pure-Python ed25519 does roughly 500-700 derivations a second;
+# solana-keygen does millions, because it is native and threaded.
+GRIND_CEILING = 400_000          # about ten minutes here. Past this, use the real tool.
+
+
+def grind_rate() -> float:
+    """Keypairs per second, measured rather than assumed, so the estimate is this machine's."""
+    n = 300
+    t0 = time.monotonic()
+    for _ in range(n):
+        Keypair.generate()
+    return n / max(time.monotonic() - t0, 1e-6)
+
+
+def grind_mint(suffix: str, progress_every: int = 20000):
+    """Generate keypairs until one's address ends in `suffix`.
+
+    REFUSES RATHER THAN RUNS FOR HOURS. "pump" is four base58 characters, which is 58^4 =
+    11.3 million keypairs on average — about five and a half hours of pure-Python ed25519 on
+    this machine, against seconds for the native tool. A script that silently starts a
+    five-hour loop on launch day is worse than one that will not do it at all.
+    """
+    if not suffix:
+        return Keypair.generate(), 0
+    bad = [c for c in suffix if c not in _B58]
+    if bad:
+        raise RuntimeError(
+            "%r cannot appear in a base58 address: %s are not base58 characters. "
+            "0, O, I and l are excluded from the alphabet."
+            % (suffix, ", ".join(sorted(set(bad)))))
+    expected = 58 ** len(suffix)
+    rate = grind_rate()
+    secs = expected / rate
+    print("    %d base58 characters is 58^%d = %s keypairs on average;"
+          % (len(suffix), len(suffix), f"{expected:,}"))
+    print("    this machine does %d/s, so about %s." % (int(rate), _human(secs)))
+    if expected > GRIND_CEILING:
+        raise RuntimeError(
+            "that is too long to grind here, and there is a tool that does it properly:\n\n"
+            "      solana-keygen grind --ends-with %s:1\n"
+            "      chmod 600 %s*.json\n"
+            "      python3 pumpfun.py launch --mint-keypair ./%s....json ...\n\n"
+            "  solana-keygen is native and threaded and will do this in seconds. Pass the file\n"
+            "  it writes with --mint-keypair. (Pure Python here would take about %s.)"
+            % (suffix, suffix, suffix, _human(secs)))
+    tried = 0
+    while True:
+        kp = Keypair.generate()
+        tried += 1
+        if kp.address.endswith(suffix):
+            return kp, tried
+        if tried % progress_every == 0:
+            print("    ground %s keypairs…" % f"{tried:,}")
+
+
+def _human(secs: float) -> str:
+    if secs < 90:
+        return "%.0f seconds" % secs
+    if secs < 5400:
+        return "%.1f minutes" % (secs / 60)
+    return "%.1f hours" % (secs / 3600)
 
 
 # ──────────────────────────────────────────────────────────── pump.fun's own builders
@@ -604,11 +767,21 @@ def cmd_launch(args):
     bal = rpc.balance(kp.address)
     print("  balance   %.6f SOL" % (bal / LAMPORTS))
 
+    # THE GATE USED TO ASK FOR THE DEV BUY AND NOTHING ELSE, which is not what a launch costs.
+    # A create pays rent for the mint account, the associated token account and the metadata
+    # account, plus pump.fun's creation fee, plus the priority fee, plus the signature fee. A
+    # wallet funded with exactly the dev buy passes the old check and then the transaction
+    # fails for lamports — after the metadata has already been pinned publicly.
+    #
+    # 0.03 SOL IS AN ESTIMATE AND IT IS NOT VERIFIED. It is deliberately a flag rather than a
+    # constant, and the simulation in verify_transaction is what actually establishes the real
+    # number: it reports what leaves the wallet before anything is signed.
     need = int(args.dev_buy * LAMPORTS)
+    reserve = int(args.reserve * LAMPORTS)
     # THE MAIN-WALLET GUARD. The most expensive mistake available here is pointing this at a
     # wallet that holds everything. A launch wallet holds the launch and nothing else, so a
     # balance far above what the launch costs is evidence of the wrong file, not of headroom.
-    ceiling = int((args.dev_buy + args.headroom) * LAMPORTS)
+    ceiling = int((args.dev_buy + args.reserve + args.headroom) * LAMPORTS)
     if bal > ceiling:
         raise RuntimeError(
             "%s holds %.4f SOL, more than the %.4f this launch needs.\n"
@@ -617,17 +790,79 @@ def cmd_launch(args):
             "      solana-keygen new -o ./launch.json && chmod 600 ./launch.json\n"
             "  Raise --headroom only if you know exactly why."
             % (kp.address, bal / LAMPORTS, args.dev_buy + args.headroom))
-    if bal < need:
-        raise RuntimeError("%s holds %.4f SOL and the dev buy alone is %.4f"
-                           % (kp.address, bal / LAMPORTS, args.dev_buy))
+    if bal < need + reserve:
+        raise RuntimeError(
+            "%s holds %.4f SOL. The dev buy is %.4f and a create also pays rent for the mint,\n"
+            "  the token account and the metadata, plus pump.fun's creation fee and the\n"
+            "  priority fee — budgeted here at %.4f SOL, which is an ESTIMATE.\n"
+            "  Fund it with at least %.4f, or lower --reserve if you know the real number."
+            % (kp.address, bal / LAMPORTS, args.dev_buy, args.reserve,
+               (need + reserve) / LAMPORTS))
 
-    mint = Keypair.generate()
-    print("  mint      %s   (generated now, in memory)" % mint.address)
+    # ── THE DOUBLE-LAUNCH GUARD, and it is the reason the record exists.
+    #
+    # A second run of this command with no memory of the first one mints a SECOND token while
+    # the first is live and being bought — two contract addresses, two metadata URIs, and a
+    # community split between them with no way to say which is canonical. So a leftover record
+    # stops the command dead rather than being cleaned up silently.
+    if not args.dry_run:
+        for rec in existing_records(args.keypair):
+            r = read_record(rec)
+            m = r.get("mint", "?")
+            info = rpc.send("getAccountInfo", [m, {"commitment": "confirmed",
+                                                   "encoding": "base64"}])
+            live = bool(info and info.get("value"))
+            raise RuntimeError(
+                "there is already a launch record beside that keypair:\n"
+                "      %s\n"
+                "      mint %s — %s\n\n"
+                "  %s"
+                % (rec, m,
+                   "IT IS ON CHAIN. That token exists." if live
+                   else "no account at that mint yet.",
+                   ("Your token is already launched. Publish it rather than launching again:\n"
+                    "      python3 pumpfun.py publish %s\n\n"
+                    "  If you genuinely want a second, different token, move that record aside\n"
+                    "  first — this will not do it for you." % m) if live
+                   else ("The previous attempt did not land. Resume it with the SAME mint:\n"
+                         "      python3 pumpfun.py resume --keypair %s --record %s\n\n"
+                         "  Do not start a new launch: if that transaction is still in flight,\n"
+                         "  a new one is a second token." % (args.keypair, rec))))
 
-    print("\n  uploading metadata…")
-    uri = upload_metadata(args.name, args.symbol, args.description, args.image,
-                          args.twitter, args.telegram, args.website)
-    print("  metadata  %s" % uri)
+    # ── the mint
+    if args.mint_keypair:
+        mint = Keypair.load(args.mint_keypair)
+        print("  mint      %s   (from %s)" % (mint.address, args.mint_keypair))
+    elif args.grind:
+        print("\n  grinding a mint ending in %r…" % args.grind)
+        mint, tried = grind_mint(args.grind)
+        print("  mint      %s   (%s keypairs)" % (mint.address, f"{tried:,}"))
+    else:
+        mint = Keypair.generate()
+        print("  mint      %s   (random)" % mint.address)
+        # Said out loud because a trader decides in two seconds and this is what they look at.
+        print("\n  ! THIS ADDRESS DOES NOT END IN 'pump', and essentially every pump.fun token")
+        print("    anybody has seen does, because pump.fun's own frontend grinds for it. The")
+        print("    suffix proves NOTHING — anyone can grind one — but not having it makes your")
+        print("    address look unlike every other token on the site at the exact moment")
+        print("    somebody is deciding whether the address they were sent is real.")
+        print("        solana-keygen grind --ends-with pump:1")
+        print("        python3 pumpfun.py launch --mint-keypair ./<that file>.json …\n")
+
+    # ── metadata. A DRY RUN MUST NOT PUBLISH ANYTHING.
+    #
+    # The upload is permanent and public: name, ticker, image and socials pinned to IPFS the
+    # moment it returns. "Rehearse first" that publishes the launch before the launch exists
+    # is not a rehearsal, and anybody watching the pin set sees it early.
+    if args.dry_run:
+        uri = "https://example.invalid/dry-run-metadata.json"
+        print("\n  --dry-run: NOT uploading metadata. Using a placeholder URI, because the")
+        print("  upload is permanent and public and a rehearsal must not publish the launch.")
+    else:
+        print("\n  uploading metadata…")
+        uri = upload_metadata(args.name, args.symbol, args.description, args.image,
+                              args.twitter, args.telegram, args.website)
+        print("  metadata  %s" % uri)
 
     print("\n  building create + buy as ONE transaction…")
     raw = build_create_and_buy(kp.address, mint.address, args.name, args.symbol, uri,
@@ -645,57 +880,330 @@ def cmd_launch(args):
         raise RuntimeError("%d check(s) failed. Nothing was signed and nothing was sent." % bad)
 
     if args.dry_run:
-        print("\n  --dry-run: verified and STOPPED. Nothing was signed, nothing was sent.\n")
+        print("\n  --dry-run: verified and STOPPED. Nothing was signed, nothing was sent,")
+        print("  and no metadata was published.\n")
         return 0
 
-    print("\n  signing and sending…")
+    # THE SIMULATION DID NOT CHECK THIS, and could not have: verify_transaction passes
+    # replaceRecentBlockhash: True, which by design substitutes a fresh blockhash so the
+    # simulation is not rejected for staleness. That means the blockhash the builder actually
+    # put in the transaction — the one that will be sent — was never validated by anything.
+    # A stale one is a send that fails after the metadata is already pinned.
+    if not rpc.blockhash_valid(tx.recent_blockhash):
+        raise RuntimeError(
+            "the builder's blockhash (%s) has already expired, so this transaction can never\n"
+            "  land. Nothing was signed and nothing was sent. Re-run to get a fresh one — the\n"
+            "  metadata is already pinned, so pass --mint-keypair to keep the same mint."
+            % tx.recent_blockhash)
+
+    # ── the record, written BEFORE the send and not after
+    rec_path = record_path(args.keypair, mint.address)
+    record = {
+        "mint": mint.address,
+        "mint_keypair": list(mint._seed + mint.pub),
+        "payer": kp.address,
+        "name": args.name, "symbol": args.symbol, "uri": uri,
+        "dev_buy_sol": args.dev_buy,
+        "blockhash": tx.recent_blockhash,
+        "balance_before": bal,
+        "signature": None,
+        "status": "about-to-send",
+    }
+    write_record(rec_path, record)
+    print("\n  record    %s   (written BEFORE sending, so a retry is a retry)" % rec_path)
+
+    return _send_and_confirm(rpc, kp, mint, tx, record, rec_path, args.keypair)
+
+
+def _send_and_confirm(rpc, kp, mint, tx, record, rec_path, keypair_path):
+    """Sign, send, confirm, read back. Shared by launch and resume."""
     wire = tx.signed({kp.address: kp, mint.address: mint})
-    import base64
-    sig = rpc.send("sendTransaction", [base64.b64encode(wire).decode(),
-                                       {"encoding": "base64", "skipPreflight": False,
-                                        "maxRetries": 3}])
+    # The bytes that get sent must be the bytes that were checked. signed() only fills
+    # signature slots, so the message must be identical — asserted rather than assumed,
+    # because everything verify_transaction proved was proved about this message.
+    if Transaction(wire).message != tx.message:
+        raise RuntimeError("signing changed the message. Refusing to send.")
+
+    print("\n  signing and sending…")
+    sig = None
+    try:
+        sig = rpc.send("sendTransaction", [base64.b64encode(wire).decode(),
+                                           {"encoding": "base64", "skipPreflight": False,
+                                            "preflightCommitment": "confirmed",
+                                            "maxRetries": 3}])
+    except RuntimeError as e:
+        # THE WORST CASE, and it needs saying rather than raising bare. The node may have
+        # accepted and forwarded the transaction before the response failed, so "the send
+        # errored" is NOT "nothing was sent" — and the signature, which is the only handle on
+        # it, is exactly what was lost.
+        record["status"] = "send-failed-outcome-unknown"
+        write_record(rec_path, record)
+        raise RuntimeError(
+            "%s\n\n"
+            "  THE OUTCOME IS UNKNOWN, not failed. The node may have accepted and forwarded\n"
+            "  the transaction before this call errored. Do NOT relaunch.\n"
+            "      python3 pumpfun.py resume --keypair %s --record %s\n"
+            "  will check whether the mint %s exists before doing anything."
+            % (e, keypair_path, rec_path, mint.address))
+
+    record["signature"] = sig
+    record["status"] = "sent"
+    write_record(rec_path, record)
     print("  signature %s" % sig)
 
-    print("\n  confirming…")
-    landed = False
-    for _ in range(60):
-        st = rpc.send("getSignatureStatuses", [[sig], {"searchTransactionHistory": True}])
-        v = (st.get("value") or [None])[0]
-        if v and v.get("confirmationStatus") in ("confirmed", "finalized"):
-            if v.get("err"):
-                raise RuntimeError("the transaction landed and FAILED: %r" % v["err"])
-            landed = True
-            break
-        time.sleep(2)
+    landed = _await_confirmation(rpc, sig, tx.recent_blockhash, mint.address, rec_path, record)
     if not landed:
-        raise RuntimeError(
-            "the transaction did not confirm in two minutes. Check %s before resending —\n"
-            "  resending a create that actually landed makes a second token." % sig)
+        return 2
+    return _read_back(rpc, kp, mint, record, rec_path)
 
-    # READ IT BACK. "It confirmed" is not "you hold tokens": the buy is a separate instruction
-    # inside the same transaction and a slippage failure there is a create with no position.
-    print("\n  reading it back off the chain…")
+
+def _await_confirmation(rpc, sig, blockhash, mint_addr, rec_path, record) -> bool:
+    """Wait on the BLOCKHASH, not on a wall clock.
+
+    A timer cannot tell "expired, never landed" from "landed and I did not see it", and
+    guessing wrong in the second direction mints a second token. A blockhash is valid for 150
+    blocks; once it is invalid and the signature is still not found, the transaction is dead
+    beyond recovery and only then is a retry safe.
+    """
+    print("\n  confirming (waiting on the blockhash, not on a clock)…")
+    while True:
+        try:
+            st = rpc.send("getSignatureStatuses", [[sig], {"searchTransactionHistory": True}])
+            v = (st.get("value") or [None])[0]
+            if v and v.get("confirmationStatus") in ("confirmed", "finalized"):
+                if v.get("err"):
+                    record["status"] = "landed-and-failed"
+                    write_record(rec_path, record)
+                    raise RuntimeError(
+                        "the transaction landed and FAILED on chain: %r\n"
+                        "  Nothing was created and the dev buy was not spent — a Solana\n"
+                        "  transaction is atomic. The fee was. Fix the cause and resume with\n"
+                        "  the SAME mint." % v["err"])
+                record["status"] = "landed"
+                write_record(rec_path, record)
+                return True
+            still_possible = rpc.blockhash_valid(blockhash)
+        except RuntimeError as e:
+            # A transient RPC failure while a transaction is in flight is not a reason to
+            # abandon it — abandoning is what leads to a relaunch. Report and keep polling.
+            print("    (rpc hiccup: %s — still watching)" % e)
+            time.sleep(3)
+            continue
+        if not still_possible:
+            # One last look: the transaction could have landed in the block that expired it.
+            st = rpc.send("getSignatureStatuses", [[sig], {"searchTransactionHistory": True}])
+            v = (st.get("value") or [None])[0]
+            if v:
+                continue
+            record["status"] = "expired-never-landed"
+            write_record(rec_path, record)
+            print("\n  THE BLOCKHASH EXPIRED AND THE TRANSACTION NEVER LANDED.")
+            print("  This is the one outcome that is safe to retry, and it is safe because it")
+            print("  is now KNOWN rather than assumed — the blockhash can no longer be used, so")
+            print("  those bytes can never execute. Retry with the SAME mint:")
+            print("      python3 pumpfun.py resume --record %s --keypair <your keypair>\n"
+                  % rec_path)
+            return False
+        time.sleep(2)
+
+
+def _read_back(rpc, kp, mint, record, rec_path):
+    """Read the result at the SAME commitment the confirmation used."""
+    print("\n  reading it back off the chain (at 'confirmed', matching the wait)…")
     after = rpc.balance(kp.address)
-    spent = bal - after
-    held = 0
+    spent = record["balance_before"] - after
+    held, dec = 0, None
     for acc in (rpc.send("getTokenAccountsByOwner",
                          [kp.address, {"mint": mint.address},
-                          {"encoding": "jsonParsed"}]).get("value") or []):
-        held += int(acc["account"]["data"]["parsed"]["info"]["tokenAmount"]["amount"])
-    dec = 6
+                          {"commitment": "confirmed", "encoding": "jsonParsed"}])
+                .get("value") or []):
+        amt = acc["account"]["data"]["parsed"]["info"]["tokenAmount"]
+        held += int(amt["amount"])
+        dec = int(amt["decimals"])
+    if dec is None:
+        dec = 6
     tokens = held / (10 ** dec)
     print("  mint       %s" % mint.address)
     print("  spent      %.6f SOL" % (spent / LAMPORTS))
-    print("  you hold   %s tokens" % f"{tokens:,.0f}")
+    print("  you hold   %s tokens  (%d decimals, read from the chain)"
+          % (f"{tokens:,.0f}", dec))
     if held == 0:
+        # NOT "the buy did not land". A Solana transaction is ATOMIC: the create and the buy
+        # are instructions in one transaction, so they both happened or neither did, and the
+        # confirmation above already established that it succeeded. Zero here means the READ
+        # is wrong, not the launch — and the previous version of this message said the
+        # opposite and told the operator to investigate before resending, which is how a live,
+        # trading token gets a twin.
         raise RuntimeError(
-            "THE BUY DID NOT LAND. The token exists and you hold none of it — the create "
-            "succeeded and the buy inside it did not.\n  Do not relaunch blind: read %s first."
-            % sig)
+            "the transaction SUCCEEDED but this read returned no tokens.\n\n"
+            "  DO NOT RELAUNCH. A Solana transaction is atomic — the create and the buy are\n"
+            "  one transaction, so a create that succeeded with a buy that did not is not a\n"
+            "  state that exists. The token is live at %s.\n\n"
+            "  What is actually wrong is this read. Check it by hand:\n"
+            "      solana balance --url $SOLANA_RPC %s\n"
+            "      https://solscan.io/tx/%s\n"
+            % (mint.address, mint.address, record.get("signature")))
+    record["status"] = "verified"
+    record["tokens"] = held
+    record["decimals"] = dec
+    record["spent_lamports"] = spent
+    write_record(rec_path, record)
     print("  cost basis %.12f SOL per token" % (spent / LAMPORTS / tokens))
-    print("\n  https://pump.fun/%s\n" % mint.address)
-    print("  PUBLISH THE MINT NOW, before anybody has to guess which one is yours. Copycats")
-    print("  appear within minutes and the only defence is being the first published address.\n")
+    # /coin/<mint> is the current form. UNVERIFIED from here — pump.fun is not reachable
+    # from this environment — so the solscan link beside it is the one that is certainly right.
+    print("\n  https://pump.fun/coin/%s" % mint.address)
+    print("  https://solscan.io/token/%s" % mint.address)
+    print("\n  NOW PUBLISH THE CA. Copycats appear within minutes and the only defence is\n"
+          "  being the first published address:")
+    print("      python3 pumpfun.py publish %s\n" % mint.address)
+    return 0
+
+
+def cmd_resume(args):
+    """Finish or safely retry a launch whose outcome was not seen."""
+    rpc = Rpc()
+    rec_path = Path(args.record).expanduser()
+    record = read_record(rec_path)
+    mint = Keypair(bytes(record["mint_keypair"][:32]), bytes(record["mint_keypair"][32:]))
+    kp = Keypair.load(args.keypair)
+    print("\n  record    %s" % rec_path)
+    print("  mint      %s" % mint.address)
+    print("  status    %s" % record.get("status"))
+
+    info = rpc.send("getAccountInfo", [mint.address,
+                                       {"commitment": "confirmed", "encoding": "base64"}])
+    if info and info.get("value"):
+        print("\n  THAT MINT IS ALREADY ON CHAIN. The launch happened.")
+        record["balance_before"] = record.get("balance_before", rpc.balance(kp.address))
+        return _read_back(rpc, kp, mint, record, rec_path)
+
+    sig = record.get("signature")
+    if sig:
+        print("\n  the mint does not exist yet, and a signature was recorded. Checking it…")
+        if not _await_confirmation(rpc, sig, record["blockhash"], mint.address,
+                                   rec_path, record):
+            print("  Re-run this command to rebuild and resend with the same mint.")
+            return 2
+        return _read_back(rpc, kp, mint, record, rec_path)
+
+    print("\n  no signature was recorded and the mint does not exist, so nothing landed.")
+    print("  Rebuilding the same launch with the SAME mint…")
+    raw = build_create_and_buy(kp.address, mint.address, record["name"], record["symbol"],
+                              record["uri"], record["dev_buy_sol"], args.slippage,
+                              args.priority_fee)
+    tx = Transaction(raw)
+    need = int(record["dev_buy_sol"] * LAMPORTS)
+    checks = verify_transaction(tx, kp.address, mint.address, need, rpc)
+    bad = sum(0 if g else 1 for g, _ in checks)
+    for good, name in checks:
+        print("    %s %s" % ("ok  " if good else "FAIL", name))
+    if bad:
+        raise RuntimeError("%d check(s) failed. Nothing was signed and nothing was sent." % bad)
+    record["blockhash"] = tx.recent_blockhash
+    record["balance_before"] = rpc.balance(kp.address)
+    write_record(rec_path, record)
+    return _send_and_confirm(rpc, kp, mint, tx, record, rec_path, args.keypair)
+
+
+# The pages that carry the contract address, and the exact line each one holds it on. A
+# line-anchored edit makes "fill a blank" and "overwrite a live address" different events,
+# which is the property tools/publish.mjs relies on for Base and the reason it can refuse the
+# second one. Solana needs it MORE, not less: an EVM address carries an EIP-55 checksum so a
+# single mistyped character is detectable, and a base58 pubkey carries nothing at all.
+CA_PAGES = ["web/index.html", "web/ca.html", "web/dream.html"]
+CA_CONST = "const CA = "
+
+
+def cmd_publish(args):
+    rpc = Rpc()
+    root = HERE
+    mint = args.mint
+
+    # THE ADDRESS IS NEVER TYPED IF A RECORD EXISTS. tools/publish.mjs refuses to take one as
+    # input at all, for the reason its own comments give: an address typed by hand verifies
+    # just as happily against somebody else's deployment, or against a typo that happens to
+    # land on a real account.
+    if args.record:
+        rec = read_record(Path(args.record).expanduser())
+        if mint and mint != rec["mint"]:
+            raise RuntimeError("the record says %s and you typed %s. Refusing."
+                               % (rec["mint"], mint))
+        mint = rec["mint"]
+        if rec.get("status") != "verified":
+            raise RuntimeError(
+                "that record is %r, not 'verified'. Publish an address only after it has been\n"
+                "  read back off the chain — resume it first." % rec.get("status"))
+    if not mint:
+        raise RuntimeError("give a mint, or --record the launch record it came from")
+    try:
+        b58decode(mint)
+    except ValueError as e:
+        raise RuntimeError("%s is not base58: %s" % (mint, e)) from None
+    if len(b58decode(mint)) != 32:
+        raise RuntimeError("%s decodes to %d bytes; a Solana address is 32"
+                           % (mint, len(b58decode(mint))))
+
+    # ── read it back off the chain before a byte of the site changes
+    print("\n  checking %s on %s…" % (mint, rpc.host))
+    info = rpc.send("getAccountInfo", [mint, {"commitment": "confirmed",
+                                              "encoding": "jsonParsed"}])
+    val = info and info.get("value")
+    if not val:
+        raise RuntimeError("there is no account at %s. Refusing to publish it." % mint)
+    parsed = ((val.get("data") or {}).get("parsed") or {})
+    if parsed.get("type") != "mint":
+        raise RuntimeError("the account at %s is not a token mint (it is %r). Refusing."
+                           % (mint, parsed.get("type")))
+    inf = parsed.get("info") or {}
+    print("  it is a mint: %s decimals, supply %s"
+          % (inf.get("decimals"), inf.get("supply")))
+    # A mint that can still be minted is not a fixed supply, and the site must not imply one.
+    if inf.get("mintAuthority"):
+        print("  ! mintAuthority is STILL SET (%s). Supply is not fixed and the site must not"
+              % inf["mintAuthority"])
+        print("    say it is.")
+    else:
+        print("  mint authority is revoked — supply is fixed")
+    if inf.get("freezeAuthority"):
+        print("  ! freezeAuthority is SET (%s) — accounts can be frozen" % inf["freezeAuthority"])
+
+    changed = []
+    for rel in CA_PAGES:
+        f = root / rel
+        if not f.is_file():
+            print("  -- %s does not exist, skipping" % rel)
+            continue
+        txt = f.read_text()
+        hits = [l for l in txt.splitlines() if l.strip().startswith(CA_CONST)]
+        if not hits:
+            print("  -- %s has no '%s' line, skipping" % (rel, CA_CONST.strip()))
+            continue
+        cur = hits[0]
+        existing = cur.split('"')[1] if '"' in cur else ""
+        if existing and existing != mint:
+            raise RuntimeError(
+                "%s already publishes a DIFFERENT address:\n"
+                "      %s\n"
+                "  Refusing to overwrite it. Filling a blank and replacing a live address are\n"
+                "  different events and only the first one is safe to do automatically."
+                % (rel, existing))
+        if existing == mint:
+            print("  == %s already publishes it" % rel)
+            continue
+        new_line = cur.replace('""', '"%s"' % mint)
+        if args.write:
+            f.write_text(txt.replace(cur, new_line))
+            changed.append(rel)
+            print("  ++ %s" % rel)
+        else:
+            print("  would write %s -> %s" % (rel, mint))
+
+    if not args.write:
+        print("\n  nothing was written. Re-run with --write.\n")
+        return 0
+    print("\n  wrote %d page(s). The README's per-page hashes are now stale, and the clone")
+    print("  defence rests on them, so restamp:")
+    print("      node tools/stamp.mjs\n")
     return 0
 
 
@@ -709,11 +1217,27 @@ def cmd_watch(args):
     rpc = Rpc()
     mint = args.mint
     print("\n  reading %s from %s\n" % (mint, rpc.host))
-    sigs = rpc.send("getSignaturesForAddress", [mint, {"limit": args.limit}]) or []
+    # PAGED BACK TO THE GENESIS TRANSACTION, because getSignaturesForAddress returns the
+    # NEWEST first. Taking one page and reversing it gives you the oldest of the newest 200 —
+    # which on any launch busy enough to be worth watching is not the create, so the "creator"
+    # was whoever happened to trade 200 transactions ago and every share below was measured
+    # against the wrong wallet.
+    sigs, before = [], None
+    while True:
+        params = {"limit": 1000}
+        if before:
+            params["before"] = before
+        page = rpc.send("getSignaturesForAddress", [mint, params]) or []
+        sigs.extend(page)
+        if len(page) < 1000 or len(sigs) > 50000:
+            break
+        before = page[-1]["signature"]
     if not sigs:
         print("  no transactions for that mint.\n")
         return 0
+    print("  %s signatures back to the create" % f"{len(sigs):,}")
     sigs = list(reversed(sigs))                      # oldest first: the launch is the first
+    sigs = sigs[:args.limit]                         # and only the window we will read
     t0 = sigs[0].get("blockTime") or 0
     cutoff = t0 + args.minutes * 60
     buys, sellers = {}, set()
@@ -803,8 +1327,20 @@ def cmd_selftest(args):
            ed25519_sign(bytes.fromhex(msg_h), seed, pub).hex() == sig_h)
 
     print("── base58 and compact-u16")
-    ok("32 zero bytes encode to the all-ones address",
-       b58encode(bytes(32)) == "1" * 32 + "1", b58encode(bytes(32)))
+    # Against PUBLISHED addresses, not against this file's own output. The previous version
+    # of this line asserted 33 ones because that is what the encoder produced, so the test
+    # confirmed the bug rather than catching it.
+    ok("the system program is 32 zero bytes and encodes to its real address",
+       b58encode(bytes(32)) == "11111111111111111111111111111111", b58encode(bytes(32)))
+    ok("and that address is the one in the program allowlist",
+       b58encode(bytes(32)) in KNOWN_PROGRAMS)
+    ok("one zero byte is one '1', not two", b58encode(b"\x00") == "1", b58encode(b"\x00"))
+    ok("no bytes is no characters", b58encode(b"") == "")
+    ok("a leading zero byte before real data keeps exactly one '1'",
+       b58encode(b"\x00" + b"\x01" * 31)[0] == "1"
+       and b58encode(b"\x00" + b"\x01" * 31)[1] != "1")
+    ok("every published address in the allowlist round-trips through both directions",
+       all(b58encode(b58decode(a)) == a for a in KNOWN_PROGRAMS))
     ok("base58 round-trips random keys",
        all(b58decode(b58encode(x)) == x for x in (os.urandom(32) for _ in range(20))))
     ok("compact-u16 round-trips across its boundaries",
@@ -876,6 +1412,7 @@ def cmd_selftest(args):
     fake = type("T", (), {})()
     fake.account_keys = [stranger, mintk.address]
     fake.num_required_signatures = 2
+    fake.sig_count = 2
     fake.lookups = 0
     fake.instructions = []
     fake.program_of = lambda i: ""
@@ -928,6 +1465,13 @@ def _structural_only(tx, payer: str, mint: str):
     unknown = sorted({tx.program_of(i) for i in tx.instructions} - set(KNOWN_PROGRAMS))
     add(not unknown, "every program it invokes is one this launch needs",
         "unknown: " + ", ".join(unknown))
+    # The wire must carry exactly as many signature slots as the message requires. A mismatch
+    # means the bytes that get SENT are not the bytes that were simulated — the message shifts
+    # by 64 bytes per missing slot and every check above was performed on a different
+    # transaction from the one the cluster would run.
+    add(tx.sig_count == tx.num_required_signatures,
+        "the wire has exactly one signature slot per required signer",
+        "%d slots for %d signers" % (tx.sig_count, tx.num_required_signatures))
     return checks
 
 
@@ -962,11 +1506,41 @@ def main(argv=None):
     s.add_argument("--website", default="")
     s.add_argument("--slippage", type=int, default=10, help="percent (default 10)")
     s.add_argument("--priority-fee", type=float, default=0.0005, dest="priority_fee")
+    s.add_argument("--reserve", type=float, default=0.03,
+                   help="SOL budgeted for rent, pump.fun's creation fee and priority fees on "
+                        "top of the dev buy. An ESTIMATE (default 0.03); the dry-run "
+                        "simulation reports the real number")
     s.add_argument("--headroom", type=float, default=0.5,
                    help="SOL the launch wallet may hold above the dev buy before this refuses "
                         "to sign with it (default 0.5)")
     s.add_argument("--dry-run", action="store_true",
-                   help="build and verify, then STOP. Nothing is signed and nothing is sent")
+                   help="build and verify, then STOP. Nothing is signed, nothing is sent, and "
+                        "no metadata is published")
+    s.add_argument("--mint-keypair", default=None, dest="mint_keypair",
+                   help="use a pre-ground mint keypair file, e.g. from "
+                        "'solana-keygen grind --ends-with pump:1'")
+    s.add_argument("--grind", default=None,
+                   help="grind a mint address ending in this suffix, in-process. Refuses "
+                        "anything long enough to be slow and names the native tool instead")
+
+    s = sub.add_parser(
+        "resume", help="finish or safely retry a launch whose outcome was not seen",
+        epilog="Checks whether the mint already exists BEFORE doing anything, so this can "
+               "never create a second token. This is the command to run after a timeout, a "
+               "crash, or a send that errored — never 'launch' again.")
+    s.set_defaults(fn=cmd_resume)
+    s.add_argument("--keypair", required=True)
+    s.add_argument("--record", required=True, help="the launch-<mint>.json written before send")
+    s.add_argument("--slippage", type=int, default=10)
+    s.add_argument("--priority-fee", type=float, default=0.0005, dest="priority_fee")
+
+    s = sub.add_parser(
+        "publish", help="put the contract address on the website, after reading it back")
+    s.set_defaults(fn=cmd_publish)
+    s.add_argument("mint", nargs="?", default=None)
+    s.add_argument("--record", default=None,
+                   help="the launch record to take the mint from, so it is never typed")
+    s.add_argument("--write", action="store_true", help="actually edit the pages")
 
     s = sub.add_parser("watch", help="who actually bought, from public data")
     s.set_defaults(fn=cmd_watch)

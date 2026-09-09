@@ -193,16 +193,23 @@ tbody tr:last-child td{border-bottom:0}
 <div class="card">
   <div class="dial">
     <div class="n" id="dialNum">—</div>
-    <div class="say" id="dialSay">Reading the pool…</div>
+    <div class="say" id="dialSay">…</div>
     <div class="why" id="dialWhy"></div>
   </div>
   <div class="grid">
     <div><label for="spot">Price now</label><input id="spot" value="1.70" inputmode="decimal"></div>
     <div><label for="twap">24-hour average</label><input id="twap" value="1.00" inputmode="decimal"></div>
   </div>
+  <div class="badbox" style="margin:12px 0 0"><b>On the launch this repository ships, this
+  dial never fires.</b> The oracle is <span class="mono">SnoozeNeverReady</span> &mdash; its
+  <span class="mono">ready()</span> returns false forever, so
+  <span class="mono">burnBps()</span> is <b>0 on chain, at every price, on every day</b>. What
+  follows is a calculator for a rule that is switched off. It is real in the contract and a
+  launch that deployed a real oracle would switch it on; this one did not, and the page said
+  &ldquo;read from the pool&rdquo; while reading nothing.</div>
   <p class="tiny dim" style="margin:9px 0 0">
-    These are read from the pool on the live site. They are editable here so you can see what
-    the dial does before you hold any. The same arithmetic runs in
+    <b>These two numbers are yours, not the pool&rsquo;s.</b> Nothing on this page reads a
+    chain. Type into them and see what the rule would do. The same arithmetic runs in
     <span class="mono">quoteSell()</span> on chain, so the number here and the number you get
     cannot drift apart.
   </p>

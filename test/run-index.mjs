@@ -222,6 +222,28 @@ console.log("── the curve is the contract's arithmetic, not a drawing of it"
   near("the token side cancels, so E0 alone sets it", await at(2), 4, 1e-12);
   near("and 3.5 ETH is exactly the 7.5625x where it bonds",
        await at(3.5), 7.5625, 1e-9);
+
+  // THE META TAGS ARE COPY TOO, and nothing checked them. Both the description and the
+  // og:description said "At 10x the LP burns itself" — the FIRST launch's setting, before the
+  // relaunch moved virtualEth to 2 and bondTarget to 3.5. That text is what appears in a
+  // search result and in a link preview, so it is the sentence most people read and the one
+  // nobody proofreads, and it was advertising a graduation multiple 32% higher than the curve
+  // the page itself draws.
+  {
+    const cfg = JSON.parse(fs.readFileSync(path.join(ROOT, "deploy", "config.json"), "utf8"));
+    const e0 = Number(cfg.curve.virtualEth) / 1e18, bt = Number(cfg.curve.bondTarget) / 1e18;
+    const m = ((e0 + bt) / e0) ** 2;
+    const src = fs.readFileSync(path.join(ROOT, "web", "index.html"), "utf8");
+    const metas = [...src.matchAll(/<meta[^>]*(?:name="description"|property="og:description")[^>]*content="([^"]*)"/g)]
+      .map(x => x[1]);
+    ok("the page has both meta descriptions", metas.length === 2, String(metas.length));
+    for (const text of metas) {
+      const claimed = (text.match(/(\d+(?:\.\d+)?)x\b/) || [])[1];
+      ok(`a meta description claiming "${claimed}x" matches the curve config actually ships`,
+         claimed !== undefined && Math.abs(Number(claimed) - m) < 0.1,
+         `it says ${claimed}x, config.json bonds at ${m.toFixed(4)}x`);
+    }
+  }
   ok("it is monotone in the ETH raised",
      (await at(1)) < (await at(5)) && (await at(5)) < (await at(20)));
   ok("and it never goes below where it opened", (await at(-5)) === 1 && (await at(0)) === 1);
