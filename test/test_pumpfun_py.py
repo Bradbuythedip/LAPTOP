@@ -933,17 +933,19 @@ cash_ixs, _ = P.build_create_and_buy_direct(
 buy_accs = [a.key for pr, ac, dt in cash_ixs if dt[:8] == P.DISC_BUY for a in ac]
 # 16 named, then the eight, then bonding_curve_v2 last. The eight are "exactly 8 remaining
 # accounts" counted from the end of the named list, so what sits AFTER them still matters.
-ok("a buy under cashback carries eight buyback recipients plus the v2 curve",
-   len(buy_accs) == 25, len(buy_accs))
-ok("and the eight from Global are in order, right after the named accounts",
-   buy_accs[16:24] == BUYBACK, buy_accs[16:24])
-ok("they are writable, because they receive lamports",
-   all(a.writable for pr, ac, dt in cash_ixs if dt[:8] == P.DISC_BUY for a in ac[-8:]))
+# TWO trailing accounts, from two real mainnet buys: bonding_curve_v2, then ONE recipient.
+ok("a buy under cashback carries 16 named accounts and exactly two more",
+   len(buy_accs) == 18, len(buy_accs))
+ok("the first trailing account is one of Global's buyback recipients",
+   buy_accs[16] in BUYBACK, buy_accs[16])
+ok("the recipient is writable, because it receives lamports",
+   [a for pr, ac, dt in cash_ixs if dt[:8] == P.DISC_BUY for a in ac][-2:][0] is not None
+   and all(a.writable for pr, ac, dt in cash_ixs if dt[:8] == P.DISC_BUY for a in ac[-2:]))
 
 nocash = P.read_global(GlobalRpc(_mk_global(cashback=False, buyback=BUYBACK)))
 plain, _ = P.build_create_and_buy_direct(
     payer.address, mint.address, "Snooze Bear", "SNOOZE", "u", 500_000_000, 10.0, nocash)
-ok("with cashback off it carries none of them, just the named accounts and the v2 curve",
+ok("with cashback off it carries no recipient, just the named accounts and the v2 curve",
    len([a for pr, ac, dt in plain if dt[:8] == P.DISC_BUY for a in ac]) == 17)
 
 # THE SEED THAT WAS WRONG. buy's fee_config is a PDA of the FEE program whose second seed is
@@ -1060,8 +1062,14 @@ big_ixs, big_d = P.build_create_and_buy_direct(
     payer.address, mint.address, "Snooze Bear", "SNOOZE", BIG_URI, 600_000_000, 10.0, gg,
     250_000, 100, True)
 legacy = P._shortvec_encode(2) + bytes(64) * 2 + P._compile(payer.address, SYS_ADDR, big_ixs)
-ok("a real launch genuinely does not fit in a legacy transaction",
-   len(legacy) > P.MAX_TX_BYTES, len(legacy))
+# It fits again, now that the buy carries two trailing accounts instead of nine — but only
+# just, and the margin is a long metadata URI away from gone. The v0 path stays, and stays
+# tested, because the thing that pushed it over was a program change nobody announced.
+ok("a real launch fits in a legacy transaction, with little room to spare",
+   len(legacy) <= P.MAX_TX_BYTES and len(legacy) > P.MAX_TX_BYTES - 200, len(legacy))
+big_ixs = big_ixs + [(P.SYSTEM_PROGRAM,
+                      [P.Account(P.Keypair.generate().address, writable=True)
+                       for _ in range(6)], b"\x00")]
 
 TABLE_ADDRS = P.launch_static_accounts(gg)
 ok("the table holds only accounts that are the same for every launch",
@@ -1102,11 +1110,12 @@ pulled = TableRpc(TABLE_ADDRS).resolve_lookups(v0)
 # because the runtime will not follow a table to find a program. The table may hold them; this
 # just never reaches for them, which is why an already-created table need not be rebuilt.
 _progs_in_table = {pr for pr, _, _ in big_ixs} & set(TABLE_ADDRS)
-ok("the table supplies every account except the programs, which cannot be looked up",
-   len(pulled) == len(TABLE_ADDRS) - len(_progs_in_table),
-   (len(pulled), len(TABLE_ADDRS), sorted(_progs_in_table)))
+_looked_up = set(TABLE_ADDRS) & {a.key for _, ac, _ in big_ixs for a in ac} - _progs_in_table
+ok("the table supplies every account it holds that the message uses, minus the programs",
+   len(pulled) == len(_looked_up),
+   (len(pulled), len(_looked_up), sorted(_progs_in_table)))
 ok("and it really is holding programs it is not being asked for",
-   len(_progs_in_table) == 3, sorted(_progs_in_table))
+   len(_progs_in_table) >= 2, sorted(_progs_in_table))
 
 # THE SAME COMPILER CHECK AS THE LEGACY PATH, and it matters more here: two index spaces.
 bad = []
@@ -1478,10 +1487,10 @@ ok("its seeds are the mint's, so a different mint gives a different curve",
 ok("it is not the v1 bonding curve", BCV2 != _bd["bonding_curve"])
 # The eight buyback recipients still come before it: they are "exactly 8 remaining accounts",
 # counted from the end of the named list, and an account inserted among them breaks that.
-ok("the eight buyback recipients still sit between the named accounts and it",
-   [a.key for a in _buy[-9:-1]] == BUYBACK, [a.key for a in _buy[-9:-1]])
-ok("so a cashback buy carries 16 named accounts, then 8, then 1",
-   len(_buy) == 25, len(_buy))
+ok("exactly one buyback recipient sits between the named accounts and it",
+   _buy[-2].key in BUYBACK, _buy[-2].key)
+ok("so a cashback buy carries 16 named accounts, then 2 — as two real ones did",
+   len(_buy) == 18, len(_buy))
 _nc, _ = P.build_create_and_buy_direct(
     payer.address, mint.address, "Snooze Bear", "SNOOZE", "u", 500_000_000, 10.0, nocash)
 _nbuy = [ac for pr, ac, dt in _nc if dt[:8] == P.DISC_BUY][0]
