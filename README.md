@@ -108,6 +108,15 @@ None of these were findable by reading, and every one would have cost the launch
     in the create transaction. One false sentence on the page a buyer checks against Solscan.
 12. **`web/bg.png` was a WebP file**, served as `image/png` under `X-Content-Type-Options:
     nosniff`.
+13. **The test suite went red the moment the address was published.** Both publish tests seeded
+    their fixture by copying the live `web/`, so once the real page carried an address the
+    fixture started pre-published and the test's own dry publish tripped `cmd_publish`'s
+    overwrite refusal as an *uncaught* exception — killing the run at LAUNCH.md step 7, in the
+    window the runbook calls minutes long, with a traceback reading "Refusing to overwrite it"
+    that looks exactly like the publish having corrupted the page. **This was the second time
+    this file had that bug**: an assertion was hardened for it and the fixture thirty lines
+    below was missed. The suite now passes identically published or not, and there is a test
+    that says so.
 
 Two more were closed by design. **Nothing reached disk**, so a crash lost the mint keypair, the
 signature and the metadata URI at once, and the only "recovery" was a command that mints a twin —
@@ -148,7 +157,7 @@ This was a real hole until it was tested for: `launch-*.json` was not ignored, a
 sh test/run.sh
 ```
 
-**125 assertions, no network touched, nothing to install** (plus the script's own 33-check
+**129 assertions, no network touched, nothing to install** (plus the script's own 33-check
 `selftest`, which is what a downloaded copy can run on its own). They cover the arithmetic against
 RFC 8032 and published base58 vectors, every way a keypair file is refused, the transaction
 decoder against transactions built byte by byte, the publish flow end-to-end against the real

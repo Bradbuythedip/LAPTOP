@@ -21,6 +21,7 @@ real money. That is stated in the script's own docstring rather than left to be 
 import json
 import os
 import re
+import shutil
 import sys
 import tempfile
 from contextlib import redirect_stdout
@@ -73,6 +74,35 @@ class StubRpc:
 
     def blockhash(self, commitment="confirmed"):
         return self.send("getLatestBlockhash", [{"commitment": commitment}])["value"]
+
+
+def fresh_site(d):
+    """Copy web/ into `d` AND reset the address line to unpublished.
+
+    The copy alone was the bug. Both publish tests seeded their fixture from the LIVE page, so
+    the moment the real site carried an address the fixture started pre-published — and the
+    test's own dry publish then tripped cmd_publish's "already publishes a DIFFERENT address"
+    refusal as an UNCAUGHT RuntimeError, killing the module and taking `sh test/run.sh` to
+    exit 1 with a traceback.
+
+    That happens at LAUNCH.md step 7, in the window the runbook calls minutes long, to an
+    operator whose next instruction is to commit and push — and the traceback reads "Refusing
+    to overwrite it", which looks exactly like the publish having corrupted the page it was
+    supposed to write. A test that goes red on success is worse than no test, and this is the
+    SECOND time this file has had that bug: the assertion above was hardened for it and the
+    fixture underneath it was missed.
+
+    Resetting here also gives that assertion its meaning back — it requires data-ca="" in the
+    fixture, which until now was true only by accident.
+    """
+    src, dst = ROOT / "web", Path(d) / "web"
+    shutil.copytree(str(src), str(dst))
+    f = dst / "index.html"
+    f.write_text(re.sub(
+        r'^(\s*)<div class="ca(?: none)?" id="ca" data-ca="[^"]*">.*</div>\s*$',
+        r'\1<div class="ca none" id="ca" data-ca="">Not launched yet.</div>',
+        f.read_text(), count=1, flags=re.M))
+    return f
 
 
 def launch_args(keypair, **over):
@@ -498,6 +528,27 @@ ok("web/ holds exactly one page", sorted(
    x.name for x in (ROOT / "web").glob("*.html")) == ["index.html"],
    sorted(x.name for x in (ROOT / "web").glob("*.html")))
 
+print("── the suite must pass on a PUBLISHED page, or it goes red at the worst moment")
+with tempfile.TemporaryDirectory() as d:
+    f = fresh_site(d)
+    ok("fresh_site resets the fixture's address line no matter what the live page holds",
+       'data-ca=""' in f.read_text() and "Not launched yet" in f.read_text())
+# The live page, published, put through the same assertions this module makes about it. This
+# is the guard the last fix missed: the CA_LINE assertion was hardened and the FIXTURE thirty
+# lines below it was left seeded from the live page, so publishing still killed the run.
+PUBLISHED = re.sub(
+    r'^(\s*)<div class="ca(?: none)?" id="ca" data-ca="[^"]*">.*</div>\s*$',
+    r'\1<div class="ca" id="ca" data-ca="8HDvsFdweJ34a5m1yCyDdvFgpw1pB3GJqY1L5cCxyeHx">'
+    r'8HDvsFdweJ34a5m1yCyDdvFgpw1pB3GJqY1L5cCxyeHx</div>',
+    SITE, count=1, flags=re.M)
+m = re.search(r'<div class="ca(?: none)?" id="ca" data-ca="([^"]*)">', PUBLISHED)
+ok("a published page still parses as a valid address line",
+   m is not None and len(P.b58decode(m.group(1))) == 32)
+ok("and the address is in the markup, before any script",
+   m.group(1) in PUBLISHED.split("<script>")[0])
+ok("publishing changes exactly one line",
+   sum(1 for a, b in zip(SITE.splitlines(), PUBLISHED.splitlines()) if a != b) == 1)
+
 print("── publish writes the address into the page, and refuses to overwrite a different one")
 {
 }
@@ -518,7 +569,7 @@ class PubRpc(StubRpc):
 MINT = P.Keypair.generate().address
 import shutil
 with tempfile.TemporaryDirectory() as d:
-    shutil.copytree(str(ROOT / "web"), str(Path(d) / "web"))
+    fresh_site(d)
     real_here = P.HERE
     P.HERE = Path(d)
     try:
@@ -558,7 +609,7 @@ with tempfile.TemporaryDirectory() as d:
         P.HERE = real_here
 
 with tempfile.TemporaryDirectory() as d:
-    shutil.copytree(str(ROOT / "web"), str(Path(d) / "web"))
+    fresh_site(d)
     real_here = P.HERE
     P.HERE = Path(d)
     try:

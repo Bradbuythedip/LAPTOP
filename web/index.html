@@ -37,6 +37,14 @@ body{background:var(--bg);color:var(--fg);
   padding:0 18px calc(40px + env(safe-area-inset-bottom));max-width:620px;margin:0 auto;
   background-image:url("/bg.webp");background-size:cover;background-position:center;
   background-attachment:fixed}
+/* iOS Safari has never honoured background-attachment:fixed and degrades it to scroll, which
+   sizes `cover` against the whole document instead of the viewport — so an iPhone gets the
+   image blown up about 2x further than an Android on the same handset. Most traffic to a page
+   like this is an iPhone opening a link from X or Telegram, so it is the majority case. The
+   panel over it is 72% opaque either way; this just stops the crop being absurd. */
+@media (hover:none) and (pointer:coarse){
+  body{background-attachment:scroll;background-size:100% auto;background-repeat:no-repeat}
+}
 .wrap{background:rgba(7,11,22,.72);backdrop-filter:blur(2px);margin:0 -18px;padding:0 18px}
 
 /* the bear */
