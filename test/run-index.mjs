@@ -87,6 +87,19 @@ const node = http.createServer((req, res) => {
                  result: wordOf(BigInt(MISMATCH ? "0x" + "de".repeat(20) : TOKEN_ADDR)) };
       if (call.startsWith("0x4beb394c"))               // quoteBuy(uint256)
         return { jsonrpc: "2.0", id: m.id, result: wordOf(1234n * 10n ** 18n) };
+      // The Live panel's own reads, once it points at the curve rather than at LAPTOP's pool.
+      if (call === "0x899b1528")                       // reserveEth()
+        return { jsonrpc: "2.0", id: m.id, result: wordOf(8n * 10n ** 17n) };
+      if (call === "0x485735c8")                       // bondTarget()
+        return { jsonrpc: "2.0", id: m.id, result: wordOf(3500000000000000000n) };
+      if (call === "0x4bd387e1")                       // virtualEth()
+        return { jsonrpc: "2.0", id: m.id, result: wordOf(1600000000000000000n) };
+      if (call === "0x9c533f66")                       // priceMultipleBps()
+        return { jsonrpc: "2.0", id: m.id, result: wordOf(22500) };
+      if (call === "0x02c7e7af")                       // sold()
+        return { jsonrpc: "2.0", id: m.id, result: wordOf(2n * 10n ** 34n) };
+      if (call === "0x2138a4c0")                       // curveSupply()
+        return { jsonrpc: "2.0", id: m.id, result: wordOf(8n * 10n ** 34n) };
       return { jsonrpc: "2.0", id: m.id, error: { code: -32601, message: "not allowed here" } };
     };
     res.writeHead(200, { "content-type": "application/json", ...CORS });
@@ -194,7 +207,7 @@ console.log("── the chart draws arithmetic, and says so, until a chain read 
   // actually charges, which is also the only number a buyer is deciding about.
   ok("the x axis is ETH bought, not a date",
      /ETH bought/.test(axes) && !/\bdate|\btime\b/i.test(axes), axes);
-  ok("the y axis is the price multiple", /price: 1/.test(axes) && /10/.test(axes), axes);
+  ok("the y axis is the price multiple", /price: 1/.test(axes) && /7\.6/.test(axes), axes);
   ok("and nothing on the chart claims a sale is burned",
      !/burned on sale|sale burns|burns most/i.test(axes + " " + strap), axes + " " + strap);
 }
@@ -206,9 +219,9 @@ console.log("── the curve is the contract's arithmetic, not a drawing of it"
   // wrong number about the price they are about to pay.
   const at = r => page.evaluate(x => window.__SNOOZE.priceAt(x), r);
   near("nothing bought, nothing moved", await at(0), 1);
-  near("the token side cancels, so E0 alone sets it", await at(10), 4, 1e-12);
-  near("and 21.62 ETH is exactly a 10x, which is where it bonds",
-       await at(21.622776601683793), 10, 1e-9);
+  near("the token side cancels, so E0 alone sets it", await at(2), 4, 1e-12);
+  near("and 3.5 ETH is exactly the 7.5625x where it bonds",
+       await at(3.5), 7.5625, 1e-9);
   ok("it is monotone in the ETH raised",
      (await at(1)) < (await at(5)) && (await at(5)) < (await at(20)));
   ok("and it never goes below where it opened", (await at(-5)) === 1 && (await at(0)) === 1);
@@ -230,7 +243,7 @@ console.log("── the page says what the mechanism is, in as few words as it t
   ok("it says the curve can only pay out what came in",
      /only ever pay out the ETH that came in/i.test(body));
   ok("bonding is described with a number, not a vibe",
-     /21\.6 ETH/.test(body) && /burns itself/i.test(body));
+     /3\.5 ETH/.test(body) && /burns itself/i.test(body));
   // THE CLAIM THAT WOULD HAVE BEEN FALSE. This launch's oracle answers "not ready" forever,
   // so no sale is ever burned — and the page led on a burn, in its headline, its meta
   // description and its chart. tools/publish.mjs now refuses to publish the buy card while
@@ -635,6 +648,201 @@ console.log("── the buy card is a buy button, and it stops when the curve do
      SRC.replace(/const (SNOOZE_CURVE|SNOOZE_TOKEN|TOKEN) = "[^"]*";/g, "X").length);
 }
 
+console.log("── the Live panel is about the token that is live");
+{
+  // It was built for LAPTOP's PooledLaunchBuy and said "not deployed" whenever POOL was empty,
+  // which is a card calling the hero a liar three inches below it once $SNOOZE launched.
+  BONDED = false; MISMATCH = false;
+  await load("?curve=1");
+  await page.waitForFunction(() => !/reading/i.test(
+    document.getElementById("liveBadge").textContent), { timeout: 15000 }).catch(() => {});
+  ok("with a curve deployed the panel stops saying nothing is deployed",
+     !/not deployed/i.test(await txt("#liveBadge")), await txt("#liveBadge"));
+  ok("and says how far along the curve is instead",
+     /live · 23% to bond/.test(await txt("#liveBadge")), await txt("#liveBadge"));
+  const strap = flat(await txt("#strap"));
+  ok("the strap reports what it read rather than arithmetic",
+     /Read from the chain/.test(strap) && /0\.8 ETH in/.test(strap), strap);
+  ok("and names the price multiple the contract reports", /2\.25×/.test(strap), strap);
+  const stats = await page.$$eval(".stat", els =>
+    Object.fromEntries(els.map(e => [e.querySelector(".k").textContent,
+                                     e.querySelector(".v").textContent])));
+  ok("the stats are the curve's, not the other token's",
+     stats["raised"] === "0.8 ETH" && stats["price"] === "2.25×", JSON.stringify(stats));
+  ok("including what is left to bond, which is the number a buyer is deciding about",
+     /2\.7/.test(stats["to bond"] || ""), JSON.stringify(stats));
+  ok("and how much of the float has gone",
+     stats["sold"] === "25.0% of the float", JSON.stringify(stats));
+  /* THE LINE AND THE BADGE ARE THE SAME CURVE. The page holds VIRTUAL_ETH = 2 and BOND_AT
+     = 3.5 from deploy/config.json, and used to draw its line from them before reading
+     anything — while the badge above measured progress against the target it read off
+     chain. A curve deployed at any other setting therefore got one curve's picture under
+     another curve's number, on the card people buy from. This mock is a 1.6 ETH curve, so
+     the constant and the chain disagree on purpose: ((1.6+3.5)/1.6)^2 is 10.2x, and the
+     page's own constants would say 7.6x. */
+  const daxes = flat(await txt(".axis"));
+  ok("the axis is the curve the page READ, not the curve it was compiled with",
+     /10\.2/.test(daxes) && !/7\.6/.test(daxes), daxes);
+  ok("and the x axis is that curve's bond target",
+     /ETH bought: 0 . 3\.5/.test(daxes), daxes);
+  ok("a line is drawn for it", (await page.$$eval("#chart path", ps => ps.length)) >= 1);
+
+  // A failed read is never a zero. This page keeps that rule everywhere else.
+  BONDED = false;
+  {
+    const p3 = await ctx.newPage();
+    await p3.route("**/*", r => {
+      const u = r.request().url();
+      if (r.request().method() === "POST") return r.fulfill({ status: 500, body: "" });
+      return u.endsWith("/index.html") || u.endsWith("/")
+        ? r.fulfill({ contentType: "text/html", body: BLANK
+            .replace('const SNOOZE_CURVE = "";', `const SNOOZE_CURVE = "${CURVE_ADDR}";`)
+            .replace('const SNOOZE_TOKEN = "";', `const SNOOZE_TOKEN = "${TOKEN_ADDR}";`) })
+        : r.fulfill({ status: 404, body: "" });
+    });
+    await p3.goto("http://dead.test/index.html", { waitUntil: "load" });
+    await p3.waitForTimeout(1500);
+    // It refuses earlier than I first assumed: the chain-id read fails before any curve read
+    // is attempted, so the panel shows its "could not read" box and never populates a stat at
+    // all. That is the same rule kept more strictly — no number is printed, not even a dash in
+    // a grid that looks like it holds numbers.
+    const s3 = await p3.$$eval(".stat", els =>
+      Object.fromEntries(els.map(e => [e.querySelector(".k").textContent,
+                                       e.querySelector(".v").textContent])));
+    const empty3 = (await p3.textContent("#chartEmpty")) || "";
+    ok("an unreadable curve says so, and prints no number at all",
+       /Could not read the chain/i.test(empty3) &&
+       !Object.values(s3).some(v => /\d/.test(v)),
+       empty3.slice(0, 90) + " | " + JSON.stringify(s3));
+    await p3.close();
+  }
+
+  BONDED = true;
+  await load("?curve=1");
+  await page.waitForFunction(() => /bonded/i.test(
+    document.getElementById("liveBadge").textContent), { timeout: 15000 }).catch(() => {});
+  ok("once it has bonded the panel says the LP burned rather than showing a target",
+     (await txt("#liveBadge")) === "bonded" &&
+     /LP was burned/.test(flat(await txt("#strap"))), flat(await txt("#strap")));
+  BONDED = false;
+}
+
+console.log("── the two ways the buy card could spend money it was not asked to");
+{
+  BONDED = false; MISMATCH = false;
+
+  // ONE. The button stayed live and still said "Buy $SNOOZE" through the wallet prompt and the
+  // 180-second receipt poll, because buy() opens with await getQuote() and getQuote() ends in
+  // paint(). Two taps were two transactions, the second at a worse price because the first had
+  // already moved the curve. Driven through the real control, not through the function.
+  {
+    const p2 = await ctx.newPage();
+    await p2.addInitScript(() => {
+      window.__SENT = [];
+      window.ethereum = {
+        isPhantom: true,
+        request: ({ method, params }) => {
+          if (method === "eth_requestAccounts") return Promise.resolve(["0x1111111111111111111111111111111111111111"]);
+          if (method === "eth_accounts") return Promise.resolve([]);
+          if (method === "eth_chainId") return Promise.resolve("0x2105");
+          if (method === "eth_sendTransaction") {
+            window.__SENT.push(params[0]);
+            // Hangs, exactly as a wallet prompt does while somebody reads it.
+            return new Promise(res => setTimeout(() => res("0x" + "ab".repeat(32)), 1200));
+          }
+          return Promise.resolve(null);
+        },
+        on: (ev, cb) => { (window.__H = window.__H || {})[ev] = cb; },
+      };
+    });
+    await p2.route("**/*", r => {
+      const u = r.request().url();
+      if (r.request().method() === "POST") {
+        const body = JSON.parse(r.request().postData() || "{}");
+        const call = ((body.params || [])[0] || {}).data || "";
+        const wordOf = (v) => "0x" + BigInt(v).toString(16).padStart(64, "0");
+        const res = body.method === "eth_chainId" ? "0x2105"
+          : call === "0xfc0c546a" ? wordOf(BigInt(TOKEN_ADDR))
+          : call.startsWith("0x4beb394c") ? wordOf(1234n * 10n ** 18n)
+          : wordOf(0);
+        return r.fulfill({ contentType: "application/json",
+          body: JSON.stringify({ jsonrpc: "2.0", id: body.id, result: res }) });
+      }
+      return u.endsWith("/index.html") || u.endsWith("/")
+        ? r.fulfill({ contentType: "text/html", body: BLANK
+            .replace('const SNOOZE_CURVE = "";', `const SNOOZE_CURVE = "${CURVE_ADDR}";`)
+            .replace('const SNOOZE_TOKEN = "";', `const SNOOZE_TOKEN = "${TOKEN_ADDR}";`) })
+        : r.fulfill({ status: 404, body: "" });
+    });
+    await p2.goto("http://wallet.test/index.html", { waitUntil: "load" });
+    await p2.waitForTimeout(600);
+    await p2.click("#wConnect");
+    await p2.waitForTimeout(500);
+    ok("connecting arms the buy button",
+       !(await p2.$eval("#buyCta", e => e.disabled)) &&
+       (await p2.textContent("#buyCta")) === "Buy $SNOOZE",
+       await p2.textContent("#buyCta"));
+
+    await p2.click("#buyCta");
+    await p2.waitForTimeout(120);
+    ok("pressing it disarms it while the wallet is deciding",
+       await p2.$eval("#buyCta", e => e.disabled));
+    ok("and says what it is waiting for",
+       (await p2.textContent("#buyCta")) === "Confirm in your wallet…",
+       await p2.textContent("#buyCta"));
+    await p2.click("#buyCta", { force: true }).catch(() => {});
+    await p2.click("#buyCta", { force: true }).catch(() => {});
+    await p2.waitForTimeout(300);
+    ok("three taps on Buy are still exactly one transaction",
+       (await p2.evaluate(() => window.__SENT.length)) === 1,
+       String(await p2.evaluate(() => window.__SENT.length)));
+    const sent = await p2.evaluate(() => window.__SENT[0]);
+    ok("and it pays the curve, with the ETH in the value field",
+       sent.to.toLowerCase() === CURVE_ADDR.toLowerCase() && BigInt(sent.value) === 5n * 10n ** 16n,
+       JSON.stringify(sent));
+
+    // TWO. accountsChanged updated the owner panel and nothing else, so the card kept the
+    // address captured at connect. buy(minOut, to) takes the recipient as an argument, so the
+    // new account would have paid and the OLD one received the tokens.
+    const settled = () => p2.waitForFunction(
+      () => !document.getElementById("buyCta").disabled, { timeout: 25000 });
+    await settled();
+    await p2.evaluate(() => window.__SENT.length = 0);
+    await p2.evaluate(() => window.__H.accountsChanged(["0x2222222222222222222222222222222222222222"]));
+    await p2.waitForTimeout(600);
+    await p2.click("#buyCta", { force: true });
+    await p2.waitForFunction(() => window.__SENT.length === 1, { timeout: 15000 });
+    const after = await p2.evaluate(() => window.__SENT[0]);
+    ok("after switching accounts the buy is sent FROM the new one",
+       after && after.from.toLowerCase() === "0x2222222222222222222222222222222222222222",
+       JSON.stringify(after));
+    ok("and the tokens go TO the new one, not to the account that connected",
+       after && after.data.slice(-40).toLowerCase() === "2".repeat(40),
+       after ? after.data.slice(-64) : "nothing sent");
+
+    // And disconnecting disarms it rather than leaving a live button for a wallet that is gone.
+    await settled();
+    await p2.evaluate(() => window.__H.accountsChanged([]));
+    await p2.waitForTimeout(300);
+    ok("disconnecting disarms the button", await p2.$eval("#buyCta", e => e.disabled));
+    await p2.close();
+  }
+
+  // The cap governs what a buyer can get back out, and it was stated once, in a heading a
+  // screen and a half below the button. It belongs in the sentence read while deciding.
+  await load("?curve=1");
+  ok("the daily cap is disclosed on the buy card itself, before the money moves",
+     /capped at 20% of your balance a day/i.test(await txt("#buyFoot")), await txt("#buyFoot"));
+
+  // Six of the seven tools are LAPTOP's, and their labels did not say so on a $SNOOZE page —
+  // "Standing order" builds a real, funded 1inch limit order against LAPTOP's address.
+  const tools = await page.$$eval(".tools a", els => els.map(e => e.textContent.trim()));
+  for (const t of ["Where to buy LAPTOP", "What a size gets (LAPTOP)", "Standing order (LAPTOP)",
+                   "LAPTOP launch parameters"])
+    ok(`the tools list says "${t}" rather than a token-neutral label`, tools.includes(t),
+       tools.join(" / "));
+}
+
 console.log("── the bytes the card would ask a stranger to sign");
 {
   // The only thing in this repository that asks a stranger for a signature that spends their
@@ -717,21 +925,31 @@ console.log("── it never shows a stale number when a read fails");
 {
   LOG_MODE = "ok";
   LOGS = [];
-  node.close();
+  /* UNREACHABLE IS MADE AT THE BROWSER, NOT BY CLOSING A PORT. This used to be node.close(),
+     and it failed intermittently under run-all.sh in a way that looked like a timing flake and
+     was not: close() FREES the ephemeral port, twenty-two sibling suites are binding ephemeral
+     ports at that moment, and if one of them takes it the page's read SUCCEEDS against a
+     stranger's server. The chart then never reaches mode=error and the three assertions below
+     read a box nothing ever wrote. Aborting the route is the same condition with no race, and
+     it is the pattern this file already uses for the p3 fixture. */
+  await page.route(NODE + "**", r => r.abort("connectionrefused"));
   await load("?pool=1");
   // load() returns as soon as the chart has ANY mode, and showRuleCurve() sets "arithmetic"
   // before a single read is attempted. That was close enough while the page made one request
   // on load; the buy card makes three more, and against a closed node each one waits out its
   // own failure first, so the error path landed after this block had already read an empty
   // box and called it a missing message. Waited for rather than slept on.
+  let waited = true;
   await page.waitForFunction(() => window.__CHART && window.__CHART.mode === "error",
-                             { timeout: 15000 }).catch(() => {});
+                             { timeout: 30000 }).catch(() => { waited = false; });
   const c = await page.evaluate(() => ({ ...window.__CHART }));
   ok("an unreachable node produces no market series", c.marketSeries.length === 0, c.mode);
   const e = flat(await txt("#chartEmpty"));
-  ok("it says the chain could not be read", /Could not read the chain/i.test(e), e);
+  ok("it says the chain could not be read", /Could not read the chain/i.test(e),
+     waited ? e : "the chart never reached mode=error within 30s — timing, not copy");
   ok("and says nothing is drawn rather than something stale",
      /rather than something stale/i.test(e), e);
+  node.close();
 }
 
 ok("no page errors during the run", pageErrors.length === 0, pageErrors.join("; "));

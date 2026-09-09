@@ -346,6 +346,51 @@ console.log("── a stranger's ETH is refused rather than silently absorbed");
   ok("and the balance is untouched", (await balance(f.evm, f.addr)) === before);
 }
 
+/* THE ONE CASE EVERY OTHER TEST IN THIS FILE MISSES: the numbers that are actually going to
+   be deployed. Every fixture above runs at 1e27 base units, where a V2 reserve fits with 6
+   orders to spare, so nothing here ever pushed on the ceiling that matters.
+
+   A Uniswap V2 reserve is uint112 — 5.192e33 base units. The real UniswapV2Pair._update opens
+   with `require(balance0 <= uint112(-1) && balance1 <= uint112(-1), 'UniswapV2: OVERFLOW')`.
+   At 1e35 base units of supply with 80% through the curve, bond() feeds the pair 1.85e34 and
+   Base refuses it — permanently, with the entire raise sealed inside a curve whose parameters
+   are immutable and whose token's setPool() reverts after freeze(). Both shipped configs were
+   over: the live launch by 3.33x and the relaunch by 3.57x.
+
+   The bound is on TOTAL SUPPLY, not on tokensToPool: after graduation the pool goes on
+   accumulating tokens as people sell into it, and a pool that overflows on a later swap is
+   bricked just as thoroughly as one that never opened. So this reads deploy/config.json rather
+   than restating it — a config edit that breaks graduation fails here instead of on Base. */
+console.log("\u2500\u2500 it bonds at the numbers in deploy/config.json, on a pair that checks uint112");
+{
+  const cfg = JSON.parse(await (await import("node:fs/promises"))
+    .readFile(new URL("../deploy/config.json", import.meta.url), "utf8"));
+  const U112 = (1n << 112n) - 1n;
+  const supply = BigInt(cfg.token.supply);
+  const curveSupply = BigInt(cfg.curve.curveSupply);
+  const target = BigInt(cfg.curve.bondTarget);
+  const vEth = BigInt(cfg.curve.virtualEth);
+
+  ok("the whole supply fits in a V2 reserve, so no later sell can brick the pool",
+     supply <= U112, `supply ${supply} > uint112 ${U112}`);
+
+  const f = await fixture({ vEth, supply: curveSupply, target, feeBps: cfg.curve.feeBps });
+  // Buy past the target with the fee taken off the top, then graduate for real.
+  const need = target + target / 50n + E / 100n;
+  const b = await call(f.c, "buy(uint256,address)", [0, ALICE], { from: ALICE, value: need });
+  ok("a buy at config scale goes through", b.ok, b.revert);
+  ok("and reaches the target", !!(await call(f.c, "bondable()", [])).words[0]);
+  const pre = await call(f.c, "bondPreview()", []);
+  ok("the seed the pair is asked to hold is inside uint112",
+     pre.words[1] <= U112,
+     `tokensToPool ${pre.words[1]} is ${(Number(pre.words[1]) / Number(U112)).toFixed(3)}x the ceiling`);
+  const r = await call(f.c, "bond()", [], { from: BOB });
+  ok("bond() succeeds at the configured numbers", r.ok, r.revert);
+  const pairAddr = "0x" + (await call(f.c, "pair()", [])).words[0].toString(16).padStart(40, "0");
+  const pairTok = (await call(f.tok, "balanceOf(address)", [pairAddr])).words[0];
+  ok("and the pair really holds the seed", pairTok === pre.words[1], String(pairTok));
+}
+
 console.log("\n" + results.join("\n"));
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

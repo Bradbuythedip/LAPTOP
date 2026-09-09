@@ -532,7 +532,7 @@ tbody tr:last-child td{border-bottom:0}
     <p>The ETH and the tokens go into a Uniswap pool and the
     <button class="d" data-t="LP tokens" data-d="The receipt for liquidity in a pool. Whoever holds it can pull the money out. Burned means nobody holds it and nobody can.">LP</button>
     goes to the dead address. Nobody picks where it goes, including us.
-    Takes <b>21.6 ETH</b> of buys.</p>
+    Takes <b>3.5 ETH</b> of buys.</p>
   </div></div>
   <div class="step"><div class="n">4</div><div>
     <h3>Nobody dumps more than a fifth a day</h3>
@@ -614,11 +614,11 @@ tbody tr:last-child td{border-bottom:0}
 <ul class="tools">
   <li><a href="/snooze.html">The dial</a></li>
   <li><a href="/checker.html">Is this the real address?</a></li>
-  <li><a href="/buy.html">Where to buy</a></li>
-  <li><a href="/size.html">What a size actually gets</a></li>
-  <li><a href="/order.html">Standing order</a></li>
+  <li><a href="/buy.html">Where to buy LAPTOP</a></li>
+  <li><a href="/size.html">What a size gets (LAPTOP)</a></li>
+  <li><a href="/order.html">Standing order (LAPTOP)</a></li>
   <li><a href="/slot.html">Getting a slot</a></li>
-  <li><a href="/launch.html">Launch parameters</a></li>
+  <li><a href="/launch.html">LAPTOP launch parameters</a></li>
 </ul>
 
 <div class="footer">
@@ -662,7 +662,7 @@ let triedRelay = false;
    change to this file, which changes its hash, which the README republishes — so the address
    arrives through the same door as everything else rather than out of a config nobody reads. */
 const POOL  = "";     // PooledLaunchBuy
-const TOKEN = "0xCafFf33E2972C3F3927Def575Fc7C8ed06eD1d47";     // Snooze
+const TOKEN = "";     // Snooze
 
 async function post(body, ms = 20000){
   const ctl = new AbortController(), t = setTimeout(() => ctl.abort(), ms);
@@ -807,27 +807,124 @@ function setStats(rows){
    k = E*T with E starting at virtualEth, so the multiple after R real ETH is
    ((E0+R)/E0)^2 — the token side cancels. Identical to priceMultipleBps() in
    contracts/SnoozeCurve.sol, in bps there and as a multiple here, and checked against it. */
-const VIRTUAL_ETH = 10, BOND_AT = 21.622776601683793;
-function priceAt(raised){
-  const e = (VIRTUAL_ETH + Math.max(0, raised)) / VIRTUAL_ETH;
+/* THESE TWO ARE A DEFAULT, NOT A FACT. They are deploy/config.json's curve.virtualEth and
+   curve.bondTarget, and they are only correct for the curve this repo is about to deploy.
+   Both are `immutable` on SnoozeCurve, so a curve deployed at any other setting can never be
+   brought back to them — and this card reads its PROGRESS off chain while it used to draw the
+   line from these constants. A curve at a different setting therefore got a line from one
+   curve under a badge from another, on the card people buy from. showRuleCurve now takes the
+   parameters and loadCurve reads them, so the drawing and the badge are the same curve or
+   there is no drawing. */
+const VIRTUAL_ETH = 2, BOND_AT = 3.5;
+function priceAt(raised, e0){
+  const E0 = e0 === undefined ? VIRTUAL_ETH : e0;
+  if(!(E0 > 0)) return 1;
+  const e = (E0 + Math.max(0, raised)) / E0;
   return e * e;
 }
-function showRuleCurve(){
+/* Trailing zeros off, so 3.5 reads as 3.5 and 1 reads as 1 rather than 1.0000. */
+function trim(n){ return String(+Number(n).toFixed(4)); }
+function showRuleCurve(e0, bondAt){
+  const E0 = e0 === undefined ? VIRTUAL_ETH : e0;
+  const R = bondAt === undefined ? BOND_AT : bondAt;
   CHART.mode = "arithmetic"; CHART.marketSeries = [];
   const pts = [];
-  for(let r = 0; r <= BOND_AT + 1e-9; r += BOND_AT / 100) pts.push([r, priceAt(r)]);
+  for(let r = 0; r <= R + 1e-9; r += R / 100) pts.push([r, priceAt(r, E0)]);
   plot(pts, {zeroBased:true, market:false,
              label:"Price, as a multiple of the opening price, against real ETH bought"});
   setStrap("Arithmetic, not a market. No price data exists yet \u2014 the line is the curve " +
            "the contract runs, and it ends where the LP burns itself.");
-  setAxes("ETH bought: 0 \u2192 21.6", "price: 1\u00d7 \u2192 10\u00d7");
+  setAxes("ETH bought: 0 \u2192 " + trim(R),
+          "price: 1\u00d7 \u2192 " + priceAt(R, E0).toFixed(1) + "\u00d7");
 }
 
 /* Deposited(address indexed who, uint256 amount). Verified against the repo's own keccak in
    test/run-pooled.mjs, which fails if the event signature ever changes under it. */
 const TOPIC_DEPOSITED = "0x2da466a7b24304f47e87fa2e1e5a81b9831ce54fec19055ce277ca2f39ba42c4";
 
+/* THE CURVE'S OWN STATE, which is what "Live" means on this page now.
+   This panel was built for LAPTOP's PooledLaunchBuy — it reads Deposited logs off POOL and
+   says "not deployed" when POOL is empty. POOL still is empty. But $SNOOZE launched, and the
+   hero three inches above this card says its curve is live, so the card was calling the hero
+   a liar on a page people are buying from. The curve is the thing that is live, so the curve
+   is what it reads.
+
+   The line drawn is not a new claim: SnoozeCurve's price is deterministic in the ETH that has
+   arrived, ((E0+R)/E0)^2, so the curve IS the price history and the marker is where the token
+   actually sits on it. Nothing here is interpolated or remembered. */
+const CURVE_SEL = { reserve:"0x899b1528", target:"0x485735c8", mult:"0x9c533f66",
+                    sold:"0x02c7e7af", supply:"0x2138a4c0", bonded:"0xe88dc357",
+                    virtual:"0x4bd387e1" };
+async function loadCurve(){
+  setBadge("reading Base\u2026", "");
+  /* Nothing is drawn until the curve has answered. This used to draw showRuleCurve() here,
+     from the constants, before a single read — so a curve deployed at other parameters got a
+     line it does not run, and then a badge measuring progress against the target it does. A
+     blank frame for one round trip is the cheaper mistake. */
+  const read = async (sel) => {
+    const r = await one("eth_call", [{ to: SNOOZE_CURVE, data: sel }, "latest"]);
+    return r.ok && typeof r.data === "string" && r.data.length >= 66 ? big(word(r.data, 0)) : null;
+  };
+  const chain = await one("eth_chainId", []);
+  if(!chain.ok || parseInt(chain.data, 16) !== CHAIN_ID){
+    CHART.mode = "error"; CHART.marketSeries = [];
+    setBadge("could not reach Base", "bad"); setStrap(""); setAxes("", "");
+    setEmpty("Could not read the chain.",
+      (chain.reason || "the endpoint answered for a different chain") +
+      ". Nothing is drawn rather than something stale.");
+    return;
+  }
+  const raised = await read(CURVE_SEL.reserve), target = await read(CURVE_SEL.target),
+        mult = await read(CURVE_SEL.mult), sold = await read(CURVE_SEL.sold),
+        supply = await read(CURVE_SEL.supply), bonded = await read(CURVE_SEL.bonded),
+        virt = await read(CURVE_SEL.virtual);
+  /* A failed read is never a zero — the rule the rest of this page already keeps. Four dashes
+     and a badge that says so beats a card confidently reporting an empty curve. */
+  if(raised === null || target === null){
+    CHART.mode = "error"; CHART.marketSeries = []; setAxes("", "");
+    setBadge("could not read the curve", "bad");
+    setStats([["raised", "\u2014"], ["to bond", "\u2014"],
+              ["price", "\u2014"], ["state", "unreadable"]]);
+    return;
+  }
+  /* THE LINE COMES FROM THE CURVE OR IT DOES NOT COME. virtualEth and bondTarget are both
+     immutable on SnoozeCurve, so these two reads are the whole shape of the line and no
+     constant in this file can stand in for them. If either is unreadable the frame stays
+     empty: a wrong curve under a right badge is the one picture this card exists not to
+     draw. */
+  if(virt !== null && virt > 0n && target > 0n){
+    showRuleCurve(Number(virt) / 1e18, Number(target) / 1e18);
+  } else {
+    CHART.mode = "error"; CHART.marketSeries = []; setAxes("", "");
+    setEmpty("Could not read the curve.",
+      "virtualEth() and bondTarget() set the shape of this line. Nothing is drawn rather " +
+      "than a guess.");
+  }
+  const pct = target > 0n ? Number((raised * 10000n) / target) / 100 : 0;
+  const x = Number(mult === null ? 0 : mult) / 10000;
+  if(bonded === 1n){
+    setBadge("bonded", "");
+    setStrap("The curve closed. It graduated into a Uniswap pool and the LP was burned \u2014 " +
+             "$SNOOZE trades there now, not here.", true);
+    setStats([["raised", fmtEth(raised) + " ETH"], ["state", "bonded"],
+              ["price at close", x.toFixed(2) + "\u00d7"],
+              ["LP", "burned"]]);
+    return;
+  }
+  setBadge("live \u00b7 " + pct.toFixed(0) + "% to bond", "good");
+  setStrap("Read from the chain: " + fmtEth(raised) + " ETH in, " + pct.toFixed(1) +
+           "% of the way to the LP burning itself. The line is the price the contract " +
+           "charges; the token is at " + x.toFixed(2) + "\u00d7 of where it opened.", true);
+  setStats([["raised", fmtEth(raised) + " ETH"],
+            ["to bond", fmtEth(target > raised ? target - raised : 0n) + " ETH"],
+            ["price", x.toFixed(2) + "\u00d7"],
+            ["sold", sold === null || supply === null || supply === 0n ? "\u2014"
+                   : (Number((sold * 10000n) / supply) / 100).toFixed(1) + "% of the float"]]);
+}
+
 async function loadLive(){
+  // The curve wins when it exists: it is this token's own state, and POOL is the other one's.
+  if(SNOOZE_CURVE) return loadCurve();
   if(!POOL){
     setBadge("not deployed", "warn");
     showRuleCurve();
@@ -974,8 +1071,8 @@ window.__SNOOZE = { priceAt, POOL, TOKEN };
 const LAPTOP_CURVE = "";
 /* The $SNOOZE curve: the address a buyer sends ETH to. Not the token — a transfer to the token
    contract buys nothing and is the most common way somebody loses money on a launch day. */
-const SNOOZE_CURVE = "0xbb1D2764632F2851c17Ac89deF81A7e752088453";
-const SNOOZE_TOKEN = "0xCafFf33E2972C3F3927Def575Fc7C8ed06eD1d47";
+const SNOOZE_CURVE = "";
+const SNOOZE_TOKEN = "";
 const GATE_MIN_TEXT = "$SNOOZE";   // set to the real minimum once the curve is deployed
 
 (function(){
@@ -1020,7 +1117,7 @@ const GATE_MIN_TEXT = "$SNOOZE";   // set to the real minimum once the curve is 
     note.hidden = false; note.className = cls; note.textContent = text;
   };
 
-  let wallet = null, bonded = false, quote = null;
+  let wallet = null, bonded = false, quote = null, sending = false;
   window.__BUYWIDGET = { toWei, fmt, addrWord, w,
                          SEL: { "quoteBuy(uint256)": SEL_QUOTE, "buy(uint256,address)": SEL_BUY,
                                 "bonded()": SEL_BONDED, "token()": SEL_TOKEN },
@@ -1037,8 +1134,12 @@ const GATE_MIN_TEXT = "$SNOOZE";   // set to the real minimum once the curve is 
   badge.textContent = "live"; badge.className = "badge good";
   addr.textContent = SNOOZE_CURVE; row.hidden = false;
   cta.hidden = false; pills.hidden = false;
-  foot.textContent = "1% fee, in ETH. You are protected to 2% under the quote. " +
-                     "Never send ETH straight to the contract — it reverts.";
+  /* The daily cap was stated once, in a heading 1,214 pixels below this button — about one
+     and a half screens past the moment somebody commits money. It belongs in the sentence
+     they read while deciding, not in the section they scroll to afterwards. */
+  foot.textContent = "1% fee, in ETH. Protected to 2% under the quote. Selling is capped at " +
+                     "20% of your balance a day. Never send ETH straight to the contract — " +
+                     "it reverts.";
 
   /* The claim the card makes, checked instead of asserted: the curve is asked which token it
      sells, and a curve selling something else is the one thing a copy of this page changes. */
@@ -1085,12 +1186,24 @@ const GATE_MIN_TEXT = "$SNOOZE";   // set to the real minimum once the curve is 
     if(bonded){
       cta.disabled = true; cta.textContent = "The curve has closed"; return;
     }
+    /* IN FLIGHT IS A STATE, and it was not one. buy() opens with `await getQuote()`, getQuote()
+       ends in paint(), and paint() re-enabled the button — so the control stayed live and still
+       said "Buy $SNOOZE" through the whole wallet prompt and the whole 180-second receipt poll.
+       Two taps sent two transactions: measured, byte-identical payloads, the same value twice,
+       and the second one paying a worse price because the first had already moved the curve. */
+    if(sending){ cta.disabled = true; cta.textContent = "Confirm in your wallet…"; return; }
     if(!wallet){ cta.disabled = true; cta.textContent = "Connect a wallet"; return; }
     if(!quote){ cta.disabled = true; cta.textContent = "Enter an amount"; return; }
     cta.disabled = false; cta.textContent = "Buy $SNOOZE";
   }
 
   async function buy(){
+    if(sending) return;
+    sending = true;
+    try{ await doBuy(); } finally { sending = false; paint(); }
+  }
+
+  async function doBuy(){
     await getQuote();
     if(!wallet || !quote) return;
     /* A floor at 98% of the quote. Not zero — a zero floor is what lets a sandwich take the
@@ -1180,7 +1293,29 @@ function ownerView(addr){
     p.request({ method: "eth_accounts" })
      .then(a => ownerView(a && a[0]))
      .catch(() => {});
-    if(p.on) p.on("accountsChanged", a => ownerView(a && a[0]));
+    /* THE WALLET THE CARD SIGNS FOR HAS TO BE THE WALLET THE WALLET IS ON. This handler
+       updated the owner panel and nothing else, so the buy card kept the address captured at
+       connect — and SnoozeCurve.buy(minOut, to) takes the recipient as an argument, so after a
+       switch the new account would have paid and the OLD one received the tokens. Irreversible,
+       and the buyer's only clue would have been an address in a wallet prompt they were not
+       reading. Disarmed on disconnect, re-armed on a switch, and the chain re-read because the
+       new account can be on a different one. */
+    if(p.on) p.on("accountsChanged", async a => {
+      const next = a && a[0];
+      ownerView(next);
+      if(!next){ if(window.__BUYWIDGET) window.__BUYWIDGET.setWallet(null); return wState("", "Connect"); }
+      let chain = null;
+      try{
+        const c = await p.request({ method: "eth_chainId" });
+        if(typeof c === "string" && /^0x[0-9a-fA-F]+$/.test(c)) chain = Number(BigInt(c));
+      }catch(e){}
+      const stillBase = chain === CHAIN_ID;
+      wState(stillBase ? "on" : "bad", short(next),
+        stillBase ? "Connected on Base." : "This wallet is on chain " +
+          (chain === null ? "unknown" : chain) + ", not Base.");
+      if(window.__BUYWIDGET) window.__BUYWIDGET.setWallet(next, p, stillBase);
+      holdings(next);
+    });
   }
 
   /* ---- Connect, which is the same provider asking a question rather than listening ----
