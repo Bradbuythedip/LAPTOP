@@ -834,6 +834,95 @@ ok("the creator recorded in create is the payer, which is what makes creator_vau
 ok("it uses no lookup tables, so every account is in the bytes that get signed",
    built.lookups == 0 and built.version == "legacy")
 
+# ── Global, parsed to the end
+#
+# read_global originally stopped at the first field it needed. The tail is not decoration:
+# buyback_fee_recipients is eight pubkeys a buy must carry as trailing accounts, and not
+# carrying them is the program's error 6062, BuybackFeeRecipientMissing. Field offsets are the
+# kind of thing that is wrong silently — every field after a mistake reads plausible garbage —
+# so this builds a Global byte-for-byte and checks what comes back out.
+def _mk_global(cashback=True, buyback=None):
+    import struct
+    buyback = buyback or ["1" * 43 for _ in range(8)]
+    out = [bytes([167, 232, 232, 177, 200, 108, 114, 127])]
+    out.append(b"\x01")                                   # initialized
+    out.append(P.b58decode(SYS_ADDR))                     # authority
+    out.append(P.b58decode(FEE_RECIP))                    # fee_recipient
+    for n in (1_073_000_000_000_000, 30_000_000_000, 793_100_000_000_000,
+              1_000_000_000_000_000, 95):                 # the five u64s
+        out.append(struct.pack("<Q", n))
+    out.append(P.b58decode(SYS_ADDR))                     # withdraw_authority
+    out.append(b"\x01")                                   # enable_migrate
+    out.append(struct.pack("<Q", 15_000_000))             # pool_migration_fee
+    out.append(struct.pack("<Q", 5))                      # creator_fee_basis_points
+    out.append(P.b58decode(SYS_ADDR) * 7)                 # fee_recipients[7]
+    out.append(P.b58decode(SYS_ADDR))                     # set_creator_authority
+    out.append(P.b58decode(SYS_ADDR))                     # admin_set_creator_authority
+    out.append(b"\x01")                                   # create_v2_enabled
+    out.append(P.b58decode(SYS_ADDR))                     # whitelist_pda
+    out.append(P.b58decode(SYS_ADDR))                     # reserved_fee_recipient
+    out.append(b"\x00")                                   # mayhem_mode_enabled
+    out.append(P.b58decode(SYS_ADDR) * 7)                 # reserved_fee_recipients[7]
+    out.append(b"\x01" if cashback else b"\x00")          # is_cashback_enabled
+    out.append(b"".join(P.b58decode(k) for k in buyback))  # buyback_fee_recipients[8]
+    out.append(struct.pack("<Q", 25))                     # buyback_basis_points
+    return b"".join(out)
+
+
+FEE_RECIP = "62qc2CNXwrYqQScmEdiZFFAnJR262PxWEuNQtxfafNgV"
+BUYBACK = [P.Keypair.generate().address for _ in range(8)]
+
+
+class GlobalRpc(P.Rpc):
+    def __init__(self, raw):
+        self.raw = raw
+        self.url = "https://fake.invalid"
+
+    @property
+    def host(self):
+        return "fake.invalid"
+
+    def account(self, addr, commitment="confirmed"):
+        import base64 as b
+        return {"data": [b.b64encode(self.raw).decode(), "base64"], "executable": False,
+                "owner": SYS_ADDR, "lamports": 1}
+
+
+print("── pump.fun's Global account, parsed to the end")
+gg = P.read_global(GlobalRpc(_mk_global(buyback=BUYBACK)))
+ok("the fee recipient is read from the account, not assumed",
+   gg["fee_recipient"] == FEE_RECIP, gg["fee_recipient"])
+ok("the opening reserves are read from the account",
+   gg["initial_virtual_sol_reserves"] == 30_000_000_000
+   and gg["initial_virtual_token_reserves"] == 1_073_000_000_000_000, gg)
+ok("the fields AFTER the arrays still land, which is what offsets get wrong",
+   gg["creator_fee_basis_points"] == 5 and gg["buyback_basis_points"] == 25, gg)
+ok("all eight buyback recipients come back, in order",
+   gg["buyback_fee_recipients"] == BUYBACK, gg["buyback_fee_recipients"])
+ok("cashback reads as enabled", gg["is_cashback_enabled"] is True)
+ok("an account too short for the layout is refused rather than parsed into garbage",
+   _raises(lambda: P.read_global(GlobalRpc(_mk_global()[:200])), RuntimeError))
+ok("and an account that is not Global at all is refused",
+   _raises(lambda: P.read_global(GlobalRpc(b"\x00" * 400)), RuntimeError))
+
+# The eight go on the END of the buy, after its named accounts. Order and count both matter:
+# the program wants "exactly 8 remaining accounts (or none)".
+cash_ixs, _ = P.build_create_and_buy_direct(
+    payer.address, mint.address, "Snooze Bear", "SNOOZE", "u", 500_000_000, 10.0, gg, 250_000)
+buy_accs = [a.key for pr, ac, dt in cash_ixs if dt[:8] == P.DISC_BUY for a in ac]
+ok("a buy under cashback carries exactly eight trailing accounts",
+   len(buy_accs) == 24, len(buy_accs))
+ok("and they are the eight from Global, in order, at the end",
+   buy_accs[-8:] == BUYBACK, buy_accs[-8:])
+ok("they are writable, because they receive lamports",
+   all(a.writable for pr, ac, dt in cash_ixs if dt[:8] == P.DISC_BUY for a in ac[-8:]))
+
+nocash = P.read_global(GlobalRpc(_mk_global(cashback=False, buyback=BUYBACK)))
+plain, _ = P.build_create_and_buy_direct(
+    payer.address, mint.address, "Snooze Bear", "SNOOZE", "u", 500_000_000, 10.0, nocash)
+ok("with cashback off it carries none of them, which the program also accepts",
+   len([a for pr, ac, dt in plain if dt[:8] == P.DISC_BUY for a in ac]) == 16)
+
 # THE SEED THAT WAS WRONG. buy's fee_config is a PDA of the FEE program whose second seed is
 # the 32 bytes of the BONDING CURVE program's id. It was first written as an 8-byte hex
 # literal — copied from a debug print that had truncated it — which derived an address that is
