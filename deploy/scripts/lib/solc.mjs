@@ -43,11 +43,12 @@ export const SETTER_SELECTOR = selector("set(uint256,uint256,bool)").slice(2);
 /// to paste bytecode by hand, so it is left out until there is a step that deploys it. Note
 /// that a sealed SnoozeDeployer cannot deploy it later: the gate needs its own deployer, or
 /// the seal has to wait.
-export const DEPLOYABLE = ["SnoozeNeverReady", "SnoozeDeployer", "Snooze", "SnoozeCurve"];
+export const DEPLOYABLE = ["SnoozeNeverReady", "SnoozeDeployer", "Snooze", "SnoozeCurve",
+                           "SnoozeDream"];
 
 const SOURCES = [
   "contracts/SnoozeNeverReady.sol", "contracts/SnoozeDeployer.sol", "contracts/Snooze.sol",
-  "contracts/SnoozeCurve.sol",
+  "contracts/SnoozeCurve.sol", "contracts/SnoozeDream.sol",
 ];
 /// Compiled only so its runtime bytecode can be BLOCKED. See fingerprints below.
 const REFUSED_SOURCES = ["contracts/test/SnoozeMocks.sol"];

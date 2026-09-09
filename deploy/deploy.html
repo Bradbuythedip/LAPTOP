@@ -184,7 +184,7 @@ under <span class="mono">web/</span>.
 </div>
 
 <div class="card" id="afterCard">
-  <h2>What these six steps do not cover</h2>
+  <h2>What these seven steps do not cover</h2>
   <div id="after"></div>
 </div>
 
@@ -215,6 +215,13 @@ read a step back. Both are built from <span class="mono">deploy/scripts/lib/step
 var SNOOZE = (function(){
   var SEL = {
     "transfer(address,uint256)":   "0xa9059cbb",
+    /* Rule 3. This page ships no keccak — a wrong nibble here is a call to whatever function
+       shares the prefix, or to the fallback, and it RETURNS something rather than failing.
+       test/run-deploy.mjs recomputes every entry in this table from its signature. */
+    "setDream(address)":           "0x987245c0",
+    "dream()":                     "0x207e4753",
+    "minter()":                    "0x07546172",
+    "RAMP()":                      "0x24cce765",
     "setPool(address,bool)":       "0x20bec12c",
     "freeze()":                    "0x62a5af3b",
     "seal()":                      "0x3fb27b85",
@@ -350,9 +357,19 @@ var SNOOZE = (function(){
         return { to:st.token, from:L.owner, value:"0x0",
                  data: callData("setCapExempt(address,bool)",
                                 addressWord(L.owner) + uintWord(1)) };
-      case "6.freeze":
+      /* Rule 3's reward token. A plain CREATE from the owner's wallet, not through the
+         deployer: SnoozeDream takes the minter as its only constructor argument and has no
+         admin, so there is nothing about it worth a ground address. */
+      case "6.deploy":
+        return { to:null, from:L.owner, value:"0x0",
+                 data: A.contracts.SnoozeDream.initCode + addressWord(st.token) };
+      /* ONCE. setDream reverts AlreadySet() on a second call and Frozen() after step 7. */
+      case "6.set":
+        return { to:st.token, from:L.owner, value:"0x0",
+                 data: callData("setDream(address)", addressWord(st.dream)) };
+      case "7.freeze":
         return { to:st.token, from:L.owner, value:"0x0", data: callData("freeze()") };
-      case "6.seal":
+      case "7.seal":
         return { to:st.deployer, from:L.owner, value:"0x0", data: callData("seal()") };
       default: throw new Error("no such transaction: " + key);
     }
@@ -873,15 +890,62 @@ function STEPS(){
     }
   },
 
-  { n:6, id:"lock", title:"Freeze the token, seal the deployer",
+  { n:6, id:"dream", title:"SnoozeDream, and naming it on the token",
+    what:"Two transactions. Deploy the reward token Rule 3 pays out in, then tell the token " +
+         "about it — once, because setDream can never be repointed.",
+    txs:[
+      { key:"6.deploy", label:"Deploy SnoozeDream",
+        about:function(){ return "SnoozeDream(" + (ST.token || "?") + ") — the minter is the " +
+          "only constructor argument and it is immutable. This contract has no admin, no cap " +
+          "and no second way to create a token."; },
+        needs:function(){ return ST.verified.token ? null :
+          "step 3 has not been verified yet — the constructor argument is that token"; } },
+      { key:"6.set", label:"setDream() on the token",
+        about:function(){ return "setDream(" + (ST.dream || "?") + ") — ONCE. A second call " +
+          "reverts AlreadySet(), and after step 7 it reverts Frozen()."; },
+        needs:function(){ return ST.dream ? null :
+          "SnoozeDream is not deployed yet — send 6.deploy and record it first"; } }
+    ],
+    irreversible:[
+      "setDream is a ONE-WAY DOOR and there is no repointing. A settable mint target is an unlimited supply of the token holders are being asked to wait for, held by whoever holds the admin key.",
+      "SKIPPING THIS STEP IS ALSO PERMANENT once step 7 freezes the token. Rule 3 keeps accruing — dreamOwed rises for every holder, streakSeconds keeps counting — and claimDream() reverts DreamNotSet() for everybody, forever.",
+      "DREAM has no supply cap. After the 90-day ramp the rate is flat rather than zero, so emission continues for as long as anybody holds."
+    ],
+    confirm:"setDream can never be repointed and skipping it cannot be undone after freeze",
+    blocked: function(){ return ST.verified.curve ? null : "step 5 has not been verified yet"; },
+    reads: function(){ return ST.dream && ST.token ? [
+      { sig:"symbol()",      to:ST.dream, data:SNOOZE.callData("symbol()") },
+      { sig:"decimals()",    to:ST.dream, data:SNOOZE.callData("decimals()") },
+      { sig:"minter()",      to:ST.dream, data:SNOOZE.callData("minter()") },
+      { sig:"totalSupply()", to:ST.dream, data:SNOOZE.callData("totalSupply()") },
+      { sig:"token.dream()", to:ST.token, data:SNOOZE.callData("dream()") },
+      { sig:"token.RAMP()",  to:ST.token, data:SNOOZE.callData("RAMP()") }
+    ] : []; },
+    code: function(){ return ST.dream; },
+    check: function(r){
+      var c = [];
+      strIs(c, r, "symbol()", "DREAM");
+      /* NINE, matching SNOOZE. At different decimals "one for one" is off by a factor of a
+         billion in one direction or the other, and every screenshot of it is wrong. */
+      numIs(c, r, "decimals()", 9, "decimals() is 9, the same as SNOOZE — which is what makes one-for-one a count");
+      addrIs(c, r, "minter()", ST.token, "minter() is the SNOOZE token, and nothing else can ever mint");
+      numIs(c, r, "totalSupply()", 0, "totalSupply() is 0 — nobody has served the time yet");
+      addrIs(c, r, "token.dream()", ST.dream, "the token names THIS contract as its reward token");
+      numIs(c, r, "token.RAMP()", 7776000, "RAMP() is 7,776,000 seconds (90 days), where one-for-one lands");
+      save();
+      return c;
+    }
+  },
+
+  { n:7, id:"lock", title:"Freeze the token, seal the deployer",
     what:"Two one-way doors. After these there is no address on this launch that can change a " +
          "pool, an exemption, or deploy anything else — including yours.",
     txs:[
-      { key:"6.freeze", label:"freeze() the token",
+      { key:"7.freeze", label:"freeze() the token",
         about:function(){ return "freeze() — setPool and setCapExempt revert with Frozen() for " +
           "every caller from here on. Until this lands, admin can exempt itself from Rule 2, " +
           "which makes Rule 2 a promise rather than a rule."; } },
-      { key:"6.seal", label:"seal() the deployer",
+      { key:"7.seal", label:"seal() the deployer",
         about:function(){ return "seal() — deploy() reverts with IsSealed for every caller, forever."; } }
     ],
     irreversible:[
@@ -1272,7 +1336,7 @@ async function send(step, tx, card){
        so a key can never again exist everywhere except at the call site. */
     built = SNOOZE.tx(tx.key, A, L, { oracle:chosenOracle(), deployer:ST.deployer,
                                       token:ST.token, salt:ST.salt, curve:ST.curve,
-                                      pair:ST.pair });
+                                      pair:ST.pair, dream:ST.dream });
   }catch(e){ out.appendChild(el("div", "badbox", "cannot build it: " + e.message)); return; }
 
   var pre = el("pre", null,

@@ -4,7 +4,7 @@ On-chain tooling built while tracing the `$LAPTOP` token before its Sept 9, 2026
 
 Two halves:
 
-- **`web/`** — seven pages for people who are about to buy, at
+- **`web/`** — eight pages for people who are about to buy, at
   [totalworlddomination.xyz](https://totalworlddomination.xyz). One self-contained HTML file
   each. They connect to Phantom to read your Base balances and they never ask you to sign
   anything. **`index.html` is the buy screen** — *which venue fills best* — and it is the
@@ -76,18 +76,19 @@ python3 -m http.server -d web 8000     # then open http://localhost:8000
 Or just open any of them from disk — it has no build step and no dependencies. Saving the
 file and opening it locally removes the hosting party from the trust question entirely.
 
-Published build `2026-09-08a`:
+Published build `2026-09-09a`:
 
 ```
-sha256(web/index.html)   = 5f81b029d8969ea5ce7db5d7af6830e2b3369f6bd488c0a1b16815d925918acf
-sha256(web/buy.html)     = 3cd6f11114f5f0cbf9696d4153c5349a4c6999326db3e932c185c476f045e8b7
-sha256(web/checker.html) = 42bdeb0c23f1c05b576f1da1da4eb1dda1ce8b4997cb3e69f6d4899e9907e3bf
-sha256(web/size.html)    = 02a2028a2536c5d9764fe38c85e43c02ec3cd7587122b6e462ab0414c304b5f3
-sha256(web/route.html)   = 5660105445c155ced601a492dde81bfd1585fac5e7ef9cad799d9b69da92174f
-sha256(web/order.html)   = baf719324291be7940f9bbdb7d25970779c46afe24a5775492cd85fd8ac46780
-sha256(web/slot.html)    = 9ee55db0c93080f5a9ae28ee61211ab1160b648939e248d305844cad21044322
-sha256(web/launch.html)  = f2509bed82685710ab2b3c889d05bc2e1df6aa500c8db4105b5476021510fb14
-sha256(web/snooze.html)  = 774fc77328903db238f4e99862360ad71b1463a0d411728dd3640056d5635db1
+sha256(web/index.html)   = 2653a731b9758d2403f3a164ceeee34a16315c1887fd43c14b315b2fb0f11ce7
+sha256(web/buy.html)     = 3f7d5bdb8a1c57e2ea36ce8411f93e4a40c904d6cf0a0b22c034217b1680500a
+sha256(web/checker.html) = 8501ac5675f3d6edc7cfc55bc00b219448744f12ec8c91b2c6c54597cb99d845
+sha256(web/size.html)    = 9089eb5de402b6d54290c0b4eb69f64ab710d42dc9cce9d5e033f5e9ad892299
+sha256(web/route.html)   = 575b24cfa04c1180f77885b9ebc726f29c8aa9be917a4de65254ea412fc3a9bf
+sha256(web/order.html)   = a9f0fee7f0cb4c3c7b503c1ce03ddbb3312c067a918024ed9dcad5729bcd8ddd
+sha256(web/slot.html)    = bbe664806f87849fd3e051ef4485a65b6cdf2668694db6c9a1e6790dcfe8e97f
+sha256(web/launch.html)  = d31b0383d50bad770d16ac0b66a1a7f77f3af1eb8c6e3fa33ee283270ba404e9
+sha256(web/snooze.html)  = 202b84b582ee0deac9767b0c55b654f099cca07a64f712e079ad6f03a1964933
+sha256(web/dream.html)   = 01bd15f5d8b89d6cdd1c1cb1a4966ba14b67eb4e7cfcb8a5d3bcdc2b741145b7
 ```
 
 ### Tests
@@ -96,9 +97,9 @@ sha256(web/snooze.html)  = 774fc77328903db238f4e99862360ad71b1463a0d411728dd3640
 sh test/run-all.sh         # everything below, no network touched
 ```
 
-**2179 assertions across twenty-three suites.**
+**2447 assertions across twenty-six suites.**
 
-`test/run.mjs` — 372, drives the real page in Chromium against `test/mock-rpc.mjs`: Keccak vectors,
+`test/run.mjs` — 397, drives the real page in Chromium against `test/mock-rpc.mjs`: Keccak vectors,
 the four EIP-55 reference addresses, the v4 poolId derivation checked against a real Base pool
 id, ABI-string decoding (including a 10-character name, whose length word contains a hex
 letter, and truncated/absurd offsets), result-length discipline, and full flows for the happy
@@ -107,7 +108,7 @@ JSON-RPC batches. It also holds the cross-page invariants: that every page says 
 you to sign and mentions no `eth_*` method outside the read set, that any page touching
 `window.phantom` uses its EVM side, that they all state the same build tag and that the README
 publishes that tag and the current hash of every page, and that `web/` serves nothing but the
-seven pages and the artwork. Plus the Phantom provider matrix (no wallet, Solana-only, both
+eight pages and the artwork. Plus the Phantom provider matrix (no wallet, Solana-only, both
 sides, injected as `window.ethereum`, inside a multi-provider array, and a non-Phantom wallet)
 and balance formatting and read discipline. Needs `playwright`.
 
@@ -186,6 +187,39 @@ tests the SPEC rather than the code: that a dump is free, that sleeping does not
 spike, that the dial is also the buyer's instant loss, that an unregistered venue is outside
 both rules, that the oracle fails open, and that "no lock" is false.
 
+`test/run-dream.mjs` — 87, compiles `contracts/SnoozeDream.sol` with `Snooze.sol` and executes
+Rule 3, which is the only rule in this launch pointed at holding rather than at leaving. The
+claim it exists to make a number of is the headline one: **one $SNOOZE held untouched for the
+90-day ramp accrues exactly one $DREAM**, asserted as an equality at the same nine decimals on
+both tokens rather than as a bound. The rest is the shape of the ramp — which is QUADRATIC, so
+half the time is a quarter of the reward and not half, and that is the reading almost everybody
+takes — every way a streak can be broken or faked, and the hole that would otherwise let a
+wallet farm the ramp while holding none of the token. It also measures what the rule costs
+everybody who never claims it: 57,262 execution gas on an ordinary transfer, paid by every
+holder. And it checks `web/dream.html` against the contract it reads, because two of the three
+selectors on that page were written by hand and both were wrong — a wrong selector is not a
+failed read, it is a call to whatever function shares the prefix.
+
+`test/test_snooze_py.py` — 93, `snooze.py` from outside itself. The script's own `selftest`
+proves its arithmetic against published vectors, which it has to, because the premise is that
+somebody downloads one file and runs it on a machine with nothing else on it. This is the other
+half: that the Rule 3 arithmetic in Python is the SAME INTEGER EXPRESSION as the Solidity and
+not a float model of it, checked over 50 cases; that the curve identities agree with
+`bond_model.py`, which derived them independently; that the read allowlist has no method that
+can send and no import that could sign; and that the console page references no external origin.
+It also pins the optimizer's two scoring bugs as regressions — see **`snooze.py`** below.
+
+`test/test_pumpfun_py.py` — 44, `pumpfun.py`, which is the one script here that **holds a
+private key** — Solana has no browser-signing path, so a script that submits a transaction must
+sign it. The narrower rules that replaced "no key anywhere" are therefore all driven here rather
+than asserted in a comment: that no flag takes a key, a seed or a mnemonic; that a malformed,
+inconsistent or world-readable keypair file is refused; and that a wallet holding 40 SOL is
+refused outright, because that is a main wallet and not headroom. It also drives the decoder
+against transactions built byte by byte in the suite — one paying from a stranger's wallet, one
+wanting a third signature, one invoking a program the launch does not need, one hiding accounts
+behind an address-table lookup — and checks that no flag exists for a wallet fleet, a bundle or
+volume, and that the only action ever requested of the builder is `create`.
+
 `test/run-wiring.mjs` — 36, Snooze and PooledLaunchBuy joined. Both pass alone and the
 distribution still cannot complete: `claim()` is an outbound transfer and the 20%/day cap
 applies to it. Also carries the axiomatics — the decay condition, depth-versus-appreciation,
@@ -241,7 +275,7 @@ ordinary externally-owned account rather than from another contract, and gas mea
 the block limit — `launch()` deploys two contracts and makes five state-changing calls in one
 transaction, and comes in at 7.2% of a 30M block. It writes `deploy/`.
 
-`test/run-deploy.mjs` — 343, the deployment sequence in `deploy/scripts` sent step by step into
+`test/run-deploy.mjs` — 362, the deployment sequence in `deploy/scripts` sent step by step into
 an in-process EVM, using the exact bytes `build.mjs` prints and `deploy/deploy.html` sends. It is
 an execution rather than a grep because that is what found the thing that decides the shape of
 the whole sequence: **`Snooze` deployed through `SnoozeDeployer` mints the entire supply to the
@@ -348,7 +382,7 @@ static file on a public site, so not secret, just not advertised.
 ## Launching — read `deploy/scripts/README.md` first
 
 **The runbook for the launch this repository can actually perform is
-[`deploy/scripts/README.md`](deploy/scripts/README.md)** — six steps, sent from your own
+[`deploy/scripts/README.md`](deploy/scripts/README.md)** — seven steps, sent from your own
 wallet, through `deploy/scripts` or `deploy/deploy.html`. `LAUNCH.md` below is the design
 record and the launchpad path, which `LAUNCH.md` §2.2 itself shows cannot complete on Base.
 
@@ -490,6 +524,221 @@ The daily cap also breaks things that are not attacks: exchange deposits, bridge
 routes, lending markets and LP withdrawals routinely move more than 20% of a balance at once.
 They fail, and a failed sell looks exactly like a honeypot to someone who does not know the
 rule.
+
+## Rule 3 — `$DREAM`, and being paid for not selling
+
+Rules 1 and 2 are both frictions on leaving, and the section above is mostly an account of how
+little either really does: Rule 1's haircut is **zero in exactly the downtrend you would most
+want it to bite in**, and Rule 2 reshapes an exit rather than stopping it. Neither pays anybody
+for staying. Rule 3 is the only mechanism here pointed the other way, and it is the only one
+whose value can be stated as arithmetic rather than as a hope.
+
+**Hold `$SNOOZE` without sending any out and you accrue `$DREAM`.** Nothing is staked, nothing
+is escrowed, no approval is given and no transaction starts it — the accrual runs inside the
+token's own `_move`, so holding *is* the position. `contracts/SnoozeDream.sol` is the reward
+token and does nothing but mint when `Snooze` tells it to; the clock, the ramp and the reset
+all live in `Snooze` itself.
+
+### The one number, and it is exact
+
+**One `$SNOOZE` held untouched for the 90-day ramp accrues exactly one `$DREAM`.** Both tokens
+have nine decimals, so that is a count and not a conversion — an equivalent token, for doing
+nothing. It is an equality rather than an approximation, and `test/run-dream.mjs` asserts it as
+one against the compiled contract.
+
+The rate ramps linearly for `RAMP` and is flat after, so the accrual from age 0 to age `a` is
+
+```
+(min(a,R)² + 2R·max(a−R,0)) / R²        R = 90 days = 7,776,000 seconds
+```
+
+which is `1` at `a = R` by construction. Three consequences, and the second is the one people
+get wrong:
+
+| held | DREAM per SNOOZE | |
+| ---: | ---: | --- |
+| 1 day | 0.000123 | the first day is worth 1/8100th of the bag |
+| 45 days | 0.250000 | **a quarter, not a half** |
+| 90 days | 1.000000 | one for one |
+| 180 days | 3.000000 | not two |
+| 360 days | 7.000000 | it never stops |
+
+**The ramp is quadratic and almost everybody reads it as linear.** Half the time is a quarter
+of the reward. It is back-loaded deliberately — the reward is for the ninetieth day, not the
+first — but a launch that lets people discover that at day 45 has mis-sold it, so the page
+leads with the table rather than with the headline.
+
+### What breaks a streak, and what it costs
+
+**Any outbound transfer, and "any" is meant.** A sale, a move to your own second wallet, an
+exchange deposit, sending a friend one base unit. From inside a transfer those are the same
+event and no attempt is made to tell them apart — a rule that took your word for which was
+which would be farmed with two wallets before lunch.
+
+**What is lost is the RATE, not the bank.** Everything accrued is banked and stays claimable
+forever; the clock goes back to zero. A matured streak earns exactly twice what a fresh one
+does, forever, so breaking one costs one SNOOZE-equivalent per SNOOZE held over a 90-day
+look-ahead. That gap is the entire mechanism.
+
+**Emptying the wallet ends it properly.** Sell everything, wait three months, buy back, and you
+start from zero rather than from where you left off — a wallet holding none of the token has no
+streak to resume. Without that, the ramp is farmable while holding none of it, and
+`test/run-dream.mjs` drives exactly that attack.
+
+**Claiming does not break it.** Nothing leaves your wallet, so there is nothing to break.
+Neither does receiving more, and a top-up rides the clock you already have on the whole bag —
+which is why adding to a streaked wallet beats starting a fresh one.
+
+### What it is not, and what it costs everybody
+
+- **`$DREAM` is not capped.** After the ramp the rate is flat rather than zero, so emission
+  continues for as long as anybody holds — two per SNOOZE every 90 days, forever. Anyone
+  describing it as scarce is describing a different token, and `SnoozeDream.sol` says so on its
+  own face rather than only on the site.
+- **It is not backed and not a claim on anything.** No ETH, no treasury, no redemption, no
+  share of fees, no claim on the curve or the pool. The contract mints a count; it cannot mint
+  a bid.
+- **Every holder pays for it.** The bookkeeping runs inside every transfer, so an ordinary
+  wallet-to-wallet send costs **57,262 execution gas** whether or not that holder ever claims.
+  That is measured in the suite, not estimated.
+- **The pool and the launcher earn none of it.** Registered pools and the one cap-exempt owner
+  wallet accrue nothing, so the launcher cannot farm the reward for holding its own float.
+- **It can be left switched off, permanently.** `setDream` is callable once, before `freeze()`,
+  and never repointable. Skipping it is a real choice and not a recoverable one: accrual keeps
+  running for every holder and `claimDream()` reverts `DreamNotSet()` forever. Step 6 of the
+  deploy sequence exists to make that a decision rather than an oversight.
+
+**And none of it is a reason to expect a price.** Three rules that slow exits and pay for
+patience do not make anybody want the token. They are plumbing.
+
+## `snooze.py` — the launch in one file
+
+```
+python3 snooze.py                 # the deploy console, in a browser
+python3 snooze.py selftest        # 45 checks against published vectors
+python3 snooze.py optimize        # the parameters, and the price of each trade-off
+python3 snooze.py simulate        # what Rule 3 is worth, under named assumptions
+```
+
+One file, standard library only — no pip install, no node, no wallet library, no build step.
+It opens a localhost console that walks the seven-step launch, draws the curve and the Rule 3
+ramp, and solves for the parameters before any of them become immutable. Keccak-256, RLP, ABI
+encoding and both address derivations are written out in it rather than imported, for the same
+reason `deploy/scripts/lib/abi.mjs` writes out its own: a library's bug in that position is
+indistinguishable from a bug in the contract, and what it produces is a correct-looking address
+holding the wrong parameter forever.
+
+**It never touches a private key.** There is no `--key`, no keystore reader, no mnemonic
+prompt, and no import that *could* sign — `selftest` parses its own AST and asserts every
+import is on a standard-library allowlist, which is a stronger check than grepping for
+`secp256k1` and does not fail itself the way the first version did. The RPC client has eight
+read methods and calling anything else raises before a socket opens. It builds `{to, data,
+value}`; your wallet signs.
+
+**`optimize` is not a pump button, and its two scoring bugs are worth recording** because both
+are ways a weighted sum of plausible terms produces nonsense:
+
+1. It scored the launcher's end share *and* the graduation multiple. The launcher share is
+   `0.2 + 0.8/m` — a monotone function of the multiple, so the same axis was counted twice and
+   outvoted whether the raise was plausible at all. It recommended a virtual reserve of 0.5 ETH,
+   where **one buyer with 1 ETH takes two-thirds of everything the curve will ever sell**.
+2. Fixing that, it pinned the bond target to the top of the grid. `reach` was `1/(1+(R/ref)²)`,
+   which for a large raise is already so near zero that going from 15 ETH to 30 costs almost
+   nothing while the multiple kept paying. **A sum lets a term that has run out of room stop
+   objecting.**
+
+The score is now a product: `reach` is a probability and the rest is a value, and a graduation
+multiple you only reach in a world that does not arrive is worth its multiple times zero.
+Cornering and the launcher share are hard disqualifiers rather than scores. On the shipped curve
+it reports what `deploy/config.json`'s own `_relaunch` note already admits — that at
+`virtualEth` 2 ETH **a single 1 ETH buy takes a third of the float** — and prints the frontier
+rather than one answer, because there is no setting that is both hard to corner and quick to
+graduate. When the optimum lands exactly on a constraint it says so, since then the constraint
+picked it and the score only broke the tie.
+
+**What it does not have, deliberately:** no order placement, no multi-wallet fleet, no volume
+generation, and no scheduler that buys from itself to draw a shape on a chart. Manufactured
+volume works by convincing somebody the demand is real, which makes the person on the other
+side of it the product.
+
+## `pumpfun.py` — the Solana launch, and the one script that holds a key
+
+```
+export SOLANA_RPC='https://…your-provider…/your-key'     # never in a file, never in argv
+python3 pumpfun.py size                                  # what a dev buy actually buys
+python3 pumpfun.py launch --keypair ./launch.json --dev-buy 1.0 \
+    --name "Snooze Bear" --symbol SNOOZE --image ./snooze.png --dry-run
+python3 pumpfun.py watch <mint> --minutes 5              # who really bought
+```
+
+**Create and buy in ONE transaction, and that is the whole design.** Snipers buy in the block
+the mint is created in; you cannot out-race them and this does not try. Putting the create and
+your buy in the same transaction means there is no gap to occupy — you hold the first slice at
+the opening price by construction rather than by winning a race. Everything after that block is
+a real market and this script has no opinion about it.
+
+### What it refuses, and why they are refusals rather than gaps
+
+- **No child wallets.** Splitting the opening buy across wallets you own exists to make the
+  top-holders view look distributed when one person holds the float. Bundle checkers and bubble
+  maps find it in seconds, and *bundled* is a label that does not come off. There is no
+  `--wallets` flag, and `test/test_pumpfun_py.py` asserts no flag of that shape exists.
+- **No self-trading.** Selling from wallets you control does not remove a sniper — by the time
+  you sell they already hold, and your sell is their cheaper re-entry. What it does is
+  manufacture volume that retail reads as organic, which makes the person on the other side of
+  it the product. The suite asserts the only action ever requested of the builder is `create`.
+- **`--dev-buy` has no default.** pump.fun opens at ~30 virtual SOL, so a buy of `R` takes
+  `R/(30+R)` of the float — the same identity as the SNOOZE curve, and it depends on `R` alone.
+  1 SOL is 3.2%, 1.5 is 4.8%, 2 is 6.25% and starts reading as dev-owned. There is no size that
+  is both a meaningful position and invisible, so the script prints the table and makes you
+  choose.
+
+### The key, which is the part that changed
+
+Every other tool here holds no key — Base's deploy console never did, because a browser wallet
+signed and the scripts only built bytes. **Solana has no equivalent path**: a script that
+submits a transaction must sign it. So the rule got narrower rather than weaker, and each part
+is tested rather than promised:
+
+- read from a **file** in the standard Solana CLI format and from nowhere else — never an
+  argument, never an environment variable, never a prompt, none of which stay out of shell
+  history or `/proc/<pid>/cmdline`;
+- the file's halves must agree, and a **world-readable** key file is refused;
+- **a wallet holding more than the launch needs is refused outright.** 40 SOL is not headroom,
+  it is the wrong file, and pointing this at a main wallet is the most expensive mistake
+  available. `--headroom` moves the line; the default is 0.5 SOL above the dev buy;
+- the secret half is never printed, logged, or in a `repr`.
+
+### And nothing is signed blind
+
+pump.fun's builder composes the transaction, which means a third party writes the bytes your key
+is about to authorise. So they are taken apart first — this is the reason the file is worth more
+than a `curl`:
+
+- **structural**: the fee payer is you, the only signers are you and the mint you just
+  generated, every program it invokes is one this launch needs, and a v0 transaction carrying
+  **address-table lookups is refused** because those name accounts it cannot show you;
+- **economic, and layout-independent**: the transaction is **simulated against the live
+  cluster** and the payer's balance change is read back. An instruction encoding nobody here can
+  decode still cannot move more lamports than the simulation says it moves. Over your authorised
+  amount plus a fee ceiling, it refuses.
+
+`--dry-run` stops there: built, decoded, simulated, printed, nothing signed. Run it once before
+you ever run it without.
+
+After sending it reads the result back, because *it confirmed* is not *you hold tokens* — the
+buy is a separate instruction inside the same transaction and a slippage failure there is a
+create with no position. Zero tokens is a loud error naming the signature, not a success.
+
+**`watch` reads public data only** and is deliberately layout-independent: it takes token
+balance deltas out of transaction metadata rather than decoding pump.fun's instructions, so it
+cannot be wrong about a trade because a program changed its encoding. It reports distinct
+buyers, how fast the first one after you arrived, and what share the top ten took — the snipers,
+seen rather than guessed at.
+
+**It has never touched mainnet.** The signing, the decoding and the arithmetic are checked
+against RFC 8032 and against transactions built byte by byte in the suite. The live path is not,
+and it moves real money. Rehearse, then use the smallest dev buy you are willing to lose.
 
 ## `contracts/PooledLaunchBuy.sol` — consolidate, buy once, distribute
 
@@ -922,11 +1171,11 @@ distinguish CORS from "host is down", so the tool does not claim to either; it s
 
 ## Branding: `web/bg.png`
 
-All seven pages carry a full-bleed background image. It is the only piece of branding on them —
+All eight pages carry a full-bleed background image. It is the only piece of branding on them —
 no ticker chips, no watermark layer, and no token named anywhere but LAPTOP. A test asserts
 that across every page.
 
-**`web/bg.png` is in the repo** (added in `bed883f`) and appears on all seven pages.
+**`web/bg.png` is in the repo** (added in `bed883f`) and appears on all eight pages.
 It is the only external asset any page loads, it is same-origin, and it is referenced from
 exactly one decorative CSS rule and never from script. So if the file is missing, blocked by
 CSP, or the HTML is saved and opened offline, the pages lose a picture and nothing else — every

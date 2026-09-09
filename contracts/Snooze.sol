@@ -9,12 +9,45 @@ interface ITwapOracle {
     function ready() external view returns (bool);
 }
 
+/// @notice The reward token. Minted only by this contract, only by claimDream().
+interface ISnoozeDream {
+    function mint(address to, uint256 amount) external;
+}
+
 /// @title Snooze
 /// @notice "You snooze, you win." Two rules, in code rather than in a promise.
 ///
 ///   RULE 1 — you sell at yesterday's price. If spot P is above the 24h average T, only
 ///            T/P of what you send reaches the pool and the rest burns. burnBps = (P-T)/P.
 ///   RULE 2 — no wallet moves more than 20% of its bag per rolling day. Including the dev.
+///   RULE 3 — you are paid for not selling. A wallet accrues $DREAM for every second it holds
+///            $SNOOZE without sending any out, at a rate that ramps for RAMP (90 days) and
+///            then holds flat. Hold one SNOOZE untouched for the whole ramp and you have
+///            accrued exactly one DREAM: same decimals, same count, an EQUIVALENT TOKEN.
+///
+/// RULE 3 IS THE ONLY ONE POINTED THE OTHER WAY, and that is the reason it exists. Rules 1 and
+/// 2 are frictions on leaving, and the notes below say at length how little either really does
+/// — Rule 1 is zero in exactly the downtrend you would want it to bite in, and Rule 2 reshapes
+/// an exit rather than stopping it. Neither pays anybody for staying. Rule 3 does, and it does
+/// it without a lock: nothing is staked, nothing is escrowed, no approval is given and no
+/// transaction is required to start. Holding IS the position.
+///
+/// WHAT RULE 3 COSTS, stated where somebody checking will see it:
+///
+///   - EVERY TRANSFER GOT MORE EXPENSIVE. _move now settles the clock for both sides before it
+///     touches a balance, which is two extra SLOADs and up to two SSTOREs per side. That is
+///     paid by every holder on every transfer, including ones that will never claim.
+///
+///   - ANY OUTBOUND TRANSFER RESETS THE CLOCK, and "outbound" means outbound: a sale, a move
+///     to your own second wallet, a deposit to an exchange, funding a friend. There is no way
+///     to tell those apart from inside a transfer and no attempt is made to. What is already
+///     accrued is BANKED and stays claimable; what is lost is the rate.
+///
+///   - DREAM IS UNCAPPED. After the ramp the rate is flat, not zero, so emission continues for
+///     as long as anybody holds — two DREAM per SNOOZE per 90 days, forever. It is an
+///     emissions token and SnoozeDream.sol says so on its own face.
+///
+///   - AND IT IS WORTH NOTHING BY ITSELF. This contract mints a count. It cannot mint a bid.
 ///
 /// WHAT THE ARITHMETIC ACTUALLY DOES, as opposed to what a pitch would say. Each of these is
 /// pinned by a test in test/run-snooze.mjs, and each is a correction to the original spec:
@@ -74,6 +107,22 @@ contract Snooze {
     /// leaving the pool to a buyer would be capped at 20% of the pool's balance per day.
     mapping(address => bool) public capExempt;
 
+    // ------------------------------------------------------------------------------ rule 3
+
+    /// The ramp. Held for this long with nothing sent out, one SNOOZE has earned one DREAM.
+    /// 90 days is a choice and the only defensible thing about the number is that it is long
+    /// enough to be a decision and short enough to be one somebody actually makes.
+    uint64 public constant RAMP = 90 days;
+
+    /// The reward token. Zero until setDream, and settable exactly once, before freeze().
+    address public dream;
+    /// When this wallet's current unbroken hold began. Zero means it has never held any.
+    mapping(address => uint64) public streakStart;
+    /// The last moment accrual was banked for this wallet. Never behind streakStart.
+    mapping(address => uint64) public settledAt;
+    /// DREAM base units accrued and not yet claimed. Survives a broken streak on purpose.
+    mapping(address => uint256) public dreamOwed;
+
     address public immutable admin;
     bool public frozen;
 
@@ -85,12 +134,21 @@ contract Snooze {
     event Transfer(address indexed from, address indexed to, uint256 value);
     event Approval(address indexed owner, address indexed spender, uint256 value);
     event Snoozed(address indexed seller, uint256 sent, uint256 delivered, uint256 burned, uint256 toDev);
+    /// A wallet sent something out and its clock went back to zero. `held` is how long the
+    /// streak had run; `banked` is what it keeps. This is the only public record of a break,
+    /// and it is permanent, which is the point.
+    event WokeUp(address indexed who, uint64 held, uint256 banked);
+    event Dreamed(address indexed who, uint256 amount);
+    event DreamSet(address indexed dream);
 
     error CapExceeded(uint256 allowed, uint256 wanted);
     error NotAdmin();
     error Frozen();
     error BadConfig();
     error OracleNotReady();
+    error NothingToClaim();
+    error DreamNotSet();
+    error AlreadySet();
 
     constructor(uint256 supply, ITwapOracle _oracle, address _dev, uint256 _devBps) {
         // The dev's cut is of the haircut, and it is capped hard. A dev share above this stops
@@ -104,6 +162,9 @@ contract Snooze {
         totalSupply = supply;
         balanceOf[msg.sender] = supply;
         emit Transfer(address(0), msg.sender, supply);
+        // The launcher holds everything from block one, so without this their clock never
+        // starts: _sleep only ever fires on a RECEIPT, and a mint is not one.
+        _sleep(msg.sender);
     }
 
     /// @notice True only if every haircut is destroyed rather than partly paid out.
@@ -116,12 +177,30 @@ contract Snooze {
         if (frozen) revert Frozen();
         isPool[p] = on;
         capExempt[p] = on;   // the pool must be able to pay buyers out
+        if (on) _clearDream(p);
     }
 
     function setCapExempt(address a, bool on) external {
         if (msg.sender != admin) revert NotAdmin();
         if (frozen) revert Frozen();
         capExempt[a] = on;
+        if (on) _clearDream(a);
+    }
+
+    /// @notice Name the reward token. Once, before freeze(), and never again.
+    /// @dev Deliberately NOT re-settable the way setPool is. A repointable mint target is an
+    ///      unlimited supply of a token people are being told to hold for, held by whoever
+    ///      holds the admin key — and unlike a pool registration there is no legitimate reason
+    ///      to ever change it. Leaving it unset is a real choice and a safe one: accrual still
+    ///      runs, dreamOwed still counts up, and claimDream() reverts DreamNotSet forever
+    ///      after freeze(). Rule 3 is then a number on chain that nobody can ever mint.
+    function setDream(address d) external {
+        if (msg.sender != admin) revert NotAdmin();
+        if (frozen) revert Frozen();
+        if (dream != address(0)) revert AlreadySet();
+        if (d == address(0)) revert BadConfig();
+        dream = d;
+        emit DreamSet(d);
     }
 
     /// @notice Give up the ability to change pools or exemptions.
@@ -199,6 +278,105 @@ contract Snooze {
         w.moved += amount;
     }
 
+    // ---------------------------------------------------------------- rule 3
+
+    /// @notice DREAM accrued by `bal` base units held from streak-age `a0` to streak-age `a1`.
+    /// @dev The rate is k*min(age, RAMP), which ramps linearly for RAMP and is flat after.
+    ///      Integrating it over [a0, a1] and taking k = 2/RAMP^2:
+    ///
+    ///          (min(a1,R)^2 - min(a0,R)^2) / R^2  +  2*(max(a1,R) - max(a0,R)) / R
+    ///
+    ///      At a0=0, a1=R that is exactly `bal` — one DREAM per SNOOZE for the full ramp,
+    ///      which is the whole claim the site makes, in one line, checkable here. At a1=2R it
+    ///      is 3*bal. After the ramp it is flat at 2*bal per R, forever.
+    ///
+    ///      Integer arithmetic, no fixed point and no rounding helper: the multiply happens
+    ///      before the divide, so the only loss is the final truncation. Nothing overflows —
+    ///      the supply is 1e26, R^2 is 6.05e13, and the product is 6.05e39 against a uint256
+    ///      ceiling of 1.16e77, with room for the flat term for longer than the chain will run.
+    function dreamBetween(uint256 bal, uint64 a0, uint64 a1) public pure returns (uint256) {
+        if (bal == 0 || a1 <= a0) return 0;
+        uint256 r = uint256(RAMP);
+        uint256 m0 = a0 < RAMP ? uint256(a0) : r;
+        uint256 m1 = a1 < RAMP ? uint256(a1) : r;
+        uint256 x0 = a0 > RAMP ? uint256(a0) - r : 0;
+        uint256 x1 = a1 > RAMP ? uint256(a1) - r : 0;
+        return (bal * ((m1 * m1 - m0 * m0) + 2 * r * (x1 - x0))) / (r * r);
+    }
+
+    /// @notice How long `who` has held without sending anything out, in seconds.
+    function streakSeconds(address who) public view returns (uint64) {
+        uint64 s = streakStart[who];
+        if (s == 0 || block.timestamp <= s) return 0;
+        return uint64(block.timestamp) - s;
+    }
+
+    /// @notice What `who` could claim right now. A page reads this; it sends nothing.
+    /// @dev Banked plus unsettled, which is what claimDream would pay in this same block.
+    function dreamPending(address who) public view returns (uint256) {
+        uint256 owed = dreamOwed[who];
+        if (capExempt[who]) return owed;
+        uint64 s = streakStart[who];
+        uint64 t = settledAt[who];
+        if (s == 0 || block.timestamp <= t) return owed;
+        return owed + dreamBetween(balanceOf[who], t - s, uint64(block.timestamp) - s);
+    }
+
+    /// @notice Mint everything accrued so far. Does NOT touch your SNOOZE and does NOT break
+    ///         your streak — nothing leaves your wallet, so there is nothing to break.
+    function claimDream() external returns (uint256 amount) {
+        if (dream == address(0)) revert DreamNotSet();
+        _settle(msg.sender);
+        amount = dreamOwed[msg.sender];
+        if (amount == 0) revert NothingToClaim();
+        dreamOwed[msg.sender] = 0;
+        ISnoozeDream(dream).mint(msg.sender, amount);
+        emit Dreamed(msg.sender, amount);
+    }
+
+    /// Bank everything owed up to now, so a balance may change safely afterwards.
+    function _settle(address who) internal {
+        // A registered pool holds a large balance it did not buy and never sells, which under
+        // Rule 3 is the perfect holder. So pools do not dream — and neither does the one
+        // cap-exempt wallet, because the launcher farming the reward for holding their own
+        // float is the failure mode this whole rule exists to avoid rewarding.
+        if (capExempt[who]) return;
+        uint64 s = streakStart[who];
+        if (s == 0) return;
+        uint64 t = settledAt[who];
+        uint64 n = uint64(block.timestamp);
+        if (n <= t) return;
+        uint256 owed = dreamBetween(balanceOf[who], t - s, n - s);
+        if (owed > 0) dreamOwed[who] += owed;
+        settledAt[who] = n;
+    }
+
+    /// Start this wallet's clock at now.
+    function _sleep(address who) internal {
+        if (capExempt[who]) return;
+        streakStart[who] = uint64(block.timestamp);
+        settledAt[who] = uint64(block.timestamp);
+    }
+
+    /// An outbound transfer happened. Bank is already taken; the rate goes back to zero.
+    function _wakeUp(address who) internal {
+        if (capExempt[who]) return;
+        uint64 s = streakStart[who];
+        if (s != 0 && block.timestamp > s)
+            emit WokeUp(who, uint64(block.timestamp) - s, dreamOwed[who]);
+        _sleep(who);
+    }
+
+    /// Exempting an address ends its participation in Rule 3 and voids what it accrued.
+    /// @dev Only reachable before freeze(), and only through the same two calls that hand out
+    ///      the exemption itself — so it is not a new power, it is the existing one being
+    ///      honest about its consequences. After freeze() nobody can do this to anybody.
+    function _clearDream(address who) internal {
+        streakStart[who] = 0;
+        settledAt[who] = 0;
+        dreamOwed[who] = 0;
+    }
+
     // ---------------------------------------------------------------- erc20
 
     function approve(address spender, uint256 v) external returns (bool) {
@@ -241,6 +419,17 @@ contract Snooze {
     function _move(address from, address to, uint256 v) internal {
         require(balanceOf[from] >= v, "balance");
 
+        // RULE 3, and it has to be settled HERE — before a single balance moves. The accrual
+        // owed is for the balance held UP TO now; settling after the transfer would pay the
+        // sender for the whole period at their post-sale size, which is the smaller number,
+        // and would pay the recipient for a period during which they held nothing.
+        _settle(from);
+        _settle(to);
+        // Captured before the credit below, because a wallet that holds nothing has no streak
+        // to continue. Without this, selling everything and buying back three months later
+        // returns to a clock that has been running the whole time it held zero.
+        bool toWasEmpty = balanceOf[to] == 0;
+
         uint256 delivered = v;
         if (isPool[to] && !capExempt[from]) {
             _chargeWindow(from, v);
@@ -250,15 +439,30 @@ contract Snooze {
             delivered = d;
             balanceOf[from] -= v;
             if (b > 0) { totalSupply -= b; totalBurned += b; emit Transfer(from, address(0), b); }
-            if (g > 0) { balanceOf[dev] += g; emit Transfer(from, dev, g); }
+            if (g > 0) {
+                // The dev's cut is a receipt like any other, so it starts a clock like any
+                // other. Unreachable at devBps 0, which is what this launch ships.
+                _settle(dev);
+                bool devWasEmpty = balanceOf[dev] == 0;
+                balanceOf[dev] += g;
+                emit Transfer(from, dev, g);
+                if (devWasEmpty) _sleep(dev);
+            }
             balanceOf[to] += d;
             emit Transfer(from, to, d);
             emit Snoozed(from, v, d, b, g);
+            _wakeUp(from);
+            if (toWasEmpty) _sleep(to);
             return;
         }
 
         balanceOf[from] -= v;
         balanceOf[to] += delivered;
         emit Transfer(from, to, delivered);
+        // Every outbound transfer, not only a sale. A move to your own second wallet is
+        // indistinguishable from a deposit to an exchange from inside this function, and
+        // pretending otherwise is how a hold-to-earn rule gets farmed with two wallets.
+        _wakeUp(from);
+        if (toWasEmpty) _sleep(to);
     }
 }
