@@ -53,6 +53,7 @@ suite "browser: web/buy.html (the venue comparison)" test/run-buy.mjs node
 suite "browser: web/order.html" test/run-order.mjs node
 suite "browser: web/slot.html" test/run-slot.mjs node
 suite "browser: web/launch.html" test/run-launch.mjs node
+suite "browser: app/index.html (the buy page, which is the one that signs)" test/run-app.mjs node
 
 echo "=== the README against what just ran ==="
 awk -v readme=README.md '

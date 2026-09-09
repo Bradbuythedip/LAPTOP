@@ -540,6 +540,28 @@ console.log("── the buy button lands on a buy, and stops when the curve does
   const href = await cta.getAttribute("href");
   ok("and it lands on the Write Contract tab, not the address page",
      href === "https://basescan.org/address/" + CURVE_ADDR + "#writeContract", href);
+  // The fallback is deliberate: with no buy page hosted yet, Basescan is clumsy and real,
+  // and a link to a domain nobody has set up would be neither. Setting BUY_APP swaps it.
+  ok("that is the FALLBACK, and the page says so rather than leaving it a mystery",
+     /Empty is the honest state/.test(SRC) && /const BUY_APP = "";/.test(SRC));
+  {
+    const withApp = SRC.replace('const BUY_APP = "";', 'const BUY_APP = "https://buy.example";')
+                       .replace('const SNOOZE_CURVE = "";', `const SNOOZE_CURVE = "${CURVE_ADDR}";`)
+                       .replace('const SNOOZE_TOKEN = "";', `const SNOOZE_TOKEN = "${TOKEN_ADDR}";`);
+    const p2 = await ctx.newPage();
+    await p2.route("**/*", r => r.request().url().endsWith("/index.html") || r.request().url().endsWith("/")
+      ? r.fulfill({ contentType: "text/html", body: withApp })
+      : r.fulfill({ status: 404, body: "" }));
+    await p2.goto("http://swapped.test/index.html", { waitUntil: "load" });
+    await p2.waitForTimeout(300);
+    ok("with a buy page configured the button goes there instead",
+       (await p2.$eval("#buyCta", e => e.getAttribute("href"))) === "https://buy.example",
+       await p2.$eval("#buyCta", e => e.getAttribute("href")));
+    ok("and the instructions stop describing a block explorer",
+       /where you sign/.test(await p2.$eval("#buyHow3", e => e.textContent)),
+       await p2.$eval("#buyHow3", e => e.textContent));
+    await p2.close();
+  }
   ok("the card names the tab the button lands on, so the two agree",
      /Write Contract/.test(await txt("#buyHow3")), await txt("#buyHow3"));
   ok("and it still says a plain send reverts, which is how people lose money here",

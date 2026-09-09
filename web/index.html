@@ -953,6 +953,16 @@ const LAPTOP_CURVE = "";
    contract buys nothing and is the most common way somebody loses money on a launch day. */
 const SNOOZE_CURVE = "";
 const SNOOZE_TOKEN = "";
+/* WHERE THE BUY BUTTON GOES, once there is somewhere better than a block explorer to send
+   people. app/index.html is a one-button buy page; it signs, so it can never be served from
+   this origin. The exiled signing page under deploy/ carries the reasoning in its own header,
+   and test/run.mjs enforces it — including by refusing to find that filename anywhere in this
+   file, which is why it is described rather than named. Host app/ on its own domain
+   (app/README.md has the two-minute Vercel recipe) and put that URL here.
+
+   Empty is the honest state: with nothing here the button falls back to the curve's Write
+   Contract tab on Basescan, which is clumsy and real. A URL that 404s would be neither. */
+const BUY_APP = "";
 const GATE_MIN_TEXT = "$SNOOZE";   // set to the real minimum once the curve is deployed
 
 (function(){
@@ -970,8 +980,14 @@ const GATE_MIN_TEXT = "$SNOOZE";   // set to the real minimum once the curve is 
        field. This site never signs — that promise is on all nine pages and test/run.mjs fails
        the build if any of them breaks it — so the signature happens on an origin the visitor
        already expects to sign on, rather than here. */
-    cta.href = "https://basescan.org/address/" + SNOOZE_CURVE + "#writeContract";
+    cta.href = BUY_APP || ("https://basescan.org/address/" + SNOOZE_CURVE + "#writeContract");
     cta.rel = "noopener noreferrer";
+    if(BUY_APP){
+      cta.textContent = "Buy $SNOOZE";
+      how3.textContent = "Press Buy. It opens the buy page, which is where you sign.";
+    }
+    /* Still true of THIS page either way, and it is the sentence the whole site rests on.
+       The button leaves the origin; nothing on this one ever asks for a signature. */
     foot.textContent = "This page reads and never signs.";
     /* AND THEN THE CURVE CLOSES. buy() is `if (bonded) revert AlreadyBonded()` — the first line
        of it — so the moment somebody calls bond() this button starts sending people at a

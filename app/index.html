@@ -1,0 +1,578 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Buy $SNOOZE</title>
+<meta name="description" content="Buy $SNOOZE on the curve. One button, on Base.">
+<meta name="robots" content="index,follow">
+<!--
+  WHY THIS IS NOT ON snoozebear.xyz, and why that is not laziness.
+
+  Every page under web/ carries the sentence "does not ask you to sign anything", and
+  test/run.mjs fails the build if any of them contains a signing method. That is the site's
+  anti-phishing property: a visitor can be told, once, that the site NEVER asks for a
+  signature, and then every clone that does is self-evidently not it. A buy button is a
+  signature. Putting one on snoozebear.xyz would delete that property for all nine pages at
+  once, permanently, in exchange for one page's convenience.
+
+  So this lives on its own origin — the same exile deploy/deploy.html got, for the same
+  reason. Host it at buy.snoozebear.xyz (a second Vercel project rooted at app/), link to it
+  from the site, and both properties survive: the site never signs, and buying is one button.
+
+  There is no key in this file and no endpoint that needs one. Reads go through /api/rpc if
+  it exists, then a public Base node, and once a wallet is connected they go through the
+  wallet's own provider. Writes only ever go through the wallet.
+
+  The addresses below are the deployed launch. They are checkable: the curve's token() is the
+  token, and the page reads that back and says so rather than asking to be believed.
+-->
+<style>
+:root{
+  --bg:#070b16; --fg:#e9edf8; --dim:#9aa6c2;
+  --line:#26304a; --edge:#7c8aaf; --card:#0e1424; --cardBg:rgba(255,255,255,.045);
+  --gold:#f0c040; --goldHi:#ffd970; --goldSoft:rgba(240,192,64,.14); --onGold:#140f02;
+  --base:#0052ff; --onBase:#fff;
+  --ok:#4fd18a; --okbg:rgba(79,209,138,.13);
+  --bad:#ff8178; --badbg:rgba(255,129,120,.13);
+  --warn:#f2c14e; --warnbg:rgba(242,193,78,.13);
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{background:var(--bg);color:var(--fg);
+  font:16px/1.6 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  -webkit-text-size-adjust:100%;padding:0 16px 40px;max-width:520px;margin:0 auto}
+h1{font-size:24px;margin:22px 0 2px;letter-spacing:-.02em}
+h2{font-size:15px;margin:0}
+.sub{color:var(--dim);font-size:13.5px;margin:0 0 16px}
+.card{background:var(--cardBg);border:1px solid var(--line);border-radius:14px;padding:15px;
+  margin:12px 0;box-shadow:inset 0 1px 0 rgba(255,255,255,.05)}
+.hdr{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px}
+.badge{font-size:11.5px;font-weight:700;padding:3px 9px;border-radius:999px;
+  background:rgba(154,166,194,.12);color:var(--dim);white-space:nowrap}
+.badge.good{background:var(--okbg);color:var(--ok)}
+.badge.warn{background:var(--warnbg);color:var(--warn)}
+.badge.bad{background:var(--badbg);color:var(--bad)}
+button{font:inherit;font-size:15px;font-weight:700;padding:14px 18px;border-radius:11px;
+  border:1.5px solid var(--edge);background:#111a2a;color:var(--fg);cursor:pointer;width:100%}
+button.go{background:linear-gradient(180deg,var(--goldHi),var(--gold));color:var(--onGold);
+  border-color:var(--gold);min-height:54px;font-size:17px}
+button.base{background:var(--base);color:var(--onBase);border-color:transparent}
+button[disabled]{opacity:.42;cursor:not-allowed}
+button:focus-visible{outline:2px solid var(--goldHi);outline-offset:2px}
+input{width:100%;font-family:var(--mono);font-size:22px;padding:12px 13px;
+  border:1.5px solid var(--edge);border-radius:11px;background:var(--card);color:var(--fg)}
+input:focus-visible{outline:2px solid var(--goldHi);outline-offset:2px}
+label{display:block;font-size:12px;color:var(--dim);margin:0 0 6px;text-transform:uppercase;
+  letter-spacing:.06em;font-weight:600}
+.leg{margin:0 0 12px}
+.out{font-family:var(--mono);font-size:22px;padding:12px 13px;border-radius:11px;
+  background:rgba(240,192,64,.07);border:1.5px solid rgba(240,192,64,.3);color:var(--goldHi);
+  overflow-x:auto;white-space:nowrap}
+.pills{display:flex;gap:7px;margin:8px 0 0}
+.pills button{font-size:12.5px;font-weight:600;padding:7px 0;min-height:0;border-radius:8px}
+.row{display:flex;justify-content:space-between;gap:12px;font-size:13px;padding:5px 0;
+  border-bottom:1px solid var(--line)}
+.row:last-child{border-bottom:0}
+.row .k{color:var(--dim)}
+.row .v{font-family:var(--mono);text-align:right}
+.bar{height:8px;border-radius:999px;background:rgba(255,255,255,.07);overflow:hidden;margin:8px 0 4px}
+.bar i{display:block;height:100%;background:linear-gradient(90deg,var(--gold),var(--goldHi))}
+.msg{font-size:13px;padding:10px 12px;border-radius:9px;margin:10px 0 0;line-height:1.5}
+.msg.bad{background:var(--badbg);color:var(--bad)}
+.msg.ok{background:var(--okbg);color:var(--ok)}
+.msg.warn{background:var(--warnbg);color:var(--warn)}
+.ca{display:flex;align-items:center;gap:9px;margin-top:10px}
+.ca code{font-family:var(--mono);font-size:11.5px;word-break:break-all;color:var(--dim);flex:1}
+.ca button{width:auto;font-size:11.5px;padding:7px 11px;min-height:0;font-weight:600}
+.tabs{display:flex;gap:8px;margin:0 0 14px}
+.tabs button{font-size:14px;padding:10px 0;background:transparent;border-color:var(--line);
+  color:var(--dim)}
+.tabs button.on{background:var(--cardBg);border-color:var(--edge);color:var(--fg)}
+.tiny{font-size:12px;color:var(--dim);line-height:1.55}
+a{color:var(--goldHi)}
+.foot{margin:26px 0 0;font-size:11.5px;color:var(--dim);line-height:1.6}
+[hidden]{display:none!important}
+</style>
+
+<h1>Buy $SNOOZE</h1>
+<p class="sub">On the curve, on Base. Your wallet signs; this page reads and builds.</p>
+
+<div class="card">
+  <div class="hdr"><h2>Wallet</h2><span class="badge" id="wBadge">not connected</span></div>
+  <button class="go" id="connect">Connect wallet</button>
+  <div class="msg bad" id="wErr" hidden></div>
+  <div class="tiny" id="wOut" hidden style="margin-top:10px"></div>
+</div>
+
+<div class="card">
+  <div class="hdr"><h2 id="stateTitle">The curve</h2><span class="badge" id="cBadge">reading…</span></div>
+  <div class="row"><span class="k">price</span><span class="v" id="mPrice">—</span></div>
+  <div class="row"><span class="k">raised</span><span class="v" id="mRaised">—</span></div>
+  <div class="row"><span class="k">bonds at</span><span class="v" id="mTarget">—</span></div>
+  <div class="bar"><i id="mBar" style="width:0%"></i></div>
+  <p class="tiny" id="mNote">At the target the ETH and the tokens go into a Uniswap pool and the
+  LP is burned. Anyone can trigger it; nobody chooses where it goes.</p>
+</div>
+
+<div class="tabs">
+  <button id="tabBuy" class="on">Buy</button>
+  <button id="tabSell">Sell</button>
+</div>
+
+<div class="card" id="buyCard">
+  <div class="leg">
+    <label for="ethIn">you pay — ETH</label>
+    <input id="ethIn" inputmode="decimal" autocomplete="off" placeholder="0.05" value="0.05">
+    <div class="pills">
+      <button data-eth="0.01">0.01</button>
+      <button data-eth="0.05">0.05</button>
+      <button data-eth="0.1">0.1</button>
+      <button data-eth="0.5">0.5</button>
+    </div>
+  </div>
+  <div class="leg">
+    <label>you get — $SNOOZE</label>
+    <div class="out" id="tokOut">—</div>
+  </div>
+  <button class="go" id="doBuy" disabled>Connect a wallet first</button>
+  <div class="msg" id="buyMsg" hidden></div>
+  <p class="tiny" style="margin-top:12px">1% fee, in ETH, on the way in. The quote is read off
+  the curve and you are protected to 2% below it. <b>Never send ETH straight to the contract
+  — it reverts.</b></p>
+</div>
+
+<div class="card" id="sellCard" hidden>
+  <div class="leg">
+    <label for="tokIn">you sell — $SNOOZE</label>
+    <input id="tokIn" inputmode="decimal" autocomplete="off" placeholder="0">
+    <div class="pills">
+      <button data-pct="25">25%</button>
+      <button data-pct="50">50%</button>
+      <button data-pct="100">max today</button>
+    </div>
+  </div>
+  <div class="leg">
+    <label>you get — ETH</label>
+    <div class="out" id="ethOut">—</div>
+  </div>
+  <button class="go" id="doSell" disabled>Connect a wallet first</button>
+  <div class="msg" id="sellMsg" hidden></div>
+  <p class="tiny" style="margin-top:12px">Selling takes two transactions: approve, then sell.
+  <b>No wallet may move more than 20% of its balance into the curve per day</b> — "max today"
+  is what yours has left. 1% fee on the way out.</p>
+</div>
+
+<div class="card">
+  <div class="hdr"><h2>Contracts</h2><span class="badge" id="vBadge">checking…</span></div>
+  <div class="ca"><code id="caTok"></code><button id="copyTok">copy</button></div>
+  <p class="tiny" style="margin:6px 0 0">the token — this is the address to paste anywhere</p>
+  <div class="ca"><code id="caCurve"></code><button id="copyCurve">copy</button></div>
+  <p class="tiny" style="margin:6px 0 0">the curve — what this page sends ETH to</p>
+</div>
+
+<p class="foot">
+No burn on sales: the token's oracle answers "not ready" forever, so that rule never fires.
+One wallet — the deployer's — is outside the daily cap, and it is public on chain.
+1% of every buy and sell goes to it.
+<span id="footLinks"></span>
+</p>
+
+<script>
+"use strict";
+/* ------------------------------------------------------------------ the launch, hardcoded.
+   Not a config file: this page is an artifact of one deployment and these three addresses are
+   the deployment. They are also CHECKED — the curve is asked for its token() and the page says
+   so out loud rather than asking to be believed, because "the address on the page" is exactly
+   what a clone changes. */
+var CHAIN_ID = 8453, CHAIN_HEX = "0x2105";
+var TOKEN = "0xCafFf33E2972C3F3927Def575Fc7C8ed06eD1d47";
+var CURVE = "0xbb1D2764632F2851c17Ac89deF81A7e752088453";
+var PAIR  = "0xC1d59f5FeABa6c6b3d93432381D0E4375728e4F3";
+var SCAN  = "https://basescan.org";
+var SITE  = "https://snoozebear.xyz";
+
+/* Selectors, written out rather than computed — this page ships no keccak. Every one is
+   asserted against keccak(signature) in test/run-app.mjs, so a wrong nibble fails the build
+   instead of calling a function nobody meant. */
+var SEL = {
+  "quoteBuy(uint256)":          "0x4beb394c",
+  "buy(uint256,address)":       "0x7deb6025",
+  "quoteSell(uint256)":         "0xa64190c4",
+  "sell(uint256,uint256)":      "0xd79875eb",
+  "approve(address,uint256)":   "0x095ea7b3",
+  "allowance(address,address)": "0xdd62ed3e",
+  "balanceOf(address)":         "0x70a08231",
+  "remainingToday(address)":    "0xec52e060",
+  "reserveEth()":               "0x899b1528",
+  "bondTarget()":               "0x485735c8",
+  "bonded()":                   "0xe88dc357",
+  "priceMultipleBps()":         "0x9c533f66",
+  "token()":                    "0xfc0c546a"
+};
+
+var $ = function(id){ return document.getElementById(id); };
+var strip = function(h){ return String(h == null ? "" : h).replace(/^0x/, ""); };
+function word(v){
+  var h = typeof v === "string" && v.indexOf("0x") === 0 ? strip(v).toLowerCase()
+        : BigInt(v).toString(16);
+  if(h.length > 64) throw new Error("word overflow");
+  while(h.length < 64) h = "0" + h;
+  return h;
+}
+function addressWord(a){
+  var h = strip(a).toLowerCase();
+  if(!/^[0-9a-f]{40}$/.test(h)) throw new Error("not a 20-byte address: " + a);
+  return word("0x" + h);
+}
+function callData(sig, args){ return SEL[sig] + (args || ""); }
+function readUint(d){
+  var b = strip(d);
+  if(b.length < 64) throw new Error("short return data");
+  return BigInt("0x" + b.slice(0, 64));
+}
+function readAddress(d){ return "0x" + strip(d).slice(24, 64); }
+function readBool(d){ return readUint(d) === 1n; }
+var same = function(a, b){ return strip(a).toLowerCase() === strip(b).toLowerCase(); };
+
+/* --------------------------------------------------------------- decimal <-> base units.
+   Hand-rolled, because parseFloat on "0.1" and multiplying by 1e18 is how a page sends
+   99999999999999998 wei and a wallet shows a number nobody typed. */
+function toUnits(text, decimals){
+  var s = String(text == null ? "" : text).trim().replace(/,/g, "");
+  if(!/^\d*\.?\d*$/.test(s) || s === "" || s === ".") return null;
+  var parts = s.split("."), whole = parts[0] || "0", frac = parts[1] || "";
+  if(frac.length > decimals) frac = frac.slice(0, decimals);
+  while(frac.length < decimals) frac += "0";
+  try{ return BigInt(whole + frac); }catch(e){ return null; }
+}
+function fromUnits(v, decimals, places){
+  var n = BigInt(v), neg = n < 0n; if(neg) n = -n;
+  var base = 10n ** BigInt(decimals);
+  var whole = (n / base).toString(), frac = (n % base).toString();
+  while(frac.length < decimals) frac = "0" + frac;
+  frac = frac.slice(0, places == null ? 4 : places).replace(/0+$/, "");
+  return (neg ? "-" : "") + whole.replace(/\B(?=(\d{3})+(?!\d))/g, ",") + (frac ? "." + frac : "");
+}
+
+/* ------------------------------------------------------------------------------- reading.
+   Three sources in order of trust: the connected wallet's own provider (it is the one the
+   user already believes), then /api/rpc if this is hosted behind one, then a public node.
+   No key in this file, and nothing here can send. */
+var W = { prov:null, addr:null, chain:null };
+var RELAY = "/api/rpc", PUBLIC = "https://mainnet.base.org", relayDead = false;
+
+async function rpc(method, params){
+  if(W.prov){
+    try{ return { ok:true, data: await W.prov.request({ method:method, params:params }) }; }
+    catch(e){ /* fall through to an endpoint rather than showing the user nothing */ }
+  }
+  var urls = relayDead ? [PUBLIC] : [RELAY, PUBLIC];
+  for(var i = 0; i < urls.length; i++){
+    try{
+      var r = await fetch(urls[i], { method:"POST", headers:{ "content-type":"application/json" },
+        body: JSON.stringify({ jsonrpc:"2.0", id:1, method:method, params:params }),
+        cache:"no-store", referrerPolicy:"no-referrer" });
+      if(!r.ok){ if(urls[i] === RELAY) relayDead = true; continue; }
+      var j = await r.json();
+      if(j && j.error) return { ok:false, reason:"the node refused that read" };
+      return { ok:true, data:j && j.result };
+    }catch(e){ if(urls[i] === RELAY) relayDead = true; }
+  }
+  return { ok:false, reason:"could not reach a Base node" };
+}
+async function view(to, sig, args){
+  var r = await rpc("eth_call", [{ to:to, data:callData(sig, args) }, "latest"]);
+  if(!r.ok || typeof r.data !== "string" || r.data.length < 66) return null;
+  return r.data;
+}
+
+/* ------------------------------------------------------------------------------- the wallet */
+function evmProvider(){
+  var p = window.phantom;
+  if(p && p.ethereum) return p.ethereum;
+  var e = window.ethereum;
+  if(!e) return null;
+  if(Array.isArray(e.providers)) return e.providers[0] || null;
+  return e;
+}
+function phantomSolanaOnly(){
+  var p = window.phantom;
+  return !!(p && p.solana && !p.ethereum) && !evmProvider();
+}
+function wSet(text, cls, err){
+  var b = $("wBadge"); b.textContent = text; b.className = "badge " + (cls || "");
+  var e = $("wErr"); e.hidden = !err; if(err) e.textContent = err;
+}
+function wFail(m){ wSet("not connected", "bad", m); return false; }
+
+async function connect(){
+  wSet("connecting…", "");
+  var prov = evmProvider();
+  if(!prov){
+    if(phantomSolanaOnly())
+      return wFail("Phantom is here but only its Solana side is switched on. $SNOOZE is on Base, " +
+        "which is EVM — turn on Ethereum in Phantom → Settings → Active Networks, then reload.");
+    return wFail("No wallet found. Install Phantom, MetaMask or Rabby, then reload.");
+  }
+  var accts;
+  try{ accts = await prov.request({ method:"eth_requestAccounts" }); }
+  catch(e){
+    return wFail(e && e.code === 4001
+      ? "You declined. Nothing was shared and nothing was sent."
+      : "The wallet refused: " + ((e && (e.message || e.reason)) || "no reason given"));
+  }
+  if(!Array.isArray(accts) || !accts.length) return wFail("Connected but returned no account.");
+  W.prov = prov; W.addr = accts[0];
+  try{
+    var ch = await prov.request({ method:"eth_chainId" });
+    W.chain = /^0x[0-9a-fA-F]+$/.test(ch) ? Number(BigInt(ch)) : null;
+  }catch(e){ W.chain = null; }
+  if(W.chain !== null && W.chain !== CHAIN_ID){
+    try{
+      await prov.request({ method:"wallet_switchEthereumChain", params:[{ chainId:CHAIN_HEX }] });
+      W.chain = CHAIN_ID;
+    }catch(e){ /* declined, or Base is not added — said below, never forced */ }
+  }
+  if(W.chain !== null && W.chain !== CHAIN_ID)
+    wSet("wrong network", "bad", "Your wallet is on chain " + W.chain + ". $SNOOZE is on Base " +
+      "(8453). Switch networks and press Connect again.");
+  else
+    wSet(W.addr.slice(0, 6) + "…" + W.addr.slice(-4), "good", "");
+  if(prov.on){
+    prov.on("accountsChanged", function(a){
+      if(!a || !a.length){ W.addr = null; wSet("not connected", ""); }
+      else { W.addr = a[0]; wSet(W.addr.slice(0,6) + "…" + W.addr.slice(-4), "good", ""); }
+      refresh();
+    });
+    prov.on("chainChanged", function(){ location.reload(); });
+  }
+  await refresh();
+  return true;
+}
+
+/* ------------------------------------------------------------------------------ the state */
+var S = { bonded:null, reserve:null, target:null, mult:null, bal:0n, allowance:0n, today:0n };
+
+function pct(a, b){ return b > 0n ? Number((a * 10000n) / b) / 100 : 0; }
+
+async function refresh(){
+  var d;
+  d = await view(CURVE, "bonded()");        S.bonded  = d ? readBool(d) : null;
+  d = await view(CURVE, "reserveEth()");    S.reserve = d ? readUint(d) : null;
+  d = await view(CURVE, "bondTarget()");    S.target  = d ? readUint(d) : null;
+  d = await view(CURVE, "priceMultipleBps()"); S.mult = d ? readUint(d) : null;
+
+  /* The claim this page makes about itself, checked rather than asserted: the curve says
+     which token it sells, and if that is not the token named above then one of them is a
+     clone and the page says so instead of quietly selling somebody else's coin. */
+  d = await view(CURVE, "token()");
+  var v = $("vBadge");
+  if(d === null){ v.textContent = "unread"; v.className = "badge"; }
+  else if(same(readAddress(d), TOKEN)){ v.textContent = "matches"; v.className = "badge good"; }
+  else {
+    v.textContent = "MISMATCH"; v.className = "badge bad";
+    msg("buyMsg", "bad", "The curve at " + CURVE + " sells " + readAddress(d) + ", not the token " +
+      "this page names. Do not buy. Check the address at " + SITE + ".");
+    $("doBuy").disabled = true; $("doSell").disabled = true;
+    return;
+  }
+
+  if(W.addr){
+    d = await view(TOKEN, "balanceOf(address)", addressWord(W.addr));
+    S.bal = d ? readUint(d) : 0n;
+    d = await view(TOKEN, "allowance(address,address)",
+                   addressWord(W.addr) + addressWord(CURVE));
+    S.allowance = d ? readUint(d) : 0n;
+    d = await view(TOKEN, "remainingToday(address)", addressWord(W.addr));
+    S.today = d ? readUint(d) : 0n;
+  }
+  paint();
+  await quoteBuy();
+  await quoteSell();
+}
+
+function paint(){
+  var c = $("cBadge");
+  if(S.bonded === null){ c.textContent = "could not read"; c.className = "badge bad"; }
+  else if(S.bonded){ c.textContent = "bonded"; c.className = "badge"; }
+  else { c.textContent = "live"; c.className = "badge good"; }
+
+  $("mPrice").textContent  = S.mult === null ? "—" : (Number(S.mult) / 10000).toFixed(2) + "×";
+  $("mRaised").textContent = S.reserve === null ? "—" : fromUnits(S.reserve, 18, 4) + " ETH";
+  $("mTarget").textContent = S.target === null ? "—" : fromUnits(S.target, 18, 2) + " ETH";
+  var p = (S.reserve !== null && S.target !== null) ? Math.min(100, pct(S.reserve, S.target)) : 0;
+  $("mBar").style.width = p + "%";
+
+  if(S.bonded){
+    $("stateTitle").textContent = "The curve has closed";
+    $("mNote").textContent = "It reached the target and graduated: the ETH and the tokens are " +
+      "in a Uniswap pool and the LP was burned. $SNOOZE trades there now, not here.";
+    $("doBuy").disabled = true; $("doBuy").textContent = "The curve is closed";
+    $("doSell").disabled = true; $("doSell").textContent = "The curve is closed";
+    return;
+  }
+  if(W.addr){
+    $("wOut").hidden = false;
+    $("wOut").textContent = "you hold " + fromUnits(S.bal, 18, 2) + " $SNOOZE · " +
+      fromUnits(S.today, 18, 2) + " sellable today";
+  }
+  var ready = !!W.addr && W.chain === CHAIN_ID;
+  $("doBuy").disabled = !ready;
+  $("doBuy").textContent = ready ? "Buy $SNOOZE" : "Connect a wallet first";
+  $("doSell").disabled = !ready || S.bal === 0n;
+  $("doSell").textContent = !ready ? "Connect a wallet first"
+                          : S.bal === 0n ? "You hold none" : "Sell $SNOOZE";
+}
+
+function msg(id, cls, text){
+  var e = $(id);
+  if(!text){ e.hidden = true; return; }
+  e.hidden = false; e.className = "msg " + cls; e.textContent = text;
+}
+
+/* -------------------------------------------------------------------------- the quotes */
+var lastBuy = null, lastSell = null;
+
+async function quoteBuy(){
+  var wei = toUnits($("ethIn").value, 18);
+  lastBuy = null;
+  if(wei === null || wei === 0n){ $("tokOut").textContent = "—"; return; }
+  var d = await view(CURVE, "quoteBuy(uint256)", word(wei));
+  if(d === null){ $("tokOut").textContent = "—"; return; }
+  var out = readUint(d);
+  lastBuy = { wei:wei, out:out };
+  $("tokOut").textContent = out === 0n ? "—" : fromUnits(out, 18, 0);
+}
+async function quoteSell(){
+  var units = toUnits($("tokIn").value, 18);
+  lastSell = null;
+  if(units === null || units === 0n){ $("ethOut").textContent = "—"; return; }
+  var d = await view(CURVE, "quoteSell(uint256)", word(units));
+  if(d === null){ $("ethOut").textContent = "—"; return; }
+  var out = readUint(d);
+  lastSell = { units:units, out:out };
+  $("ethOut").textContent = out === 0n ? "—" : fromUnits(out, 18, 5) + " ETH";
+}
+
+/* -------------------------------------------------------------------------- the sending */
+async function send(tx, label, boxId){
+  msg(boxId, "warn", "Confirm in your wallet…");
+  var hash;
+  try{ hash = await W.prov.request({ method:"eth_sendTransaction", params:[tx] }); }
+  catch(e){
+    return msg(boxId, "bad", e && e.code === 4001
+      ? "You declined. Nothing was sent."
+      : "Rejected: " + ((e && (e.message || e.reason)) || "no reason given"));
+  }
+  msg(boxId, "warn", label + " sent — waiting for it to land. " + hash);
+  for(var i = 0; i < 90; i++){
+    var r = await rpc("eth_getTransactionReceipt", [hash]);
+    var rc = r.ok ? r.data : null;
+    if(rc){
+      if(rc.status !== "0x1")
+        return msg(boxId, "bad", "That transaction failed on chain and the gas is spent. " +
+          "Open it on Basescan for the reason: " + SCAN + "/tx/" + hash);
+      msg(boxId, "ok", label + " done. " + SCAN + "/tx/" + hash);
+      await refresh();
+      return true;
+    }
+    await new Promise(function(res){ setTimeout(res, 2000); });
+  }
+  msg(boxId, "warn", "Still pending after three minutes. It is not lost — follow it at " +
+      SCAN + "/tx/" + hash);
+}
+
+async function doBuy(){
+  await quoteBuy();
+  if(!lastBuy || lastBuy.out === 0n)
+    return msg("buyMsg", "bad", "Enter an amount of ETH first.");
+  /* minOut at 98% of the quote. Not zero: a zero floor is what lets a sandwich take the
+     difference, and this curve has no other protection. Not tighter either — a buy landing a
+     block later than quoted is ordinary, and a revert costs gas for nothing. */
+  var minOut = (lastBuy.out * 98n) / 100n;
+  await send({ from:W.addr, to:CURVE, value:"0x" + lastBuy.wei.toString(16),
+               data: callData("buy(uint256,address)", word(minOut) + addressWord(W.addr)) },
+             "Buy", "buyMsg");
+}
+
+async function doSell(){
+  await quoteSell();
+  if(!lastSell || lastSell.units === 0n)
+    return msg("sellMsg", "bad", "Enter an amount of $SNOOZE first.");
+  if(lastSell.units > S.bal)
+    return msg("sellMsg", "bad", "You hold " + fromUnits(S.bal, 18, 2) + ", which is less than that.");
+  if(lastSell.units > S.today)
+    return msg("sellMsg", "bad", "The daily cap lets this wallet move " +
+      fromUnits(S.today, 18, 2) + " $SNOOZE into the curve today. Press “max today”.");
+  if(S.allowance < lastSell.units){
+    var okd = await send({ from:W.addr, to:TOKEN, value:"0x0",
+      data: callData("approve(address,uint256)", addressWord(CURVE) + word(lastSell.units)) },
+      "Approval", "sellMsg");
+    if(!okd) return;
+  }
+  /* 98% again, on a quote that moves for a second reason here: Rule 1 would take a cut on the
+     way in if it were ever live. It is not — the oracle answers "not ready" forever — but the
+     floor costs nothing and stops this page depending on that staying true. */
+  var minEth = (lastSell.out * 98n) / 100n;
+  await send({ from:W.addr, to:CURVE, value:"0x0",
+               data: callData("sell(uint256,uint256)", word(lastSell.units) + word(minEth)) },
+             "Sell", "sellMsg");
+}
+
+/* ------------------------------------------------------------------------------- wiring */
+$("caTok").textContent = TOKEN;
+$("caCurve").textContent = CURVE;
+$("footLinks").innerHTML = ' <a href="' + SITE + '">snoozebear.xyz</a> · ' +
+  '<a href="' + SCAN + '/token/' + TOKEN + '">token</a> · ' +
+  '<a href="' + SCAN + '/address/' + CURVE + '">curve</a> · ' +
+  '<a href="' + SCAN + '/address/' + PAIR + '">pool</a>';
+
+function copier(btn, text){
+  $(btn).addEventListener("click", async function(){
+    var b = $(btn);
+    try{ await navigator.clipboard.writeText(text); b.textContent = "copied"; }
+    catch(e){ b.textContent = "select it"; }
+    setTimeout(function(){ b.textContent = "copy"; }, 1400);
+  });
+}
+copier("copyTok", TOKEN);
+copier("copyCurve", CURVE);
+
+$("connect").addEventListener("click", connect);
+$("doBuy").addEventListener("click", doBuy);
+$("doSell").addEventListener("click", doSell);
+
+var debounce = null;
+function onType(fn){
+  return function(){ clearTimeout(debounce); debounce = setTimeout(fn, 320); };
+}
+$("ethIn").addEventListener("input", onType(quoteBuy));
+$("tokIn").addEventListener("input", onType(quoteSell));
+
+Array.prototype.forEach.call(document.querySelectorAll(".pills button[data-eth]"), function(b){
+  b.addEventListener("click", function(){ $("ethIn").value = b.dataset.eth; quoteBuy(); });
+});
+Array.prototype.forEach.call(document.querySelectorAll(".pills button[data-pct]"), function(b){
+  b.addEventListener("click", function(){
+    var p = BigInt(b.dataset.pct);
+    /* "max today" is the daily cap, not the balance — the cap is what the transaction will
+       actually accept, and offering a number that reverts is worse than offering none. */
+    var v = p === 100n ? (S.today < S.bal ? S.today : S.bal) : (S.bal * p) / 100n;
+    $("tokIn").value = fromUnits(v, 18, 6).replace(/,/g, "");
+    quoteSell();
+  });
+});
+
+function tab(on){
+  $("tabBuy").className = on === "buy" ? "on" : "";
+  $("tabSell").className = on === "sell" ? "on" : "";
+  $("buyCard").hidden = on !== "buy";
+  $("sellCard").hidden = on !== "sell";
+}
+$("tabBuy").addEventListener("click", function(){ tab("buy"); });
+$("tabSell").addEventListener("click", function(){ tab("sell"); });
+
+window.__BUY = { toUnits:toUnits, fromUnits:fromUnits, callData:callData, SEL:SEL,
+                 addressWord:addressWord, word:word, TOKEN:TOKEN, CURVE:CURVE, PAIR:PAIR };
+refresh();
+</script>
