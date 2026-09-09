@@ -827,7 +827,70 @@ function showRuleCurve(){
    test/run-pooled.mjs, which fails if the event signature ever changes under it. */
 const TOPIC_DEPOSITED = "0x2da466a7b24304f47e87fa2e1e5a81b9831ce54fec19055ce277ca2f39ba42c4";
 
+/* THE CURVE'S OWN STATE, which is what "Live" means on this page now.
+   This panel was built for LAPTOP's PooledLaunchBuy — it reads Deposited logs off POOL and
+   says "not deployed" when POOL is empty. POOL still is empty. But $SNOOZE launched, and the
+   hero three inches above this card says its curve is live, so the card was calling the hero
+   a liar on a page people are buying from. The curve is the thing that is live, so the curve
+   is what it reads.
+
+   The line drawn is not a new claim: SnoozeCurve's price is deterministic in the ETH that has
+   arrived, ((E0+R)/E0)^2, so the curve IS the price history and the marker is where the token
+   actually sits on it. Nothing here is interpolated or remembered. */
+const CURVE_SEL = { reserve:"0x899b1528", target:"0x485735c8", mult:"0x9c533f66",
+                    sold:"0x02c7e7af", supply:"0x2138a4c0", bonded:"0xe88dc357" };
+async function loadCurve(){
+  setBadge("reading Base\u2026", "");
+  showRuleCurve();
+  const read = async (sel) => {
+    const r = await one("eth_call", [{ to: SNOOZE_CURVE, data: sel }, "latest"]);
+    return r.ok && typeof r.data === "string" && r.data.length >= 66 ? big(word(r.data, 0)) : null;
+  };
+  const chain = await one("eth_chainId", []);
+  if(!chain.ok || parseInt(chain.data, 16) !== CHAIN_ID){
+    CHART.mode = "error"; CHART.marketSeries = [];
+    setBadge("could not reach Base", "bad"); setStrap(""); setAxes("", "");
+    setEmpty("Could not read the chain.",
+      (chain.reason || "the endpoint answered for a different chain") +
+      ". Nothing is drawn rather than something stale.");
+    return;
+  }
+  const raised = await read(CURVE_SEL.reserve), target = await read(CURVE_SEL.target),
+        mult = await read(CURVE_SEL.mult), sold = await read(CURVE_SEL.sold),
+        supply = await read(CURVE_SEL.supply), bonded = await read(CURVE_SEL.bonded);
+  /* A failed read is never a zero — the rule the rest of this page already keeps. Four dashes
+     and a badge that says so beats a card confidently reporting an empty curve. */
+  if(raised === null || target === null){
+    setBadge("could not read the curve", "bad");
+    setStats([["raised", "\u2014"], ["to bond", "\u2014"],
+              ["price", "\u2014"], ["state", "unreadable"]]);
+    return;
+  }
+  const pct = target > 0n ? Number((raised * 10000n) / target) / 100 : 0;
+  const x = Number(mult === null ? 0 : mult) / 10000;
+  if(bonded === 1n){
+    setBadge("bonded", "");
+    setStrap("The curve closed. It graduated into a Uniswap pool and the LP was burned \u2014 " +
+             "$SNOOZE trades there now, not here.", true);
+    setStats([["raised", fmtEth(raised) + " ETH"], ["state", "bonded"],
+              ["price at close", x.toFixed(2) + "\u00d7"],
+              ["LP", "burned"]]);
+    return;
+  }
+  setBadge("live \u00b7 " + pct.toFixed(0) + "% to bond", "good");
+  setStrap("Read from the chain: " + fmtEth(raised) + " ETH in, " + pct.toFixed(1) +
+           "% of the way to the LP burning itself. The line is the price the contract " +
+           "charges; the token is at " + x.toFixed(2) + "\u00d7 of where it opened.", true);
+  setStats([["raised", fmtEth(raised) + " ETH"],
+            ["to bond", fmtEth(target > raised ? target - raised : 0n) + " ETH"],
+            ["price", x.toFixed(2) + "\u00d7"],
+            ["sold", sold === null || supply === null || supply === 0n ? "\u2014"
+                   : (Number((sold * 10000n) / supply) / 100).toFixed(1) + "% of the float"]]);
+}
+
 async function loadLive(){
+  // The curve wins when it exists: it is this token's own state, and POOL is the other one's.
+  if(SNOOZE_CURVE) return loadCurve();
   if(!POOL){
     setBadge("not deployed", "warn");
     showRuleCurve();

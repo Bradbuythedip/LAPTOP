@@ -87,6 +87,17 @@ const node = http.createServer((req, res) => {
                  result: wordOf(BigInt(MISMATCH ? "0x" + "de".repeat(20) : TOKEN_ADDR)) };
       if (call.startsWith("0x4beb394c"))               // quoteBuy(uint256)
         return { jsonrpc: "2.0", id: m.id, result: wordOf(1234n * 10n ** 18n) };
+      // The Live panel's own reads, once it points at the curve rather than at LAPTOP's pool.
+      if (call === "0x899b1528")                       // reserveEth()
+        return { jsonrpc: "2.0", id: m.id, result: wordOf(5n * 10n ** 18n) };
+      if (call === "0x485735c8")                       // bondTarget()
+        return { jsonrpc: "2.0", id: m.id, result: wordOf(21622776601683793319n) };
+      if (call === "0x9c533f66")                       // priceMultipleBps()
+        return { jsonrpc: "2.0", id: m.id, result: wordOf(22500) };
+      if (call === "0x02c7e7af")                       // sold()
+        return { jsonrpc: "2.0", id: m.id, result: wordOf(2n * 10n ** 34n) };
+      if (call === "0x2138a4c0")                       // curveSupply()
+        return { jsonrpc: "2.0", id: m.id, result: wordOf(8n * 10n ** 34n) };
       return { jsonrpc: "2.0", id: m.id, error: { code: -32601, message: "not allowed here" } };
     };
     res.writeHead(200, { "content-type": "application/json", ...CORS });
@@ -633,6 +644,72 @@ console.log("── the buy card is a buy button, and it stops when the curve do
   ok("blanking the three constants is the only difference between the two states",
      BLANK.replace(/const (SNOOZE_CURVE|SNOOZE_TOKEN|TOKEN) = "";/g, "X").length ===
      SRC.replace(/const (SNOOZE_CURVE|SNOOZE_TOKEN|TOKEN) = "[^"]*";/g, "X").length);
+}
+
+console.log("── the Live panel is about the token that is live");
+{
+  // It was built for LAPTOP's PooledLaunchBuy and said "not deployed" whenever POOL was empty,
+  // which is a card calling the hero a liar three inches below it once $SNOOZE launched.
+  BONDED = false; MISMATCH = false;
+  await load("?curve=1");
+  await page.waitForFunction(() => !/reading/i.test(
+    document.getElementById("liveBadge").textContent), { timeout: 15000 }).catch(() => {});
+  ok("with a curve deployed the panel stops saying nothing is deployed",
+     !/not deployed/i.test(await txt("#liveBadge")), await txt("#liveBadge"));
+  ok("and says how far along the curve is instead",
+     /live · 23% to bond/.test(await txt("#liveBadge")), await txt("#liveBadge"));
+  const strap = flat(await txt("#strap"));
+  ok("the strap reports what it read rather than arithmetic",
+     /Read from the chain/.test(strap) && /5 ETH in/.test(strap), strap);
+  ok("and names the price multiple the contract reports", /2\.25×/.test(strap), strap);
+  const stats = await page.$$eval(".stat", els =>
+    Object.fromEntries(els.map(e => [e.querySelector(".k").textContent,
+                                     e.querySelector(".v").textContent])));
+  ok("the stats are the curve's, not the other token's",
+     stats["raised"] === "5 ETH" && stats["price"] === "2.25×", JSON.stringify(stats));
+  ok("including what is left to bond, which is the number a buyer is deciding about",
+     /16\.62/.test(stats["to bond"] || ""), JSON.stringify(stats));
+  ok("and how much of the float has gone",
+     stats["sold"] === "25.0% of the float", JSON.stringify(stats));
+
+  // A failed read is never a zero. This page keeps that rule everywhere else.
+  BONDED = false;
+  {
+    const p3 = await ctx.newPage();
+    await p3.route("**/*", r => {
+      const u = r.request().url();
+      if (r.request().method() === "POST") return r.fulfill({ status: 500, body: "" });
+      return u.endsWith("/index.html") || u.endsWith("/")
+        ? r.fulfill({ contentType: "text/html", body: BLANK
+            .replace('const SNOOZE_CURVE = "";', `const SNOOZE_CURVE = "${CURVE_ADDR}";`)
+            .replace('const SNOOZE_TOKEN = "";', `const SNOOZE_TOKEN = "${TOKEN_ADDR}";`) })
+        : r.fulfill({ status: 404, body: "" });
+    });
+    await p3.goto("http://dead.test/index.html", { waitUntil: "load" });
+    await p3.waitForTimeout(1500);
+    // It refuses earlier than I first assumed: the chain-id read fails before any curve read
+    // is attempted, so the panel shows its "could not read" box and never populates a stat at
+    // all. That is the same rule kept more strictly — no number is printed, not even a dash in
+    // a grid that looks like it holds numbers.
+    const s3 = await p3.$$eval(".stat", els =>
+      Object.fromEntries(els.map(e => [e.querySelector(".k").textContent,
+                                       e.querySelector(".v").textContent])));
+    const empty3 = (await p3.textContent("#chartEmpty")) || "";
+    ok("an unreadable curve says so, and prints no number at all",
+       /Could not read the chain/i.test(empty3) &&
+       !Object.values(s3).some(v => /\d/.test(v)),
+       empty3.slice(0, 90) + " | " + JSON.stringify(s3));
+    await p3.close();
+  }
+
+  BONDED = true;
+  await load("?curve=1");
+  await page.waitForFunction(() => /bonded/i.test(
+    document.getElementById("liveBadge").textContent), { timeout: 15000 }).catch(() => {});
+  ok("once it has bonded the panel says the LP burned rather than showing a target",
+     (await txt("#liveBadge")) === "bonded" &&
+     /LP was burned/.test(flat(await txt("#strap"))), flat(await txt("#strap")));
+  BONDED = false;
 }
 
 console.log("── the bytes the card would ask a stranger to sign");
