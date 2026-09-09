@@ -1513,12 +1513,27 @@ console.log("── the commands themselves: a refusal, never a stack trace");
   raw.oracle.address = ABI.toChecksum("0x00000000000000000000000000000000000000aa");
   fs.writeFileSync(cfgPath, JSON.stringify(raw, null, 2));
 
-  const run = (args, extraEnv = {}) => spawnSync(process.execPath, args, {
-    encoding: "utf8", cwd: ROOT,
-    env: { ...process.env, SNOOZE_CONFIG: cfgPath, SNOOZE_STATE: statePath,
-           NO_COLOR: "1", ...extraEnv },
-  });
+  // THE OPERATOR'S SHELL IS NOT THE TEST'S ENVIRONMENT, and this suite inherited it. Every
+  // "refuses when there is no endpoint" case silently became "reached the chain instead" on
+  // the one machine where it matters most: the terminal that has just run a real launch, where
+  // SNOOZE_RPC is exported. Found by a live launch, on the run that followed it.
+  const run = (args, extraEnv = {}) => {
+    const env = { ...process.env, SNOOZE_CONFIG: cfgPath, SNOOZE_STATE: statePath,
+                  NO_COLOR: "1" };
+    for (const k of ["SNOOZE_RPC", "SNOOZE_PREDICTION", "SNOOZE_PAGE", "SNOOZE_CHAIN"])
+      delete env[k];
+    return spawnSync(process.execPath, args, { encoding: "utf8", cwd: ROOT,
+                                               env: { ...env, ...extraEnv } });
+  };
   const clean = r => !/\bat file:\/\/|\bat async |Node\.js v/.test((r.stderr || "") + (r.stdout || ""));
+  // Blanked, not copied. web/index.html carries the real addresses once a launch has happened,
+  // and publish.mjs correctly refuses to repoint a live page — so a fixture that copied it
+  // verbatim tested the guard instead of the thing under test, and only after launch day.
+  const blankPage = () => R("web/index.html")
+    .replace(/^const SNOOZE_CURVE = "[^"]*";/m, 'const SNOOZE_CURVE = "";')
+    .replace(/^const SNOOZE_TOKEN = "[^"]*";/m, 'const SNOOZE_TOKEN = "";')
+    .replace(/^const TOKEN = "[^"]*";/m, 'const TOKEN = "";');
+
   const B = "deploy/scripts/build.mjs", V = "deploy/scripts/verify.mjs";
 
   let r = run([B]);
@@ -1785,13 +1800,13 @@ console.log("── the commands themselves: a refusal, never a stack trace");
     // The shipped page no longer makes the claim — that is what the guard was for and the copy
     // was rewritten. So the page under test has it put BACK, which is the regression this
     // catches: somebody restoring the old headline over a never-ready launch.
-    fs.writeFileSync(pg, fs.readFileSync(path.join(ROOT, "web", "index.html"), "utf8")
+    fs.writeFileSync(pg, blankPage()
       .replace("<h1 id=\"how\"", "<h3>Selling into a spike burns</h3><h1 id=\"how\""));
     r = run(["tools/publish.mjs", "--offline"], { SNOOZE_CONFIG: nrPath, SNOOZE_STATE: st, SNOOZE_PAGE: pg });
     ok("publish.mjs refuses to publish Rule 1 copy over a never-ready oracle",
        r.status === 1 && /never fire/.test(r.stderr) && /Selling into a spike burns/.test(r.stderr) && clean(r),
        (r.stderr || r.stdout).slice(0, 300));
-    fs.copyFileSync(path.join(ROOT, "web", "index.html"), pg);
+    fs.writeFileSync(pg, blankPage());
     r = run(["tools/publish.mjs", "--offline"], { SNOOZE_CONFIG: nrPath, SNOOZE_STATE: st, SNOOZE_PAGE: pg });
     ok("and the page as it actually ships passes the same guard", r.status === 0,
        (r.stderr || r.stdout).slice(0, 300));
@@ -1802,12 +1817,12 @@ console.log("── the commands themselves: a refusal, never a stack trace");
   // the failure it exists to prevent is a deployment failure: a page that says "send ETH here"
   // above an address that is one character off. Everything else in this repository can be
   // corrected in the next block.
-  const P2 = "tools/publish.mjs";
+    const P2 = "tools/publish.mjs";
   const pagePath = path.join(tmp, "index.html");
   const pubState = path.join(tmp, "published.json");
   const TOK = ABI.toChecksum(ABI.createAddress(raw.owner, 6));
   const CRV = ABI.toChecksum("0x" + "77".repeat(19) + "ed");
-  const freshPage = () => fs.copyFileSync(path.join(ROOT, "web", "index.html"), pagePath);
+  const freshPage = () => fs.writeFileSync(pagePath, blankPage());
   const pubEnv = () => ({ SNOOZE_STATE: pubState, SNOOZE_PAGE: pagePath });
   const withSteps = (steps) => fs.writeFileSync(pubState,
     JSON.stringify({ chainId: raw.chainId, owner: raw.owner, steps }));
@@ -1818,7 +1833,7 @@ console.log("── the commands themselves: a refusal, never a stack trace");
   ok("publish.mjs refuses while the curve is unverified, and says which step",
      r.status === 1 && /step 5 \(curve\)/.test(r.stderr) && clean(r), r.stderr.trim());
   ok("and it did not touch the page on the way out",
-     fs.readFileSync(pagePath, "utf8") === R("web/index.html"));
+     fs.readFileSync(pagePath, "utf8") === blankPage());
 
   withSteps({ token: verified(TOK), curve: verified(CRV) });
   r = run([P2], pubEnv());
@@ -1831,7 +1846,7 @@ console.log("── the commands themselves: a refusal, never a stack trace");
      (r.stderr || r.stdout).slice(0, 300));
   ok("and writes nothing until it is asked to",
      /nothing was written/.test(r.stdout) &&
-     fs.readFileSync(pagePath, "utf8") === R("web/index.html"));
+     fs.readFileSync(pagePath, "utf8") === blankPage());
 
   r = run([P2, "--offline", "--write"], pubEnv());
   const published = fs.readFileSync(pagePath, "utf8");
