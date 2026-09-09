@@ -8,9 +8,9 @@
 <link rel="icon" type="image/png" href="/snoozebase.png">
 <link rel="apple-touch-icon" href="/snoozebase.png">
 <title>$SNOOZE</title>
-<meta name="description" content="Nobody dumps more than a fifth of their bag a day. At 10x the LP burns itself. On Base.">
+<meta name="description" content="Nobody dumps more than a fifth of their bag a day. At 7.5x the LP burns itself. On Base.">
 <meta property="og:title" content="Snooze Bear — you snooze, you win">
-<meta property="og:description" content="Nobody dumps more than a fifth of their bag a day. At 10x the LP burns itself.">
+<meta property="og:description" content="Nobody dumps more than a fifth of their bag a day. At 7.5x the LP burns itself.">
 <meta property="og:image" content="/hero.png">
 <meta name="twitter:card" content="summary_large_image">
 <style>
@@ -542,6 +542,14 @@ tbody tr:last-child td{border-bottom:0}
   </div></div>
 </div>
 
+<div class="card" id="caCard">
+  <!-- The heading is the link, rather than a "check it" line under the card: the rendered
+       page has a hard 620-word budget and this card put it at exactly 620. -->
+  <div class="hdr"><h2><a class="ext" href="/ca.html">Contract address</a></h2>
+    <span class="badge warn" id="caBadge">not launched</span></div>
+  <code class="v mono" id="caOut" style="word-break:break-all">&mdash;</code>
+</div>
+
 <!-- A POINTER, NOT A SECTION. The rendered page has a hard budget of 620 words and sat at
      583; the first version of this card was 47 and put it at 630. The mechanism is one
      sentence and the arithmetic has its own page, so this says the sentence and links. -->
@@ -672,6 +680,10 @@ let triedRelay = false;
    is no deployed $SNOOZE, so there is nothing here to be wrong about. Filling these in is a
    change to this file, which changes its hash, which the README republishes — so the address
    arrives through the same door as everything else rather than out of a config nobody reads. */
+/* The pump.fun mint, written by `python3 pumpfun.py publish --write` from the launch record
+   after the account was read back off the chain. Empty until then, and the card says "not
+   launched" rather than rendering an empty box that reads as loading. */
+const CA = "";
 const POOL  = "";     // PooledLaunchBuy
 const TOKEN = "";     // Snooze
 
@@ -708,6 +720,16 @@ const fmtEth = wei => {
   if(!isFinite(n)) return "—";
   return (n >= 100 ? n.toFixed(1) : n >= 1 ? n.toFixed(3) : n.toFixed(5)).replace(/0+$/,"").replace(/\.$/,"");
 };
+/* The contract address card. No chain read: it renders a published constant, because the one
+   thing worth being certain about is the address and a page that fetched it could be showing
+   you whatever answered. web/ca.html carries the method for checking it. */
+(function(){
+  const el = document.getElementById("caOut"), b = document.getElementById("caBadge");
+  if(!el) return;
+  if(CA){ el.textContent = CA; b.textContent = "published"; b.className = "badge good"; }
+  else  { el.textContent = "not launched"; }
+})();
+
 const fmtDate = s => {
   const n = Number(s);
   if(!n) return "—";

@@ -66,6 +66,8 @@ class StubRpc:
 def launch_args(keypair, **over):
     a = type("A", (), {})()
     a.keypair, a.dev_buy, a.headroom, a.dry_run = keypair, 1.0, 0.5, True
+    a.reserve = 0.03
+    a.mint_keypair = a.grind = None
     a.name, a.symbol, a.image, a.description = "Snooze Bear", "SNOOZE", "/dev/null", ""
     a.twitter = a.telegram = a.website = ""
     a.slippage, a.priority_fee = 10, 0.0005
@@ -164,9 +166,20 @@ with tempfile.TemporaryDirectory() as d:
             with_rpc(StubRpc(int(0.2 * P.LAMPORTS)), P.cmd_launch, a)
         ok("it refuses a wallet that cannot cover the dev buy", False, "it proceeded")
     except RuntimeError as e:
-        ok("it refuses a wallet that cannot cover the dev buy", "the dev buy alone is" in str(e))
-    ok("the guard is dev buy + headroom, so a correctly funded wallet is not refused",
-       (1.0 + 0.5) * P.LAMPORTS > 1.4 * P.LAMPORTS)
+        ok("it refuses a wallet that cannot cover the dev buy", "The dev buy is" in str(e))
+    # THE GATE USED TO ASK FOR THE DEV BUY ALONE. A create also pays rent for the mint, the
+    # token account and the metadata, plus pump.fun's fee — so a wallet holding EXACTLY the
+    # dev buy passed the old check and then failed on chain, after the metadata was pinned.
+    try:
+        with redirect_stdout(StringIO()):
+            with_rpc(StubRpc(int(1.0 * P.LAMPORTS)), P.cmd_launch, a)
+        ok("a wallet holding EXACTLY the dev buy and nothing for fees is refused", False,
+           "it proceeded, and the launch would have failed on chain")
+    except RuntimeError as e:
+        ok("a wallet holding EXACTLY the dev buy and nothing for fees is refused",
+           "rent" in str(e) and "ESTIMATE" in str(e), str(e)[:160])
+    ok("and the reserve is a flag with a stated estimate, not a hidden constant",
+       "--reserve" in HELP.getvalue() and "ESTIMATE" in HELP.getvalue())
 
     print("── it will not launch through the public endpoint")
     try:
@@ -177,6 +190,36 @@ with tempfile.TemporaryDirectory() as d:
     except RuntimeError as e:
         ok("a real launch through the rate-limited public RPC is refused",
            "public endpoint" in str(e), str(e))
+
+print("── the launch record, which is what makes a retry a retry")
+with tempfile.TemporaryDirectory() as d:
+    kp2 = P.Keypair.generate()
+    rp = P.record_path(str(Path(d) / "launch.json"), kp2.address)
+    ok("the record sits beside the keypair and is named for the mint",
+       rp.name == "launch-" + kp2.address + ".json" and rp.parent == Path(d))
+    P.write_record(rp, {"mint": kp2.address, "status": "sent"})
+    ok("it is written 0600 and never wider", (rp.stat().st_mode & 0o777) == 0o600,
+       oct(rp.stat().st_mode & 0o777))
+    ok("and it reads back", P.read_record(rp)["mint"] == kp2.address)
+    ok("existing_records finds it, which is what blocks a second launch",
+       [x.name for x in P.existing_records(str(Path(d) / "launch.json"))] == [rp.name])
+
+print("── the mint grind refuses what it cannot do in reasonable time")
+try:
+    with redirect_stdout(StringIO()):
+        P.grind_mint("pump")
+    ok("grinding 'pump' in pure Python is refused, not started", False, "it started")
+except RuntimeError as e:
+    ok("grinding 'pump' in pure Python is refused, not started",
+       "solana-keygen grind" in str(e) and "--ends-with pump" in str(e))
+try:
+    P.grind_mint("0O")
+    ok("a suffix with non-base58 characters is refused", False)
+except RuntimeError as e:
+    ok("a suffix with non-base58 characters is refused", "not base58 characters" in str(e))
+with redirect_stdout(StringIO()):
+    g, tries = P.grind_mint("z")
+ok("a one-character suffix actually grinds", g.address.endswith("z") and tries >= 1)
 
 print("── the transaction is decoded before a key touches it")
 payer, mint, other = P.Keypair.generate(), P.Keypair.generate(), P.Keypair.generate()

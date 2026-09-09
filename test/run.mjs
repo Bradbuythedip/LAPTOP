@@ -492,7 +492,8 @@ console.log("── borders you can touch, and a focus state you can see");
 // chance for a reader to confuse two things, and both are out.
 console.log("── one token, and only one");
 const pages = ["index.html", "buy.html", "checker.html", "size.html", "route.html",
-               "order.html", "slot.html", "launch.html", "snooze.html", "dream.html"];
+               "order.html", "slot.html", "launch.html", "snooze.html", "dream.html",
+               "ca.html"];
 for (const f of pages) {
   const t = fs.readFileSync(path.join(ROOT, "web", f), "utf8");
   ok(`${f} never mentions $TWD`, !/\$TWD|%24TWD/.test(t));

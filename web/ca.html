@@ -1,0 +1,327 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="referrer" content="no-referrer">
+<meta name="color-scheme" content="dark">
+<link rel="icon" type="image/png" href="/snoozebase.png">
+<link rel="apple-touch-icon" href="/snoozebase.png">
+<title>$SNOOZE &mdash; the contract address</title>
+<style>
+:root{
+  /* Dark. The ground is near-black navy so the gold artwork reads as metal rather than as a
+     watermark, and gold is the single accent because it is the one colour the bear already is.
+     Every value was chosen against the COMPOSITED ground — the artwork at the brightest pixel
+     bg.png actually contains (#212829), plus the vignette at its weakest, plus the card — and
+     not against a swatch. tools/contrast.mjs prints the arithmetic; test/run.mjs recomputes it
+     in the browser and fails the build on a regression. That is the only reason these are the
+     exact values they are. */
+  --bg:#070b16; --fg:#e9edf8; --dim:#9aa6c2;
+  --line:#26304a;                    /* dividers and card edges: decorative, no WCAG floor */
+  --edge:#7c8aaf;                    /* borders of things you can TOUCH: 3.86:1, clears 1.4.11 */
+  --card:#0e1424;                    /* opaque, for inputs and selects */
+  --cardBg:rgba(255,255,255,.045);
+  --gold:#f0c040; --goldHi:#ffd970; --goldSoft:rgba(240,192,64,.14);
+  --onGold:#140f02;                  /* text ON a gold fill. White on gold is 1.70:1 — unusable */
+  --ok:#4fd18a; --okbg:rgba(79,209,138,.13);
+  --bad:#ff8178; --badbg:rgba(255,129,120,.13);
+  --warn:#f2c14e; --warnbg:rgba(242,193,78,.13);
+  --unk:#9aa6c2; --unkbg:rgba(154,166,194,.09);
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{background:var(--bg);color:var(--fg);
+  font:16px/1.6 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  -webkit-text-size-adjust:100%;overflow-x:hidden;
+  padding:0 16px env(safe-area-inset-bottom) 16px;max-width:680px;margin:0 auto}
+h1{font-size:21px;margin:20px 0 3px;letter-spacing:-.01em}
+.sub{color:var(--dim);font-size:13.5px;margin:0 0 16px;line-height:1.55}
+.card{background:var(--cardBg);border:1px solid var(--line);border-radius:12px;padding:14px;margin:12px 0}
+.mono{font-family:var(--mono);font-size:13px;word-break:break-all;line-height:1.5}
+.dim{color:var(--dim)} .tiny{font-size:12.5px;line-height:1.55}
+label{display:block;font-size:13px;color:var(--dim);margin-bottom:6px}
+input{width:100%;font-family:var(--mono);font-size:16px;padding:11px;border:1.5px solid var(--line);
+  border-radius:9px;background:var(--card);color:var(--fg)}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.hdr{display:flex;justify-content:space-between;align-items:center;gap:8px;
+  margin-bottom:8px;flex-wrap:wrap}
+.hdr h2{font-size:14.5px;margin:0;font-weight:600}
+.badge{display:inline-flex;align-items:center;gap:5px;font-size:12px;padding:4px 9px;
+  border-radius:999px;border:1px solid var(--line);background:var(--unkbg);color:var(--dim);white-space:nowrap}
+.badge.good{background:var(--okbg);border-color:var(--ok);color:var(--ok)}
+.badge.bad{background:var(--badbg);border-color:var(--bad);color:var(--bad)}
+.badge.warn{background:var(--warnbg);border-color:var(--warn);color:var(--warn)}
+.warnbox{background:var(--warnbg);border:1px solid var(--warn);color:var(--warn);
+  border-radius:8px;padding:11px;font-size:12.5px;margin:8px 0}
+.badbox{background:var(--badbg);border:1px solid var(--bad);color:var(--bad);
+  border-radius:8px;padding:11px;font-size:12.5px;margin:8px 0}
+.okbox{background:var(--okbg);border:1px solid var(--ok);color:var(--ok);
+  border-radius:8px;padding:11px;font-size:12.5px;margin:8px 0}
+table{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:6px}
+th,td{text-align:right;padding:7px 5px;border-bottom:1px solid var(--line)}
+th:first-child,td:first-child{text-align:left}
+th{color:var(--dim);font-weight:500}
+td.n{font-family:var(--mono)}
+.scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
+a{color:inherit} a.ext{text-decoration:underline;text-underline-offset:2px}
+.footer{color:var(--dim);font-size:12.5px;margin:22px 0 30px;line-height:1.65}
+.hr{height:1px;background:var(--line);margin:14px 0}
+
+/* THE DIAL. One number, the size of the page, because it is the only number that decides
+   whether to press the button. */
+.dial{text-align:center;padding:26px 14px 20px}
+.dial .n{font-family:var(--mono);font-size:62px;font-weight:700;line-height:1;
+  letter-spacing:-.03em}
+.dial .n.hot{color:var(--bad)} .dial .n.cool{color:var(--ok)}
+.dial .say{font-size:17px;font-weight:600;margin-top:10px}
+.dial .why{font-size:13px;color:var(--dim);margin-top:6px}
+@media (min-width:600px){ .dial .n{font-size:78px} }
+
+/* The medallion. This is the one place hero.png belongs: its navy disc is baked in, which is
+   a defect anywhere it has to composite and exactly right when it should read as a struck coin
+   sitting on the page. The transparent one is the hero on the landing page; this one is the
+   mark. */
+.mark{display:flex;align-items:center;gap:12px;margin:18px 0 3px}
+.mark img{width:52px;height:52px;border-radius:50%;flex:none;
+  border:1.5px solid rgba(240,192,64,.45);
+  box-shadow:0 0 0 4px rgba(240,192,64,.07), 0 6px 14px rgba(0,0,0,.55)}
+.mark h1{margin:0}
+@media (min-width:600px){ .mark img{width:64px;height:64px} }
+.rule{border-left:3px solid var(--gold);padding:2px 0 2px 12px;margin:12px 0}
+.rule h3{margin:0 0 4px;font-size:14px}
+.rule p{margin:0;font-size:13px;color:var(--dim)}
+.correction{border-left:3px solid var(--warn);padding:2px 0 2px 12px;margin:12px 0}
+.correction h3{margin:0 0 4px;font-size:14px;color:var(--warn)}
+.correction p{margin:0;font-size:13px}
+
+body::before{
+  content:"";position:fixed;inset:0;z-index:-3;pointer-events:none;
+  background:url("/bg.png") center center / cover no-repeat;opacity:0.34}
+html::before{
+  content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;
+  background:radial-gradient(ellipse 120% 90% at 50% 38%,
+    rgba(7,11,22,.30) 0%, rgba(7,11,22,.62) 48%, rgba(6,9,19,.90) 82%, rgba(5,8,17,.97) 100%);
+}
+/* ---------------------------------------------------------------- dark: edges and material.
+   "Bolder edges" is a real accessibility win, not only a look: WCAG 1.4.11 wants 3:1 on the
+   boundary of anything you can interact with, and the old 1px hairline did not have it on any
+   ground. Interactive borders move to --edge; decorative ones stay on --line. */
+input,select,textarea{border:1.5px solid var(--edge);background:var(--card)}
+input::placeholder{color:var(--dim);opacity:.75}
+input:focus-visible,select:focus-visible,textarea:focus-visible{
+  outline:2px solid var(--gold);outline-offset:2px;border-color:var(--gold)}
+input:focus,select:focus,textarea:focus{outline:2px solid var(--gold);outline-offset:2px;
+  border-color:var(--gold)}
+button.act{border:1.5px solid var(--edge);background:var(--card);color:var(--fg)}
+button.act:hover{border-color:var(--gold);color:var(--goldHi)}
+button.act:focus-visible,a:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
+.card{border:1px solid var(--line);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.05), 0 1px 2px rgba(0,0,0,.5)}
+.badge{border-width:1.5px}
+a.ext,a.cta{text-underline-offset:3px}
+::selection{background:rgba(240,192,64,.28);color:var(--fg)}
+/* Scrollbars, so a dense table does not paint a white gutter across a dark page. */
+*{scrollbar-color:var(--edge) transparent}
+*::-webkit-scrollbar{height:10px;width:10px}
+*::-webkit-scrollbar-thumb{background:var(--edge);border-radius:10px}
+*::-webkit-scrollbar-track{background:transparent}
+/* Boundaries of things you can touch, at 3:1. --line is 1.28:1 on a card and is for dividers
+   only; anything with a hit area gets --edge (4.87:1). */
+a.cta.sub2{border-color:var(--edge)}
+.tools a{border-color:var(--edge)}
+/* Three spinners rotated forever regardless of the setting, on three different pages, because
+   the reduced-motion guard was written for the hero and nothing else. */
+@media (prefers-reduced-motion:reduce){
+  .spin{animation:none;opacity:.6}
+  .bear{animation:none}
+}
+/* ------------------------------------------------------------------ surfaces vs controls.
+   Everything below exists to make "can I press this?" answerable at a glance. */
+
+/* SURFACES. Solid, so the artwork does not show through the thing you are reading; sharp, so
+   they read as panels rather than as buttons; unoutlined, because an outline is the strongest
+   press-me signal there is and these do not press. */
+.card{background:#0b111c;border:0;border-radius:6px;padding:16px;margin:12px 0;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.04)}
+.stat,.leg,.step{background:#0b111c;border:0;border-radius:6px;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.04)}
+.card .card{background:#0e1524}
+.hr{height:1px;background:var(--line);margin:16px 0;border:0}
+
+/* LABELS. A bordered pill is a toggle everywhere else; none of these toggle. */
+.badge{border:0;border-radius:4px;background:rgba(255,255,255,.06);color:var(--dim);
+  font-weight:600;letter-spacing:.02em;padding:4px 8px}
+.badge.good{background:rgba(79,209,138,.14);color:var(--ok)}
+.badge.bad{background:rgba(255,129,120,.14);color:var(--bad)}
+.badge.warn{background:rgba(242,193,78,.14);color:var(--warn)}
+.badge.gold{background:var(--goldSoft);color:var(--gold)}
+
+/* Message boxes are surfaces too. They keep a colour and lose the ring; the left rule carries
+   the meaning without pretending to be pressable. */
+.warnbox,.badbox,.okbox{border:0;border-left:3px solid;border-radius:0 4px 4px 0;padding:11px 13px}
+.warnbox{border-left-color:var(--warn);background:rgba(242,193,78,.08);color:var(--warn)}
+.badbox{border-left-color:var(--bad);background:rgba(255,129,120,.08);color:var(--bad)}
+.okbox{border-left-color:var(--ok);background:rgba(79,209,138,.08);color:var(--ok)}
+
+/* CONTROLS. The only outlined things on the page, and they say so when you push them. */
+a.cta,button.act{border-radius:6px;transition:transform .06s ease, filter .12s ease}
+a.cta:active,button.act:active{transform:translateY(1px);filter:brightness(.94)}
+button.act{border:1.5px solid var(--edge);background:#111a2a}
+button.act:hover{border-color:var(--gold);color:var(--goldHi);background:#16203300}
+input,select,textarea{border-radius:6px;background:#0b111c}
+
+/* Tables are data, not a grid of cells to click. */
+table{border-collapse:collapse}
+th{font-weight:600;letter-spacing:.04em;text-transform:uppercase;font-size:10.5px;
+  color:var(--dim)}
+th,td{border-bottom:1px solid rgba(255,255,255,.05)}
+tbody tr:last-child td{border-bottom:0}
+</style><style>
+/* The address is the page. Everything else is the argument for why you should believe it. */
+.ca{font-family:var(--mono);font-size:15px;line-height:1.5;word-break:break-all;
+  background:#0b111c;border-left:3px solid var(--gold);border-radius:0 6px 6px 0;
+  padding:14px 15px;margin:10px 0}
+@media (min-width:600px){ .ca{font-size:17px} }
+.ca.empty{border-left-color:var(--warn);color:var(--warn)}
+.row{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0 0}
+.hop{border-left:2px solid var(--line);padding:2px 0 2px 13px;margin:14px 0}
+.hop .n{font-family:var(--mono);color:var(--gold);font-size:11.5px;letter-spacing:.06em}
+.hop h3{font-size:14px;margin:3px 0 4px}
+.hop p{margin:0;font-size:13px;color:var(--dim)}
+.hop code{font-family:var(--mono);font-size:12px;color:var(--fg)}
+</style>
+</head>
+<body>
+
+<div class="mark">
+  <img src="/hero-512.webp" width="512" height="512" alt="" decoding="async">
+  <h1>The address</h1>
+</div>
+<p class="sub">One address, and the method to check it. <a href="/">the launch</a> &middot;
+<a href="/checker.html">contract checker</a> &middot; <a href="/dream.html">$DREAM</a></p>
+
+<div class="card">
+  <div class="hdr"><h2>$SNOOZE contract address</h2>
+    <span class="badge warn" id="badge">not launched</span></div>
+  <div class="ca empty" id="ca">not launched yet &mdash; there is no address, and anything
+  calling itself $SNOOZE right now is not this.</div>
+  <div class="row" id="actions" hidden>
+    <button class="act" id="copy" type="button">copy</button>
+    <a class="act" id="pf" href="#" rel="noopener noreferrer" target="_blank">pump.fun</a>
+    <a class="act" id="scan" href="#" rel="noopener noreferrer" target="_blank">solscan</a>
+  </div>
+  <p class="tiny dim" style="margin:12px 0 0">This page is the canonical publication. If an
+  address reaches you anywhere else &mdash; a reply, a DM, a screenshot, a group &mdash; it is
+  not authoritative until it matches this one.</p>
+</div>
+
+<div class="card">
+  <div class="hdr"><h2>Check it yourself, in three hops</h2></div>
+  <p class="tiny dim" style="margin:0 0 4px">Nobody should take an address on trust because a
+  website is confident. The point of the loop below is that every hop is checkable
+  independently, and it closes: the chain points at this site and this site points at the
+  chain. A copy of this page can reproduce the words. It cannot reproduce the loop.</p>
+
+  <div class="hop">
+    <div class="n">HOP 1 &middot; CHAIN &rarr; SITE</div>
+    <h3>The token names this site, permanently.</h3>
+    <p>The mint's metadata was pinned before the token existed and the launcher cannot edit it
+    afterwards. Open the token on pump.fun and read the website field: it is
+    <code>snoozebear.xyz</code>. A copycat can put our name and our picture on their token.
+    They cannot put their address on our site.</p>
+  </div>
+  <div class="hop">
+    <div class="n">HOP 2 &middot; SITE &rarr; CHAIN</div>
+    <h3>This page names the token, and only after reading it back.</h3>
+    <p>The address above was not typed. It was written by
+    <code>pumpfun.py publish</code>, which takes it from the launch record, reads the account
+    off the chain first, refuses it if it is not a token mint, and refuses to overwrite a
+    different address that is already here. Filling a blank and replacing a live address are
+    different events and only the first one happens automatically.</p>
+  </div>
+  <div class="hop">
+    <div class="n">HOP 3 &middot; SITE &rarr; ITSELF</div>
+    <h3>The page you are reading is hashed in public.</h3>
+    <p>The repository's README publishes a sha256 for every page under a build tag. Hash this
+    file and compare. That is what makes hop 2 worth anything: without it, "the site says so"
+    is a claim about whatever server answered you.</p>
+    <p style="margin-top:6px"><code>curl -s https://snoozebear.xyz/ca.html | sha256sum</code></p>
+  </div>
+  <p class="tiny dim" style="margin:14px 0 0">Three hops, and none of them asks you to trust
+  the previous one. That is the whole of it &mdash; there is no fourth hop where you have to
+  believe us.</p>
+</div>
+
+<div class="card no">
+  <div class="hdr"><h2 style="color:var(--warn)">Two things about this address that will look wrong</h2></div>
+  <div class="hop">
+    <div class="n">1</div>
+    <h3>It probably does not end in <code>pump</code>.</h3>
+    <p>Almost every pump.fun token you have seen has a mint address ending in
+    <code>pump</code>, because pump.fun's own frontend grinds for that suffix. Ours may not.
+    <b>The suffix proves nothing either way</b> &mdash; it is four characters anybody can grind
+    for a few seconds of CPU, and scammers grind it precisely because people read it as a
+    credential. Read the whole address, or read this page. Do not read the last four
+    characters.</p>
+  </div>
+  <div class="hop">
+    <div class="n">2</div>
+    <h3>A Solana address has no checksum.</h3>
+    <p>An Ethereum address carries EIP-55 capitalisation, so a single mistyped character is
+    detectable by the wallet before you send. <b>Base58 carries nothing.</b> A typo that lands
+    on a real account is indistinguishable from the address you meant. Copy it; never retype
+    it, and never read it off a screenshot.</p>
+  </div>
+</div>
+
+<div class="card no">
+  <div class="hdr"><h2 style="color:var(--warn)">What this page does not do</h2></div>
+  <p class="tiny dim" style="margin:0 0 8px">It does not read the chain. It publishes a
+  constant and tells you how to check it, because a page that fetched a price could be showing
+  you a price from anywhere, and the one thing worth being certain about here is the address.
+  It connects to no wallet, has no buy button, and takes no fee.</p>
+  <p class="tiny dim" style="margin:0">It also cannot tell you the token is worth anything, that
+  the launch went well, or that anybody else is buying. Those are not facts this page has.</p>
+  <p> &middot; snoozebear.xyz &middot; Build <span class="mono" id="buildId">2026-09-09a</span>
+  &middot; no analytics, no trackers, no cookies. This page does not ask you to sign anything
+  and cannot send a transaction.</p>
+</div>
+
+<script>
+"use strict";
+const $=id=>document.getElementById(id);
+
+/* Written by `python3 pumpfun.py publish --write`, from the launch record, after the account
+   was read back off the chain. Empty is the honest state before a launch, and the page says
+   "not launched" rather than drawing a blank box that looks like a loading state. */
+const CA = "";
+
+if(CA){
+  $("ca").textContent = CA;
+  $("ca").className = "ca";
+  $("badge").textContent = "published";
+  $("badge").className = "badge good";
+  $("actions").hidden = false;
+  $("pf").href = "https://pump.fun/coin/" + CA;
+  $("scan").href = "https://solscan.io/token/" + CA;
+  $("copy").addEventListener("click", async function(){
+    try{
+      await navigator.clipboard.writeText(CA);
+      $("copy").textContent = "copied";
+      setTimeout(function(){ $("copy").textContent = "copy"; }, 1400);
+    }catch(e){
+      /* Clipboard can be refused (insecure context, permissions). Select it instead, so the
+         failure is recoverable by hand rather than silent. */
+      const r = document.createRange();
+      r.selectNodeContents($("ca"));
+      const s = window.getSelection();
+      s.removeAllRanges(); s.addRange(r);
+      $("copy").textContent = "select and copy";
+    }
+  });
+}
+</script>
+</body>
+</html>
