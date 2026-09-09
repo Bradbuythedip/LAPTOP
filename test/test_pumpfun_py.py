@@ -560,12 +560,176 @@ for name, raw, want in cases:
 good_tx = P.Transaction(build([payer.pub, mint.pub, PUMP]))
 ok("and the well-formed one passes every structural check",
    all(g for g, _ in P._structural_only(good_tx, payer.address, mint.address)))
-# An address-table lookup names accounts that are NOT in account_keys, so a transaction using
-# one cannot be shown to the operator in full. Refused rather than partially displayed.
-lk = P.Transaction(build([payer.pub, mint.pub, PUMP]))
-lk.lookups = 1
-ok("a v0 transaction with address-table lookups is refused, because it hides accounts",
-   any("lookup" in nm for g, nm in P._structural_only(lk, payer.address, mint.address) if not g))
+
+# ── address lookup tables
+#
+# THE REAL LAUNCH RETURNED ONE OF THESE. The first version of this check refused any v0
+# transaction carrying a lookup table, which sounds strict and is not a security property: it
+# fires on every v0 transaction whatever is inside, so it cannot tell "I could not see it"
+# apart from "it is dangerous", and the only thing it can teach an operator is to override it.
+# What matters is whether the hidden accounts can be RESOLVED — and, once resolved, whether
+# the program behind them is one this launch needs.
+print("── address lookup tables, which is where a v0 transaction hides its accounts")
+
+
+def build_v0(keys, table=None, prog_index=2, signers=2):
+    """A versioned message. `table` is (table_pubkey, [writable idx], [readonly idx])."""
+    lk = P._shortvec_encode(0)
+    if table:
+        key, w, r = table
+        lk = (P._shortvec_encode(1) + key
+              + P._shortvec_encode(len(w)) + bytes(w)
+              + P._shortvec_encode(len(r)) + bytes(r))
+    msg = (bytes([0x80]) + bytes([signers, 0, 1]) + P._shortvec_encode(len(keys))
+           + b"".join(keys) + bytes(32)
+           + P._shortvec_encode(1) + bytes([prog_index])
+           + P._shortvec_encode(1) + bytes([0])
+           + P._shortvec_encode(2) + b"\x01\x02" + lk)
+    return P._shortvec_encode(signers) + bytes(64) * signers + msg
+
+
+TABLE = P.b58decode("9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM")
+STRANGER = P.b58decode("FAdo9NCw1ssek6Z6yeWzWjhLVsr8uiCwcWNUnKgzTnHe")
+
+
+class FakeRpc(P.Rpc):
+    """A cluster that serves exactly one lookup table, so resolution is testable offline."""
+
+    def __init__(self, addrs, missing=False):
+        self.addrs = addrs
+        self.missing = missing
+        self.url = "https://fake.invalid"
+        self.host_ = "fake.invalid"
+
+    @property
+    def host(self):
+        return self.host_
+
+    def lookup_table(self, addr, commitment="confirmed"):
+        if self.missing:
+            raise RuntimeError("lookup table %s does not exist on %s" % (addr, self.host))
+        return [P.b58encode(a) for a in self.addrs]
+
+
+v0 = P.Transaction(build_v0([payer.pub, mint.pub], table=(TABLE, [], [0])))
+ok("a versioned message parses as version 0", v0.version == 0)
+ok("its lookup entries are decoded, not just counted",
+   v0.lookups == 1 and v0.lookup_tables[0]["key"]
+   == "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM", v0.lookup_tables)
+ok("before resolution, an index into the table cannot be named",
+   v0.program_of(v0.instructions[0]).startswith("(behind"))
+ok("and that is a refusal, not a shrug",
+   any("lookup" in nm for g, nm in
+       P._structural_only(v0, payer.address, mint.address) if not g))
+
+pulled = FakeRpc([PUMP]).resolve_lookups(v0)
+ok("resolving appends the table's accounts after the message's own",
+   v0.resolved_keys == [payer.address, mint.address,
+                        "6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P"], v0.resolved_keys)
+ok("and the program behind the table is now named",
+   v0.program_of(v0.instructions[0]) == "6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P")
+ok("describe says how many accounts came from where",
+   "from lookup tables" in v0.describe(), v0.describe())
+
+# WRITABLE BEFORE READONLY, ACROSS THE WHOLE ENTRY LIST. That is the runtime's order, and an
+# index into the wrong order names a different account than the one that executes.
+ordered = P.Transaction(build_v0([payer.pub, mint.pub], table=(TABLE, [1], [0])))
+FakeRpc([PUMP, STRANGER]).resolve_lookups(ordered)
+ok("writable accounts come before readonly ones",
+   ordered.resolved_keys[2:] == ["FAdo9NCw1ssek6Z6yeWzWjhLVsr8uiCwcWNUnKgzTnHe",
+                                 "6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P"],
+   ordered.resolved_keys)
+
+# THE WHOLE POINT. A stranger program hidden behind a table is refused exactly as one named in
+# the message is — this is the case the live launch actually hit.
+hidden = P.Transaction(build_v0([payer.pub, mint.pub], table=(TABLE, [], [0])))
+failed = [nm for g, nm in
+          P._structural_only(hidden, payer.address, mint.address, FakeRpc([STRANGER]))
+          if not g]
+ok("an unknown program reached through a lookup table is still refused",
+   any("program it invokes is one this launch needs" in nm for nm in failed), failed)
+ok("and the refusal names it, so it can be looked up rather than guessed at",
+   any("FAdo9NCw1ssek6Z6yeWzWjhLVsr8uiCwcWNUnKgzTnHe" in nm for nm in failed), failed)
+ok("and points at the command that identifies it",
+   any("pumpfun.py program" in nm for nm in failed), failed)
+
+# A table that is short of an index the message uses resolves to the WRONG account if you let
+# it — Python would happily take addrs[-1]. It must refuse instead.
+short = P.Transaction(build_v0([payer.pub, mint.pub], table=(TABLE, [], [7])))
+try:
+    FakeRpc([PUMP]).resolve_lookups(short)
+    ok("a table too short for the index it is asked for is refused", False)
+except RuntimeError as e:
+    ok("a table too short for the index it is asked for is refused", "holds 1" in str(e), str(e))
+ok("and nothing partial is left behind on the transaction", short.resolved_keys is None)
+
+gone = P.Transaction(build_v0([payer.pub, mint.pub], table=(TABLE, [], [0])))
+failed = [nm for g, nm in
+          P._structural_only(gone, payer.address, mint.address, FakeRpc([], missing=True))
+          if not g]
+ok("a lookup table that does not exist is a refusal, not an empty resolution",
+   any("does not exist" in nm for nm in failed), failed)
+
+ok("a v0 transaction with no tables needs no cluster and still passes",
+   all(g for g, _ in P._structural_only(
+       P.Transaction(build_v0([payer.pub, mint.pub, PUMP])),
+       payer.address, mint.address)))
+
+# ── program provenance
+#
+# `program` is what you run when the allowlist refuses an id. It must not report an upgradable
+# program as frozen: "authority: none" is the difference between code that cannot change under
+# you and code that can.
+print("── program provenance, for an id the allowlist refuses")
+
+
+class ProgRpc(P.Rpc):
+    def __init__(self, accounts):
+        self.accounts = accounts
+        self.url = "https://fake.invalid"
+
+    @property
+    def host(self):
+        return "fake.invalid"
+
+    def account(self, addr, commitment="confirmed"):
+        return self.accounts.get(addr)
+
+
+import base64 as _b64
+
+PROGDATA = "5tDNqFvSHPqoZTxdkR7oDgAkK7dGGwZDbSjMTNZBqCVK"
+
+
+def prog_pair(authority):
+    """A BPF-upgradeable program account and the ProgramData account behind it."""
+    stub = _b64.b64encode(b"\x02\x00\x00\x00" + P.b58decode(PROGDATA)).decode()
+    auth = (b"\x01" + P.b58decode(authority)) if authority else b"\x00" + bytes(32)
+    pd = _b64.b64encode(b"\x03\x00\x00\x00" + (12345).to_bytes(8, "little") + auth).decode()
+    return {"FAdo9NCw1ssek6Z6yeWzWjhLVsr8uiCwcWNUnKgzTnHe":
+            {"executable": True, "owner": P.BPF_UPGRADEABLE_LOADER, "lamports": 1,
+             "data": [stub, "base64"]},
+            PROGDATA: {"executable": False, "owner": P.BPF_UPGRADEABLE_LOADER, "lamports": 1,
+                       "data": [pd, "base64"]}}
+
+
+UNK = "FAdo9NCw1ssek6Z6yeWzWjhLVsr8uiCwcWNUnKgzTnHe"
+info = ProgRpc(prog_pair(payer.address)).program_provenance(UNK)
+ok("an upgradeable program reports its authority",
+   info["authority"] == payer.address and info["authority_known"], info)
+ok("and the deploy slot it was last written at", info["slot"] == 12345, info)
+info = ProgRpc(prog_pair(None)).program_provenance(UNK)
+ok("a revoked authority reads as frozen, not as unknown",
+   info["authority"] is None and info["authority_known"] is True, info)
+ok("an address with nothing deployed at it says so",
+   ProgRpc({}).program_provenance(UNK) == {"exists": False, "address": UNK})
+
+# The one that matters: the id from the live launch must NOT be on the allowlist. If a future
+# edit adds it because a transaction was refused and the launch was in a hurry, this fails.
+ok("the unidentified program from the live launch is not on the allowlist",
+   UNK not in P.KNOWN_PROGRAMS)
+ok("the allowlist is still exactly the six programs a launch needs",
+   len(P.KNOWN_PROGRAMS) == 6, sorted(P.KNOWN_PROGRAMS))
 
 print("── the endpoint is a credential and is treated as one")
 ok("SOLANA_RPC is read from the environment",

@@ -336,6 +336,86 @@ class Rpc:
     # script then printed "THE BUY DID NOT LAND" and told the operator to investigate before
     # resending — on a token that existed and was already trading. There is no default that is
     # safe here, so there is no default.
+    def account(self, addr: str, commitment: str = "confirmed") -> dict | None:
+        return self.send("getAccountInfo",
+                         [addr, {"encoding": "base64", "commitment": commitment}])["value"]
+
+    # An address lookup table is a plain account: a 56-byte header, then packed 32-byte
+    # addresses. 56 is not a guess — it is 4 (discriminator) + 8 (deactivation slot)
+    # + 8 (last extended slot) + 1 (start index) + 33 (Option<Pubkey> authority) + 2 (padding),
+    # and the addresses begin immediately after it.
+    LOOKUP_TABLE_HEADER = 56
+
+    def lookup_table(self, addr: str, commitment: str = "confirmed") -> list:
+        v = self.account(addr, commitment)
+        if v is None:
+            raise RuntimeError("lookup table %s does not exist on %s" % (addr, self.host))
+        raw = base64.b64decode(v["data"][0])
+        body = raw[self.LOOKUP_TABLE_HEADER:]
+        if len(body) % 32:
+            raise RuntimeError("lookup table %s is %d bytes, not a whole number of addresses"
+                               % (addr, len(body)))
+        return [b58encode(body[k:k + 32]) for k in range(0, len(body), 32)]
+
+    def resolve_lookups(self, tx, commitment: str = "confirmed") -> list:
+        """Fill in tx.resolved_keys from the chain. Returns the accounts the tables supplied.
+
+        Raises if any table is missing, unreadable, or too short for an index the message
+        uses. A partial resolution is worse than none: it would show most of the accounts and
+        silently leave the interesting one out.
+        """
+        if tx.lookups_truncated:
+            raise RuntimeError("the lookup-table section of this message could not be parsed")
+        if not tx.lookup_tables:
+            tx.resolved_keys = list(tx.account_keys)
+            return []
+        writable, readonly = [], []
+        for entry in tx.lookup_tables:
+            addrs = self.lookup_table(entry["key"], commitment)
+            for which, sink in (("writable", writable), ("readonly", readonly)):
+                for idx in entry[which]:
+                    if idx >= len(addrs):
+                        raise RuntimeError(
+                            "the message asks table %s for index %d and it holds %d addresses"
+                            % (entry["key"], idx, len(addrs)))
+                    sink.append(addrs[idx])
+        pulled = writable + readonly
+        tx.resolved_keys = list(tx.account_keys) + pulled
+        return pulled
+
+    def program_provenance(self, addr: str, commitment: str = "confirmed") -> dict:
+        """Who this program is, from the chain alone: is it code, and who may replace it.
+
+        An upgradeable program is only as trustworthy as its upgrade authority, because that
+        key can swap the code under a transaction you already read. `authority: None` means
+        the code is frozen; a key there means it is not.
+        """
+        v = self.account(addr, commitment)
+        if v is None:
+            return {"exists": False, "address": addr}
+        out = {"exists": True, "address": addr, "executable": v["executable"],
+               "owner": v["owner"], "lamports": v["lamports"],
+               "authority": None, "authority_known": False, "slot": None}
+        if v["owner"] != BPF_UPGRADEABLE_LOADER or not v["executable"]:
+            return out
+        # An upgradeable program account holds a 4-byte enum and the address of the
+        # ProgramData account that carries the code, the deploy slot and the authority.
+        raw = base64.b64decode(v["data"][0])
+        if len(raw) < 36:
+            return out
+        data_addr = b58encode(raw[4:36])
+        out["programdata"] = data_addr
+        d = self.account(data_addr, commitment)
+        if d is None:
+            return out
+        pd = base64.b64decode(d["data"][0])
+        if len(pd) < 45:
+            return out
+        out["slot"] = int.from_bytes(pd[4:12], "little")
+        out["authority_known"] = True
+        out["authority"] = b58encode(pd[13:45]) if pd[12] else None
+        return out
+
     def balance(self, addr: str, commitment: str = "confirmed") -> int:
         return self.send("getBalance", [addr, {"commitment": commitment}])["value"]
 
@@ -394,6 +474,8 @@ def _shortvec_encode(n: int) -> bytes:
 # Every program this launch is allowed to invoke. Anything else and the transaction is not the
 # one that was asked for — a transfer to a stranger, a SetAuthority, a delegate — and it is
 # refused with the offending id printed rather than signed and worried about afterwards.
+BPF_UPGRADEABLE_LOADER = "BPFLoaderUpgradeab1e11111111111111111111111"
+
 KNOWN_PROGRAMS = {
     "6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P": "pump.fun",
     "11111111111111111111111111111111": "system",
@@ -448,19 +530,47 @@ class Transaction:
             data = m[i:i + nd]
             i += nd
             self.instructions.append({"program_index": prog, "accounts": accts, "data": data})
-        # v0 address-table lookups. Any entry here names accounts that are NOT in
-        # account_keys and cannot be read without another round trip, so a transaction using
-        # them cannot be shown to the operator in full. Recorded, and refused upstream.
+        # v0 address-table lookups. Every entry names accounts that are NOT in account_keys,
+        # so on its own this object cannot say what the transaction touches. This used to stop
+        # at a count and refuse anything above zero, which is a fine default and a useless one
+        # the moment a real builder returns a v0 transaction — "I can't see it" is not the same
+        # finding as "it is dangerous", and a check that cannot tell them apart teaches you to
+        # override it. The entries are now decoded here and resolved against the chain in
+        # `Rpc.resolve_lookups`, which is the only place the addresses actually exist.
+        self.lookup_tables = []
         self.lookups = 0
+        self.lookups_truncated = False
         if self.version != "legacy" and i < len(m):
             try:
-                self.lookups, _ = _shortvec_decode(m, i)
+                n, i = _shortvec_decode(m, i)
+                for _ in range(n):
+                    key = b58encode(m[i:i + 32]); i += 32
+                    nw, i = _shortvec_decode(m, i)
+                    writable = list(m[i:i + nw]); i += nw
+                    nr, i = _shortvec_decode(m, i)
+                    readonly = list(m[i:i + nr]); i += nr
+                    self.lookup_tables.append(
+                        {"key": key, "writable": writable, "readonly": readonly})
+                self.lookups = len(self.lookup_tables)
             except Exception:
-                self.lookups = 0
+                # A message this parser cannot finish reading is one it cannot vouch for.
+                # Say so, rather than reporting the entries it managed to get.
+                self.lookups_truncated = True
+                self.lookups = max(self.lookups, len(self.lookup_tables))
+        # Filled in by Rpc.resolve_lookups: static keys first, then every writable account
+        # pulled from the tables in entry order, then every readonly one. That order is the
+        # runtime's, not a convention — an index into it is what the instructions mean.
+        self.resolved_keys = None
+
+    @property
+    def keys(self) -> list:
+        """Every account the transaction touches, if the tables have been resolved."""
+        return self.resolved_keys if self.resolved_keys is not None else self.account_keys
 
     def program_of(self, ix) -> str:
         idx = ix["program_index"]
-        return self.account_keys[idx] if idx < len(self.account_keys) else "(out of range)"
+        keys = self.keys
+        return keys[idx] if idx < len(keys) else "(behind an unresolved lookup table)"
 
     def signed(self, signers: dict) -> bytes:
         """Return the wire transaction with `signers` (address -> Keypair) filled in.
@@ -484,8 +594,16 @@ class Transaction:
         out = ["  version            %s" % self.version,
                "  fee payer          %s" % (self.account_keys[0] if self.account_keys else "?"),
                "  signers required   %d" % self.num_required_signatures,
-               "  accounts           %d" % len(self.account_keys),
+               "  accounts           %d%s"
+               % (len(self.keys),
+                  "" if self.resolved_keys is None
+                  else " (%d named in the message, %d from lookup tables)"
+                       % (len(self.account_keys),
+                          len(self.resolved_keys) - len(self.account_keys))),
                "  instructions       %d" % len(self.instructions)]
+        for t in self.lookup_tables:
+            out.append("    lookup table     %s  (%d writable, %d readonly)"
+                       % (t["key"], len(t["writable"]), len(t["readonly"])))
         for n, ix in enumerate(self.instructions):
             p = self.program_of(ix)
             out.append("    %d. %-44s %s  (%d accounts, %d bytes)"
@@ -507,7 +625,7 @@ def verify_transaction(tx: Transaction, payer: str, mint: str, authorised_lampor
     # The structural half is _structural_only, called rather than repeated: it was written
     # twice, once here and once for the self-test, and two copies of a refusal drift apart
     # with the drifting copy being the one nothing runs against a real transaction.
-    checks = list(_structural_only(tx, payer, mint))
+    checks = list(_structural_only(tx, payer, mint, rpc))
 
     def ok(cond, name, detail=""):
         checks.append((bool(cond), name + (("  — " + detail) if detail and not cond else "")))
@@ -1575,6 +1693,55 @@ def cmd_watch(args):
     return 0
 
 
+def cmd_program(args):
+    """What an unidentified program id actually is, from the chain and nothing else.
+
+    This exists because `launch` refused a transaction whose buy was routed through a program
+    that is not pump.fun's and that no public source named. The useful answer to that is not a
+    flag to skip the check — it is the four facts below, which come from the cluster itself:
+    whether the id is even executable, which loader owns it, when the code was last deployed,
+    and who can replace it. A program with a live upgrade authority can become different code
+    after you read it, which matters more than what it does today.
+    """
+    rpc = Rpc()
+    info = rpc.program_provenance(args.address)
+    print()
+    print("  address     %s" % args.address)
+    print("  cluster     %s" % rpc.host)
+    if not info["exists"]:
+        print()
+        print("  NO ACCOUNT AT THIS ADDRESS on %s." % rpc.host)
+        print("  Nothing is deployed here. A transaction invoking it cannot succeed.")
+        print()
+        return 1
+    known = KNOWN_PROGRAMS.get(args.address)
+    print("  known to me %s" % (known if known else "NO — not on this launch's allowlist"))
+    print("  executable  %s" % ("yes" if info["executable"] else "NO — this is data, not code"))
+    print("  owner       %s" % info["owner"])
+    if info.get("programdata"):
+        print("  programdata %s" % info["programdata"])
+    if info["slot"] is not None:
+        print("  deployed    slot %d" % info["slot"])
+    if info["authority_known"]:
+        if info["authority"] is None:
+            print("  upgradable  no — the authority is revoked and this code is frozen")
+        else:
+            print("  upgradable  YES, by %s" % info["authority"])
+            print("              that key can replace this code after you have read it")
+    print()
+    if known:
+        print("  This is a program the launch needs.")
+        return 0
+    print("  THIS IS NOT ONE OF THE SIX PROGRAMS A LAUNCH USES. Being deployed, being")
+    print("  upgrade-frozen and being busy are not evidence that it is safe — every drainer")
+    print("  on this chain is all three. Read it on an explorer, and if you cannot find out")
+    print("  what it is from a source that is not the thing that handed you the transaction,")
+    print("  do not sign.")
+    print("      https://solscan.io/account/%s" % args.address)
+    print()
+    return 1
+
+
 def cmd_selftest(args):
     n = [0]
     bad = [False]
@@ -1724,8 +1891,14 @@ def cmd_selftest(args):
     return 1 if bad[0] else 0
 
 
-def _structural_only(tx, payer: str, mint: str):
-    """The half of verify_transaction that needs no cluster, so selftest can exercise it."""
+def _structural_only(tx, payer: str, mint: str, rpc=None):
+    """The half of verify_transaction that needs no cluster, so selftest can exercise it.
+
+    `rpc` is optional and is used for one thing: resolving address lookup tables, which is the
+    only part of "what does this transaction touch" that cannot be answered from the bytes.
+    Without it a transaction that uses tables is REFUSED rather than waved through, because
+    the accounts behind them are exactly the ones an attacker would put there.
+    """
     checks = []
 
     def add(cond, name, detail=""):
@@ -1739,12 +1912,38 @@ def _structural_only(tx, payer: str, mint: str):
         "the only signers are your wallet and the new mint",
         "it also wants " + ", ".join(sorted(set(signers) - {payer, mint})))
     add(mint in tx.account_keys, "the mint you generated is in the transaction")
-    add(tx.lookups == 0,
-        "no address-table lookups, so every account it touches is visible here",
-        "%d lookup table(s): accounts this cannot show you" % tx.lookups)
-    unknown = sorted({tx.program_of(i) for i in tx.instructions} - set(KNOWN_PROGRAMS))
+    # A v0 transaction hides most of its accounts behind lookup tables, and the old check
+    # simply refused any. That reads as a security property and is not one: it fires on every
+    # v0 transaction a real builder returns, whatever is in it, so the only thing it can teach
+    # an operator is to stop reading. What matters is whether the hidden accounts can be
+    # SHOWN. They are pulled from the chain here and folded into tx.resolved_keys, so the
+    # program check below sees the whole transaction; only a table that cannot be read is a
+    # refusal, and it says which one and why.
+    if tx.lookups and rpc is None:
+        add(False, "every account behind an address lookup table was resolved and shown",
+            "%d table(s) and no cluster to resolve them against" % tx.lookups)
+    elif tx.lookups:
+        try:
+            pulled = rpc.resolve_lookups(tx)
+            add(True, "every account behind an address lookup table was resolved and shown",
+                "%d table(s), %d account(s) pulled" % (tx.lookups, len(pulled)))
+        except RuntimeError as e:
+            add(False, "every account behind an address lookup table was resolved and shown",
+                str(e))
+    else:
+        add(True, "no address-table lookups, so every account is named in the message itself")
+    progs = {tx.program_of(i) for i in tx.instructions}
+    unresolved = sorted(x for x in progs if x.startswith("("))
+    unknown = sorted(progs - set(KNOWN_PROGRAMS) - set(unresolved))
+    add(not unresolved, "every program it invokes could be named at all",
+        ", ".join(unresolved))
+    # THE ALLOWLIST IS NOT A NUISANCE. A launch invokes six programs and they are all listed;
+    # anything else is a transaction that does something nobody asked for. `program` prints
+    # the provenance of an id this refuses, and the answer to a program you cannot identify
+    # is not to add it here — it is to not sign.
     add(not unknown, "every program it invokes is one this launch needs",
-        "unknown: " + ", ".join(unknown))
+        "unknown: " + ", ".join(unknown) + "\n"
+        "       identify it before signing:  python3 pumpfun.py program " + (unknown[0] if unknown else ""))
     # The wire must carry exactly as many signature slots as the message requires. A mismatch
     # means the bytes that get SENT are not the bytes that were simulated — the message shifts
     # by 64 bytes per missing slot and every check above was performed on a different
@@ -1837,6 +2036,9 @@ def main(argv=None):
     s.add_argument("--minutes", type=int, default=5)
     s.add_argument("--limit", type=int, default=200)
 
+    s = sub.add_parser("program", help="what an unidentified program id is, from the chain")
+    s.add_argument("address")
+    s.set_defaults(fn=cmd_program)
     sub.add_parser("size", help="what a dev buy actually buys").set_defaults(fn=cmd_size)
     sub.add_parser("selftest", help="against published vectors").set_defaults(fn=cmd_selftest)
 
