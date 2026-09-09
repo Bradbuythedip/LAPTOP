@@ -116,8 +116,11 @@ The script refuses to launch without it, and checks the limits that bite:
 **Everything the site shows is the same picture**, generated from that one file: the hero, the
 favicon, the link-preview image. That is not tidiness. A buyer who is being careful compares
 the picture on pump.fun to the picture on the site, and two different bears is exactly the
-signal a copycat produces. If you change the artwork, change it here and regenerate the rest —
-do not change one.
+signal a copycat produces.
+
+To change the artwork, replace `web/token.jpg` and run `python3 tools/art.py --write`. **Do not
+upload over one of the derived images** — that leaves the site and the token showing different
+pictures, and `test/run.sh` will fail on it.
 
 ---
 
