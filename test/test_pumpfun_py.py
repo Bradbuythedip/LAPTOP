@@ -1129,6 +1129,85 @@ ok("extend is append-only, so an index can never come to mean something else",
    P.alt_extend_ix(t1, payer.address, payer.address, [SYS_ADDR])[2][:4]
    == (2).to_bytes(4, "little"))
 
+# ── a transaction that vanishes
+#
+# The first table creation was sent once, paid no priority fee, and was declared dead by a
+# 90-second wall clock. All three are wrong, and the launch path already knew better.
+print("── sending, when the first attempt vanished")
+import base64 as _b64x
+
+
+class SendRpc(P.Rpc):
+    """A cluster that ignores N sends before the transaction sticks."""
+
+    def __init__(self, land_after=1, valid=True, err=None):
+        self.url = "https://fake.invalid"
+        self.sends = 0
+        self.land_after = land_after
+        self.valid = valid
+        self.err = err
+
+    @property
+    def host(self):
+        return "fake.invalid"
+
+    def blockhash(self, commitment="confirmed"):
+        return {"blockhash": SYS_ADDR}
+
+    def blockhash_valid(self, bh, commitment="confirmed"):
+        return self.valid
+
+    def send(self, method, params=None):
+        if method == "sendTransaction":
+            self.sends += 1
+            self.raw = _b64x.b64decode(params[0])
+            return "sig" + "1" * 60
+        if method == "getSignatureStatuses":
+            if self.err:
+                return {"value": [{"err": self.err}]}
+            landed = self.sends >= self.land_after
+            return {"value": [{"confirmationStatus": "confirmed"} if landed else None]}
+        raise AssertionError("unexpected RPC " + method)
+
+
+_ix = (P.SYSTEM_PROGRAM, [P.Account(payer.address, signer=True, writable=True)], b"\x00")
+_r = SendRpc(land_after=1)
+ok("a transaction that lands on the first send is confirmed once",
+   bool(P._send_until_landed(_r, payer, [_ix], "t", 0.0005)) and _r.sends == 1, _r.sends)
+
+# THE FIX THAT MATTERS: it keeps sending. The signature is deterministic, so a resend is the
+# same transaction and the cluster deduplicates it — one of them lands.
+_r = SendRpc(land_after=3)
+P._send_until_landed(_r, payer, [_ix], "t", 0.0005)
+ok("one that is dropped is rebroadcast until it sticks", _r.sends >= 3, _r.sends)
+
+# A wall clock cannot tell "dropped" from "in flight". A dead blockhash can, and it is the
+# only thing that can: while it is valid the transaction may still land.
+_r = SendRpc(land_after=99, valid=False)
+ok("a dead blockhash is what ends the wait, not a timer",
+   _raises(lambda: P._send_until_landed(_r, payer, [_ix], "t", 0.0005), P.LaunchFailed))
+_r = SendRpc(land_after=1, err={"InstructionError": [0, "x"]})
+ok("a transaction that fails ON-CHAIN is reported, never retried",
+   _raises(lambda: P._send_until_landed(_r, payer, [_ix], "t", 0.0005), RuntimeError))
+
+# The priority fee has to be in the BYTES, not merely accepted as an argument.
+_r = SendRpc(land_after=1)
+P._send_until_landed(_r, payer, [_ix], "t", 0.0005)
+_sent = P.Transaction(_r.raw)
+_budget = [i for i in _sent.instructions if _sent.program_of(i) == P.COMPUTE_BUDGET]
+ok("a compute-unit limit is set", any(i["data"][:1] == bytes([2]) for i in _budget))
+ok("and a priority fee is actually paid, because paying nothing is why it was dropped",
+   any(i["data"][:1] == bytes([3]) and int.from_bytes(i["data"][1:9], "little") > 0
+       for i in _budget), [i["data"].hex() for i in _budget])
+_r = SendRpc(land_after=1)
+P._send_until_landed(_r, payer, [_ix], "t", 0.0)
+_s2 = P.Transaction(_r.raw)
+ok("and none is set when none was asked for",
+   not any(i["data"][:1] == bytes([3]) for i in _s2.instructions
+           if _s2.program_of(i) == P.COMPUTE_BUDGET))
+ok("table pays one by default rather than nothing",
+   P.build_parser().parse_args(["table", "--keypair", "k"]).priority_fee > 0)
+
 # ── methods that do not exist
 #
 # `table` shipped calling Keypair.from_file, which is not a method. 243 assertions did not
