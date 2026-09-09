@@ -20,6 +20,17 @@ python3 pumpfun.py --help
 no token, no spend, nothing to undo. Two of those checks are about what the transaction
 actually contains:
 
+**This already happened, on 9 September.** PumpPortal's create+buy addressed the *buy* to
+`FAdo9NCw1ssek6Z6yeWzWjhLVsr8uiCwcWNUnKgzTnHe`. That program is executable, owned by the
+upgradeable loader, and **upgradeable by `83CpBne2ptvfNkWvYyvmN6izKX9sas9nH7MEu6atDFPx`** — a
+key nobody can identify, which can replace the code after you have read it. pump.fun publishes
+three programs and it is none of them.
+
+The transaction is now built **here**, from pump.fun's published IDL, against
+`6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P` directly. Nothing third-party is in the signing
+path, and the message is legacy rather than v0, so every account it touches is in the bytes
+that get signed. `--builder pumpportal` still exists to reproduce the refusal.
+
 **"every program it invokes is one this launch needs"** — a create+buy uses six programs and
 they are all on the allowlist in `pumpfun.py`. Anything else means the builder returned a
 transaction that does something nobody asked for. Find out what the id is before deciding:

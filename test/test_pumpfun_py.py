@@ -730,6 +730,210 @@ ok("the unidentified program from the live launch is not on the allowlist",
    UNK not in P.KNOWN_PROGRAMS)
 ok("the allowlist is still exactly the six programs a launch needs",
    len(P.KNOWN_PROGRAMS) == 6, sorted(P.KNOWN_PROGRAMS))
+ok("and the unidentified id is not on pump.fun's published list either",
+   UNK not in P.PUMP_PUBLISHED, sorted(P.PUMP_PUBLISHED))
+
+# ── what an instruction is ASKING FOR
+#
+# An Anchor instruction opens with sha256("global:<name>")[:8]. The live transaction sends 26
+# bytes to an unidentified program; if those bytes open with pump.fun's own buy discriminator,
+# something is reimplementing pump.fun's interface, and that is the single most useful fact
+# available before signing. These are the published values, not this file's own arithmetic.
+print("── an instruction names what it is asking for")
+ok("pump.fun's buy discriminator is the published one",
+   P.DISCRIMINATORS.get("66063d1201daebea") == "buy")
+ok("and its create discriminator is too",
+   P.DISCRIMINATORS.get("181ec828051c0777") == "create")
+
+wrapped = P.Transaction(build_v0([payer.pub, mint.pub, STRANGER], prog_index=2))
+wrapped.instructions[0]["data"] = bytes.fromhex("66063d1201daebea") + b"\x00" * 18
+shown = wrapped.describe()
+ok("a buy sent to a foreign program is called out by name in the description",
+   "is not pump.fun's" in shown and "buy" in shown, shown)
+
+native = P.Transaction(build_v0([payer.pub, mint.pub, PUMP], prog_index=2))
+native.instructions[0]["data"] = bytes.fromhex("66063d1201daebea") + b"\x00" * 18
+ok("and the same instruction to pump.fun itself is not",
+   "is not pump.fun's" not in native.describe(), native.describe())
+
+def _raises(fn, exc):
+    try:
+        fn()
+    except exc:
+        return True
+    except Exception:
+        return False
+    return False
+
+
+SYS_ADDR = "11111111111111111111111111111111"
+
+# ── building the transaction here instead of asking for one
+#
+# The launch stopped because a third-party builder addressed the BUY to a program pump.fun
+# does not publish. These check the replacement, and the thing they are really checking is the
+# MESSAGE COMPILER: an account's index is what an instruction means, so an ordering bug does
+# not raise, it silently sends a different transaction than the one displayed.
+print("── the transaction is assembled here, against pump.fun's own program")
+
+ok("the global PDA is the address pump.fun publishes",
+   P.find_program_address([b"global"], P.PUMP_PROGRAM)
+   == "4wTV1YmiEkRvAtNtsSGPtUrqRYQMe5SKy2uB4Jjaxnjf")
+ok("the mint-authority PDA is too",
+   P.find_program_address([b"mint-authority"], P.PUMP_PROGRAM)
+   == "TSLvdd1pWpHVjahSpsvCXUbgwsL3JAcvokwaKt1eokM")
+ok("and the event-authority PDA is too",
+   P.find_program_address([b"__event_authority"], P.PUMP_PROGRAM)
+   == "Ce6TQqeHC9p8KetsN6JsjHK7UTZk7nasjjnr7XxXp9F1")
+# A PDA must be OFF the curve — that is the entire guarantee, because a point on the curve may
+# have a private key. A real public key is on it; a derived address is not.
+ok("a real public key is on the curve", P._is_on_curve(payer.pub))
+ok("and a derived address is not",
+   not P._is_on_curve(P.b58decode(P.find_program_address([b"global"], P.PUMP_PROGRAM))))
+ok("a seed longer than 32 bytes is refused rather than truncated",
+   _raises(lambda: P.find_program_address([b"x" * 33], P.PUMP_PROGRAM), ValueError))
+
+GLOBAL = {"address": P.find_program_address([b"global"], P.PUMP_PROGRAM), "initialized": True,
+          "authority": SYS_ADDR, "fee_recipient": "62qc2CNXwrYqQScmEdiZFFAnJR262PxWEuNQtxfafNgV",
+          "initial_virtual_token_reserves": 1_073_000_000_000_000,
+          "initial_virtual_sol_reserves": 30_000_000_000,
+          "initial_real_token_reserves": 793_100_000_000_000,
+          "token_total_supply": 1_000_000_000_000_000, "fee_basis_points": 95}
+
+# x*y=k on the virtual reserves. 0.5 SOL into a 30 SOL curve takes 0.5/30.5 of the virtual
+# token side — the token units cancel, so this is checkable without knowing the supply.
+got = P.curve_buy_amount(500_000_000, GLOBAL)
+want = 1_073_000_000_000_000 * 500_000_000 // 30_500_000_000
+ok("the curve math is the constant product, not an approximation",
+   abs(got - want) <= 1, (got, want))
+ok("it never promises more than the curve actually holds",
+   P.curve_buy_amount(10_000 * 10 ** 9, GLOBAL) == GLOBAL["initial_real_token_reserves"])
+ok("a non-positive buy is refused", _raises(lambda: P.curve_buy_amount(0, GLOBAL), ValueError))
+
+ixs, detail = P.build_create_and_buy_direct(
+    payer.address, mint.address, "Snooze Bear", "SNOOZE", "https://ipfs.io/ipfs/x",
+    500_000_000, 10.0, GLOBAL, 250_000, 100)
+built = P.Transaction(P._shortvec_encode(2) + bytes(64) * 2
+                      + P._compile(payer.address, SYS_ADDR, ixs))
+
+ok("slippage is a ceiling on what it may spend, not a target",
+   detail["max_sol_cost"] == 550_000_000, detail)
+ok("both pump.fun instructions go to pump.fun and nowhere else",
+   [built.program_of(i) for i in built.instructions][2:] [::2]
+   == [P.PUMP_PROGRAM, P.PUMP_PROGRAM],
+   [built.program_of(i) for i in built.instructions])
+ok("the create carries the published create discriminator",
+   built.instructions[2]["data"][:8] == P.DISC_CREATE)
+ok("the buy carries the published buy discriminator",
+   built.instructions[4]["data"][:8] == P.DISC_BUY)
+ok("the name, symbol and uri are borsh strings, length-prefixed",
+   built.instructions[2]["data"][8:12] == (11).to_bytes(4, "little")
+   and built.instructions[2]["data"][12:23] == b"Snooze Bear")
+ok("the creator recorded in create is the payer, which is what makes creator_vault derivable",
+   built.instructions[2]["data"][-32:] == payer.pub)
+ok("it uses no lookup tables, so every account is in the bytes that get signed",
+   built.lookups == 0 and built.version == "legacy")
+
+# THE SEED THAT WAS WRONG. buy's fee_config is a PDA of the FEE program whose second seed is
+# the 32 bytes of the BONDING CURVE program's id. It was first written as an 8-byte hex
+# literal — copied from a debug print that had truncated it — which derived an address that is
+# not pump.fun's fee_config, and the buy failed simulation with Anchor 3012,
+# AccountNotInitialized. A literal cannot be checked by reading it; a decode can.
+FEE_CONFIG = P.find_program_address([b"fee_config", P.b58decode(P.PUMP_PROGRAM)],
+                                    P.PUMP_FEE_PROGRAM)
+ok("fee_config's second seed is the whole 32-byte pump program id",
+   len(P.b58decode(P.PUMP_PROGRAM)) == 32)
+ok("and the buy passes that derived fee_config, not a truncated one",
+   FEE_CONFIG in [a.key for _, accs, _ in ixs for a in accs], FEE_CONFIG)
+ok("which is a different address than the truncated seed produced",
+   FEE_CONFIG != P.find_program_address([b"fee_config", bytes.fromhex("0156e0f693665acf")],
+                                        P.PUMP_FEE_PROGRAM))
+
+# A buy WRITES to the user's volume accumulator and pump.fun does not create it on the way
+# past. A wallet that has never bought does not have one, which is every fresh launch wallet.
+uva = P.find_program_address([b"user_volume_accumulator", P.b58decode(payer.address)],
+                             P.PUMP_PROGRAM)
+with_init, d2 = P.build_create_and_buy_direct(
+    payer.address, mint.address, "Snooze Bear", "SNOOZE", "u", 500_000_000, 10.0, GLOBAL,
+    250_000, 0, True)
+discs = [i[2][:8] for i in with_init]
+ok("a wallet with no volume account gets one created in the same transaction",
+   P.DISC_INIT_USER_VOLUME in discs, [d.hex() for d in discs])
+ok("and the init comes BEFORE the buy that writes to it",
+   discs.index(P.DISC_INIT_USER_VOLUME) < discs.index(P.DISC_BUY))
+ok("the init points at the same accumulator the buy does",
+   with_init[discs.index(P.DISC_INIT_USER_VOLUME)][1][2].key == uva)
+ok("the published discriminator for it is the one used",
+   P.DISC_INIT_USER_VOLUME == bytes([94, 6, 202, 115, 255, 96, 232, 183]))
+# Running it against an account that already exists FAILS, so a wallet that has bought before
+# must not get one. Guessing either way is a failed transaction.
+ok("a wallet that already has one does not get a second init",
+   P.DISC_INIT_USER_VOLUME not in [i[2][:8] for i in ixs])
+ok("and the launch asks the chain rather than assuming",
+   "rpc.account(uva) is None" in SRC)
+
+# THE COMPILER. Every index in every instruction must resolve back to the account the builder
+# asked for, in order, with the flags it asked for. This is the check that an ordering bug
+# cannot survive, and an ordering bug is silent: it signs a different transaction.
+keys = built.account_keys
+nsig = built.num_required_signatures
+nro_signed = built.num_readonly_signed
+nro_unsigned = built.num_readonly_unsigned
+
+
+def _is_signer(k):
+    return k < nsig
+
+
+def _is_writable(k):
+    if k < nsig:
+        return k < nsig - nro_signed
+    return k < len(keys) - nro_unsigned
+
+
+bad = []
+for ix, (prog, accs, data) in zip(built.instructions, ixs):
+    if built.program_of(ix) != prog:
+        bad.append(("program", prog))
+    if [keys[k] for k in ix["accounts"]] != [a.key for a in accs]:
+        bad.append(("order", prog, [keys[k] for k in ix["accounts"]], [a.key for a in accs]))
+    if ix["data"] != data:
+        bad.append(("data", prog))
+ok("every instruction's accounts resolve back, in order, to what was asked for", not bad, bad)
+
+flagbad = []
+for _, accs, _ in ixs:
+    for a in accs:
+        k = keys.index(a.key)
+        if a.signer and not _is_signer(k):
+            flagbad.append(("signer lost", a.key))
+        if a.writable and not _is_writable(k):
+            flagbad.append(("writable lost", a.key))
+ok("no account loses a signer or writable flag in compilation", not flagbad, flagbad)
+ok("the fee payer is first, and is a writable signer",
+   keys[0] == payer.address and _is_signer(0) and _is_writable(0))
+ok("the mint signs, because create makes it", _is_signer(keys.index(mint.address)))
+ok("the program ids themselves are readonly non-signers",
+   not _is_writable(keys.index(P.PUMP_PROGRAM))
+   and not _is_signer(keys.index(P.PUMP_PROGRAM)))
+# The header's counts and the key order have to agree; a message where they disagree is
+# accepted by this parser and rejected by the cluster, after the fee is paid.
+ok("the header's readonly counts do not exceed the keys they describe",
+   nro_signed <= nsig and nsig + nro_unsigned <= len(keys),
+   (nsig, nro_signed, nro_unsigned, len(keys)))
+ok("a transaction with no fee payer among its accounts is refused, not compiled",
+   _raises(lambda: P._compile(other.address, SYS_ADDR, ixs), RuntimeError))
+
+# `direct` is the default, and this asks the PARSER rather than grepping the source — the
+# grep passes on a line that merely mentions the word. If this ever silently flips back, a
+# launch goes through the builder whose transaction could not be identified.
+_parsed = P.build_parser().parse_args(
+    ["launch", "--name", "n", "--symbol", "s", "--image", "i"])
+ok("direct is the default builder", _parsed.builder == "direct", _parsed.builder)
+ok("and pumpportal is still reachable, so the refusal stays reproducible",
+   P.build_parser().parse_args(
+       ["launch", "--name", "n", "--symbol", "s", "--image", "i",
+        "--builder", "pumpportal"]).builder == "pumpportal")
 
 print("── the endpoint is a credential and is treated as one")
 ok("SOLANA_RPC is read from the environment",

@@ -471,10 +471,324 @@ def _shortvec_encode(n: int) -> bytes:
             return bytes(out)
 
 
+# ─────────────────────────────────────────────────────────────── program addresses
+#
+# Building the transaction here rather than asking a service for one. The reason is not
+# ideology: the service's create+buy addressed the BUY to a program that is not pump.fun's,
+# that pump.fun does not publish, that no public source names, and whose code can be replaced
+# at will by a key nobody can identify. There is no way to check that transaction into safety
+# from the outside, so it is not used. Everything below comes from pump.fun's own IDL —
+# https://github.com/pump-fun/pump-public-docs/tree/main/idl — and the discriminators are the
+# published byte arrays, not this file's arithmetic on an instruction name.
+PUMP_PROGRAM = "6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P"
+PUMP_FEE_PROGRAM = "pfeeUxB6jkeY1Hxd7CsFCAjcbHA9rWtchMGdZ6VojVZ"
+MPL_TOKEN_METADATA = "metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s"
+SYSTEM_PROGRAM = "11111111111111111111111111111111"
+TOKEN_PROGRAM = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+ATA_PROGRAM = "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL"
+SYSVAR_RENT = "SysvarRent111111111111111111111111111111111"
+COMPUTE_BUDGET = "ComputeBudget111111111111111111111111111111"
+
+DISC_CREATE = bytes([24, 30, 200, 40, 5, 28, 7, 119])
+DISC_BUY = bytes([102, 6, 61, 18, 1, 218, 235, 234])
+DISC_INIT_USER_VOLUME = bytes([94, 6, 202, 115, 255, 96, 232, 183])
+
+
+def _is_on_curve(pub: bytes) -> bool:
+    """True if these 32 bytes decode to a point on ed25519 — i.e. could be a real public key.
+
+    A program-derived address must NOT be on the curve: that is the whole guarantee, because a
+    point on the curve might have a private key and a PDA must not. Getting this backwards, or
+    skipping it, yields an address the runtime will reject — or worse, one that somebody holds
+    the key to.
+    """
+    y = int.from_bytes(pub, "little")
+    sign = (y >> 255) & 1
+    y &= (1 << 255) - 1
+    if y >= _Q:
+        return False
+    xx = (y * y - 1) * _inv(_D * y * y + 1) % _Q
+    x = pow(xx, (_Q + 3) // 8, _Q)
+    if (x * x - xx) % _Q != 0:
+        x = (x * _I) % _Q
+    if (x * x - xx) % _Q != 0:
+        return False
+    if x == 0 and sign:
+        return False
+    return True
+
+
+def find_program_address(seeds: list[bytes], program_id: str) -> str:
+    """The Solana PDA derivation, bump 255 downwards until the result is off the curve."""
+    for seed in seeds:
+        if len(seed) > 32:
+            raise ValueError("a PDA seed may be at most 32 bytes, got %d" % len(seed))
+    pid = b58decode(program_id)
+    for bump in range(255, -1, -1):
+        h = hashlib.sha256(b"".join(seeds) + bytes([bump]) + pid
+                           + b"ProgramDerivedAddress").digest()
+        if not _is_on_curve(h):
+            return b58encode(h)
+    raise RuntimeError("no off-curve address for these seeds")
+
+
+def ata(owner: str, mint: str, token_program: str = TOKEN_PROGRAM) -> str:
+    """The associated token account: a PDA of the ATA program over owner, program, mint."""
+    return find_program_address(
+        [b58decode(owner), b58decode(token_program), b58decode(mint)], ATA_PROGRAM)
+
+
+# ── borsh, only the four shapes these two instructions use
+def _u64(n: int) -> bytes:
+    if n < 0 or n >= 2 ** 64:
+        raise ValueError("u64 out of range: %d" % n)
+    return int(n).to_bytes(8, "little")
+
+
+def _string(s: str) -> bytes:
+    b = s.encode()
+    return len(b).to_bytes(4, "little") + b
+
+
+def _pubkey(a: str) -> bytes:
+    return b58decode(a)
+
+
+class Account:
+    __slots__ = ("key", "signer", "writable")
+
+    def __init__(self, key: str, signer: bool = False, writable: bool = False):
+        self.key, self.signer, self.writable = key, signer, writable
+
+
+def _compile(payer: str, blockhash: str, instructions: list) -> bytes:
+    """Assemble a LEGACY message. No address lookup tables, so every account is in the bytes.
+
+    A v0 message would be smaller, and smaller is not the point: a legacy message names every
+    account it touches inline, which means `verify_transaction` can read the whole thing with
+    no second round trip and no table that could be swapped between reading and sending.
+
+    Ordering is the runtime's, and it is not cosmetic — an account's index is what the
+    instruction means: writable signers, readonly signers, writable non-signers, readonly
+    non-signers. The header counts readonly signers and readonly non-signers, so getting the
+    order and the counts to disagree signs something other than what was displayed.
+    """
+    merged: dict[str, Account] = {}
+    for prog, accs, _ in instructions:
+        for a in accs:
+            cur = merged.get(a.key)
+            if cur is None:
+                merged[a.key] = Account(a.key, a.signer, a.writable)
+            else:
+                cur.signer = cur.signer or a.signer
+                cur.writable = cur.writable or a.writable
+        merged.setdefault(prog, Account(prog))
+    fee = merged.pop(payer, None)
+    if fee is None:
+        raise RuntimeError("the fee payer is not among the accounts")
+    fee.signer = True
+    fee.writable = True
+    rest = list(merged.values())
+    ws = [a for a in rest if a.signer and a.writable]
+    rs = [a for a in rest if a.signer and not a.writable]
+    wn = [a for a in rest if not a.signer and a.writable]
+    rn = [a for a in rest if not a.signer and not a.writable]
+    keys = [fee] + ws + rs + wn + rn
+    index = {a.key: i for i, a in enumerate(keys)}
+    header = bytes([1 + len(ws) + len(rs), len(rs), len(rn)])
+    body = b"".join(b58decode(a.key) for a in keys)
+    out = [header, _shortvec_encode(len(keys)), body, b58decode(blockhash),
+           _shortvec_encode(len(instructions))]
+    for prog, accs, data in instructions:
+        out.append(bytes([index[prog]]))
+        out.append(_shortvec_encode(len(accs)))
+        out.append(bytes(index[a.key] for a in accs))
+        out.append(_shortvec_encode(len(data)))
+        out.append(data)
+    return b"".join(out)
+
+
+def read_global(rpc) -> dict:
+    """pump.fun's Global account: the fee recipient and the curve's opening reserves.
+
+    Read rather than hardcoded. The opening reserves decide how many tokens a given number of
+    lamports buys, and pump.fun has changed them; a stale constant here would compute an
+    `amount` the curve will not honour, and the buy would fail slippage — or, with slippage
+    wide enough, fill at a price nobody chose.
+    """
+    addr = find_program_address([b"global"], PUMP_PROGRAM)
+    v = rpc.account(addr)
+    if v is None:
+        raise RuntimeError("pump.fun's global account %s is missing on %s" % (addr, rpc.host))
+    raw = base64.b64decode(v["data"][0])
+    if raw[:8] != bytes([167, 232, 232, 177, 200, 108, 114, 127]):
+        raise RuntimeError("the account at %s is not pump.fun's Global" % addr)
+    i = 8
+    initialized = raw[i]; i += 1
+    authority = b58encode(raw[i:i + 32]); i += 32
+    fee_recipient = b58encode(raw[i:i + 32]); i += 32
+
+    def u64():
+        nonlocal i
+        n = int.from_bytes(raw[i:i + 8], "little"); i += 8
+        return n
+
+    return {"address": addr, "initialized": bool(initialized), "authority": authority,
+            "fee_recipient": fee_recipient,
+            "initial_virtual_token_reserves": u64(),
+            "initial_virtual_sol_reserves": u64(),
+            "initial_real_token_reserves": u64(),
+            "token_total_supply": u64(),
+            "fee_basis_points": u64()}
+
+
+def curve_buy_amount(lamports: int, g: dict) -> int:
+    """Tokens a fresh curve gives for `lamports`, by pump.fun's own constant product.
+
+    x*y=k on the VIRTUAL reserves: paying dl lamports moves the product, and the tokens out
+    are the difference in the token reserve. Capped at the real token reserve, because the
+    curve cannot sell tokens it does not hold.
+
+    This is floor division on purpose. Asking for one token more than the curve will give is a
+    failed transaction; asking for one less costs a rounding crumb and lands.
+    """
+    vt = g["initial_virtual_token_reserves"]
+    vs = g["initial_virtual_sol_reserves"]
+    if lamports <= 0 or vt <= 0 or vs <= 0:
+        raise ValueError("a buy needs positive lamports and positive reserves")
+    out = vt - (vt * vs) // (vs + lamports)
+    return min(out, g["initial_real_token_reserves"])
+
+
+def build_create_and_buy_direct(payer: str, mint: str, name: str, symbol: str, uri: str,
+                                lamports: int, slippage_pct: float, g: dict,
+                                compute_limit: int = 250_000,
+                                compute_price_micro: int = 0,
+                                init_user_volume: bool = False) -> tuple[bytes, dict]:
+    """create + buy against pump.fun itself, in one legacy message.
+
+    The creator is the payer, which is what makes the creator_vault PDA derivable here: on a
+    buy the program reads it from the bonding curve, and the bonding curve does not exist yet.
+    Since this transaction is what creates it, the value is known — it is whatever `create`
+    was just told, and `create` is in the same message.
+    """
+    amount = curve_buy_amount(lamports, g)
+    max_sol_cost = int(lamports * (1 + slippage_pct / 100.0))
+
+    bonding_curve = find_program_address([b"bonding-curve", b58decode(mint)], PUMP_PROGRAM)
+    abc = ata(bonding_curve, mint)
+    associated_user = ata(payer, mint)
+    metadata = find_program_address(
+        [b"metadata", b58decode(MPL_TOKEN_METADATA), b58decode(mint)], MPL_TOKEN_METADATA)
+    ixs = []
+    if compute_limit:
+        ixs.append((COMPUTE_BUDGET, [], bytes([2]) + compute_limit.to_bytes(4, "little")))
+    if compute_price_micro:
+        ixs.append((COMPUTE_BUDGET, [], bytes([3]) + _u64(compute_price_micro)))
+
+    ixs.append((PUMP_PROGRAM, [
+        Account(mint, signer=True, writable=True),
+        Account(find_program_address([b"mint-authority"], PUMP_PROGRAM)),
+        Account(bonding_curve, writable=True),
+        Account(abc, writable=True),
+        Account(g["address"]),
+        Account(MPL_TOKEN_METADATA),
+        Account(metadata, writable=True),
+        Account(payer, signer=True, writable=True),
+        Account(SYSTEM_PROGRAM),
+        Account(TOKEN_PROGRAM),
+        Account(ATA_PROGRAM),
+        Account(SYSVAR_RENT),
+        Account(find_program_address([b"__event_authority"], PUMP_PROGRAM)),
+        Account(PUMP_PROGRAM),
+    ], DISC_CREATE + _string(name) + _string(symbol) + _string(uri) + _pubkey(payer)))
+
+    # The ATA the buy credits has to exist. create makes the curve's; this makes the buyer's,
+    # idempotently (instruction 1), so a wallet that somehow already has one is not a failure.
+    ixs.append((ATA_PROGRAM, [
+        Account(payer, signer=True, writable=True),
+        Account(associated_user, writable=True),
+        Account(payer),
+        Account(mint),
+        Account(SYSTEM_PROGRAM),
+        Account(TOKEN_PROGRAM),
+    ], bytes([1])))
+
+    uva = find_program_address([b"user_volume_accumulator", b58decode(payer)], PUMP_PROGRAM)
+    if init_user_volume:
+        # A buy WRITES to this account, and pump.fun does not create it on the way past —
+        # there is a separate instruction for that, and a wallet that has never bought on
+        # pump.fun does not have one. Included only when it is actually missing: running it
+        # against an account that already exists fails, which would break every launch after
+        # the first from the same wallet.
+        ixs.append((PUMP_PROGRAM, [
+            Account(payer, signer=True, writable=True),
+            Account(payer),
+            Account(uva, writable=True),
+            Account(SYSTEM_PROGRAM),
+            Account(find_program_address([b"__event_authority"], PUMP_PROGRAM)),
+            Account(PUMP_PROGRAM),
+        ], DISC_INIT_USER_VOLUME))
+
+    ixs.append((PUMP_PROGRAM, [
+        Account(g["address"]),
+        Account(g["fee_recipient"], writable=True),
+        Account(mint),
+        Account(bonding_curve, writable=True),
+        Account(abc, writable=True),
+        Account(associated_user, writable=True),
+        Account(payer, signer=True, writable=True),
+        Account(SYSTEM_PROGRAM),
+        Account(TOKEN_PROGRAM),
+        Account(find_program_address([b"creator-vault", b58decode(payer)], PUMP_PROGRAM),
+                writable=True),
+        Account(find_program_address([b"__event_authority"], PUMP_PROGRAM)),
+        Account(PUMP_PROGRAM),
+        Account(find_program_address([b"global_volume_accumulator"], PUMP_PROGRAM)),
+        Account(uva, writable=True),
+        # fee_config is a PDA of the FEE program whose second seed is the 32 bytes of the
+        # BONDING CURVE program's id. Written as the decode rather than as a hex literal
+        # because a literal is what went wrong: the IDL's seed was read off a debug print
+        # that truncated it to 8 bytes, the derived address was not pump.fun's fee_config,
+        # and the buy failed simulation with AccountNotInitialized. It cost nothing because
+        # it failed in a dry run, which is the entire reason there is one.
+        Account(find_program_address([b"fee_config", b58decode(PUMP_PROGRAM)],
+                                     PUMP_FEE_PROGRAM)),
+        Account(PUMP_FEE_PROGRAM),
+    ], DISC_BUY + _u64(amount) + _u64(max_sol_cost) + bytes([1, 1])))
+
+    return ixs, {"amount": amount, "max_sol_cost": max_sol_cost,
+                 "bonding_curve": bonding_curve, "associated_user": associated_user,
+                 "metadata": metadata, "user_volume_accumulator": uva,
+                 "init_user_volume": init_user_volume}
+
 # Every program this launch is allowed to invoke. Anything else and the transaction is not the
 # one that was asked for — a transfer to a stranger, a SetAuthority, a delegate — and it is
 # refused with the offending id printed rather than signed and worried about afterwards.
 BPF_UPGRADEABLE_LOADER = "BPFLoaderUpgradeab1e11111111111111111111111"
+
+# pump.fun publishes three programs and no others: the bonding curve, the AMM, and the fee
+# program. They are listed here so a transaction can be told "this is not one of them" with
+# something behind it — https://github.com/pump-fun/pump-public-docs/tree/main/idl.
+PUMP_PUBLISHED = {
+    "6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P": "pump.fun bonding curve (idl/pump.json)",
+    "pfeeUxB6jkeY1Hxd7CsFCAjcbHA9rWtchMGdZ6VojVZ": "pump.fun fees (idl/pump_fees.json)",
+}
+
+# An Anchor instruction begins with sha256("global:<name>")[:8]. Printing that, and naming it
+# when it matches an instruction pump.fun publishes, is how you find out what a foreign program
+# is being asked to DO: a buy discriminator arriving at an address that is not pump.fun's means
+# something is reimplementing pump.fun's interface, which is worth knowing before signing.
+_PUMP_IX = (
+    "buy sell create create_v2 buy_v2 sell_v2 buy_exact_sol_in sell_exact_sol_out "
+    "buy_exact_quote_in_v2 sell_exact_quote_out extend_account migrate migrate_v2 "
+    "initialize set_params withdraw_fees collect_creator_fee collect_creator_fee_v2 "
+    "init_user_volume_accumulator close_user_volume_accumulator claim_cashback "
+    "claim_cashback_v2 claim_token_incentives add_quote_mint remove_quote_mint"
+).split()
+DISCRIMINATORS = {
+    hashlib.sha256(("global:" + n).encode()).digest()[:8].hex(): n for n in _PUMP_IX
+}
 
 KNOWN_PROGRAMS = {
     "6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P": "pump.fun",
@@ -609,6 +923,14 @@ class Transaction:
             out.append("    %d. %-44s %s  (%d accounts, %d bytes)"
                        % (n + 1, p, KNOWN_PROGRAMS.get(p, "UNKNOWN PROGRAM"),
                           len(ix["accounts"]), len(ix["data"])))
+            disc = ix["data"][:8].hex()
+            named = DISCRIMINATORS.get(disc)
+            if named and p not in PUMP_PUBLISHED:
+                out.append('       data %s  — this is pump.fun\'s "%s" instruction,'
+                           % (disc, named))
+                out.append("            being sent to a program that is not pump.fun's")
+            elif named:
+                out.append('       data %s  — "%s"' % (disc, named))
         return "\n".join(out)
 
 
@@ -921,6 +1243,55 @@ def build_create_and_buy(payer: str, mint: str, name: str, symbol: str, uri: str
     return raw
 
 
+def build_launch_tx(rpc, payer: str, mint: str, name: str, symbol: str, uri: str,
+                    sol: float, slippage: float, priority_fee: float,
+                    builder: str = "direct") -> bytes:
+    """Assemble the launch, either here or at PumpPortal. `direct` is the default and why.
+
+    PumpPortal's create+buy addressed the BUY instruction to
+    FAdo9NCw1ssek6Z6yeWzWjhLVsr8uiCwcWNUnKgzTnHe — a program pump.fun does not publish, that
+    no public source names, and whose code an unidentified key can replace at any time. That
+    is not a transaction anybody can check into safety from the outside, so it stopped being
+    the default. `--builder pumpportal` still exists because the allowlist, not this choice,
+    is what refuses a bad transaction — and a refusal you can reproduce is worth more than a
+    code path that was quietly deleted.
+    """
+    if builder == "pumpportal":
+        return build_create_and_buy(payer, mint, name, symbol, uri, sol, slippage,
+                                    priority_fee)
+    if builder != "direct":
+        raise RuntimeError("unknown builder %r" % builder)
+    g = read_global(rpc)
+    if not g["initialized"]:
+        raise RuntimeError("pump.fun's global account reads as uninitialised; refusing")
+    lamports = int(round(sol * LAMPORTS))
+    # A priority fee is quoted in SOL for the whole transaction and paid in micro-lamports per
+    # compute unit, so it has to be divided by the limit that is actually requested — not by a
+    # nominal 200k. Getting this wrong overpays by whatever the two numbers differ by.
+    limit = 250_000
+    micro = int(priority_fee * LAMPORTS * 1_000_000 // limit) if priority_fee else 0
+    # Ask the chain whether this wallet has ever bought on pump.fun, because that decides
+    # whether the transaction needs an extra instruction. A guess in either direction is a
+    # failed transaction: missing it fails the buy, adding it twice fails the init.
+    uva = find_program_address([b"user_volume_accumulator", b58decode(payer)], PUMP_PROGRAM)
+    needs_init = rpc.account(uva) is None
+    ixs, detail = build_create_and_buy_direct(payer, mint, name, symbol, uri, lamports,
+                                              slippage, g, limit, micro, needs_init)
+    bh = rpc.blockhash()["blockhash"]
+    msg = _compile(payer, bh, ixs)
+    print("  built here, against pump.fun's own program — no third-party builder")
+    print("  fee recipient      %s  (read from pump.fun's global account)" % g["fee_recipient"])
+    if needs_init:
+        print("  this wallet has never bought on pump.fun, so its volume account is created")
+        print("  in the same transaction — pump.fun does not create it on the way past")
+    print("  tokens expected    %s" % f"{detail['amount']:,}")
+    print("  most it may spend  %.6f SOL  (%.1f%% slippage)"
+          % (detail["max_sol_cost"] / LAMPORTS, slippage))
+    # An unsigned transaction is still a transaction: empty slots, so Transaction() can parse
+    # it and verify_transaction can read it before any key is involved.
+    return _shortvec_encode(2) + bytes(64) * 2 + msg
+
+
 # ──────────────────────────────────────────────────────────── asking, and what is not asked
 #
 # THE KEY IS NEVER PROMPTED FOR, and that is the one thing this file will not become
@@ -1179,8 +1550,8 @@ def cmd_launch(args):
         write_record(rec_path, record)
 
     print("\n  building create + buy as ONE transaction…")
-    raw = build_create_and_buy(kp.address, mint.address, args.name, args.symbol, uri,
-                               args.dev_buy, args.slippage, args.priority_fee)
+    raw = build_launch_tx(rpc, kp.address, mint.address, args.name, args.symbol, uri,
+                          args.dev_buy, args.slippage, args.priority_fee, args.builder)
     tx = Transaction(raw)
     print(tx.describe())
 
@@ -1450,8 +1821,9 @@ def cmd_resume(args):
             else record.get("priority_fee", 0.0005))
     print("  slippage  %s%%   priority fee %s SOL   (from the record unless overridden)"
           % (slip, prio))
-    raw = build_create_and_buy(kp.address, mint.address, record["name"], record["symbol"],
-                              record["uri"], record["dev_buy_sol"], slip, prio)
+    raw = build_launch_tx(rpc, kp.address, mint.address, record["name"], record["symbol"],
+                          record["uri"], record["dev_buy_sol"], slip, prio,
+                          record.get("builder", "direct"))
     tx = Transaction(raw)
     need = int(record["dev_buy_sol"] * LAMPORTS)
     checks = verify_transaction(tx, kp.address, mint.address, need, rpc)
@@ -1732,6 +2104,10 @@ def cmd_program(args):
     if known:
         print("  This is a program the launch needs.")
         return 0
+    print("  pump.fun publishes three programs and this is not one of them:")
+    for a, what in sorted(PUMP_PUBLISHED.items()):
+        print("      %-44s %s" % (a, what))
+    print()
     print("  THIS IS NOT ONE OF THE SIX PROGRAMS A LAUNCH USES. Being deployed, being")
     print("  upgrade-frozen and being busy are not evidence that it is safe — every drainer")
     print("  on this chain is all three. Read it on an explorer, and if you cannot find out")
@@ -1954,7 +2330,7 @@ def _structural_only(tx, payer: str, mint: str, rpc=None):
     return checks
 
 
-def main(argv=None):
+def build_parser():
     p = argparse.ArgumentParser(
         prog="pumpfun.py",
         description="Create a pump.fun token and take the first slice in ONE transaction.",
@@ -1999,6 +2375,11 @@ def main(argv=None):
     s.add_argument("--yes", action="store_true",
                    help="skip the final confirmation. For a scripted launch; if you are typing "
                         "this by hand you want to read the summary instead")
+    s.add_argument("--builder", choices=["direct", "pumpportal"], default="direct",
+                   help="who assembles the transaction. 'direct' builds it here against "
+                        "pump.fun's own program from their published IDL, so nothing "
+                        "third-party is in the signing path; 'pumpportal' asks their API, "
+                        "which is what routed a buy through an unidentified program")
     s.add_argument("--dry-run", action="store_true",
                    help="build and verify, then STOP. Nothing is signed, nothing is sent, and "
                         "no metadata is published")
@@ -2042,7 +2423,11 @@ def main(argv=None):
     sub.add_parser("size", help="what a dev buy actually buys").set_defaults(fn=cmd_size)
     sub.add_parser("selftest", help="against published vectors").set_defaults(fn=cmd_selftest)
 
-    args = p.parse_args(argv)
+    return p
+
+
+def main(argv=None):
+    args = build_parser().parse_args(argv)
     # @file for the description, so a paragraph does not have to survive shell quoting — and
     # so what gets pinned is a file you can read back and diff, not something retyped.
     d = getattr(args, "description", None)
