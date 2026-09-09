@@ -2276,17 +2276,76 @@ def table_path(keypair_path: str) -> Path:
     return Path(keypair_path).expanduser().resolve().parent / "lookup-table.json"
 
 
+def _send_until_landed(rpc, kp, ixs, label: str, priority_fee: float,
+                       compute_limit: int = 200_000) -> str:
+    """Send, and keep sending the SAME bytes until the chain accepts them or the slot dies.
+
+    Everything here is a fix for a table creation that vanished:
+
+    A transaction with no priority fee is a transaction validators may drop, and this one paid
+    nothing at all while the launch beside it took --priority-fee. Under any load that is not
+    a slow send, it is a send that never lands.
+
+    Sending once and then watching is not how a transaction gets confirmed on Solana. The
+    same signed bytes are rebroadcast every few seconds: the signature is deterministic, so a
+    resend is the same transaction, and the cluster deduplicates it. One of them lands.
+
+    And 90 seconds on a wall clock cannot tell "dropped" from "still in flight". A blockhash
+    is valid for 150 blocks; while it is valid the transaction can still land, and once it is
+    invalid it never can. That is the only honest test, and it is the one the launch path
+    already used — this one had a timer instead.
+    """
+    micro = int(priority_fee * LAMPORTS * 1_000_000 // compute_limit) if priority_fee else 0
+    head = [(COMPUTE_BUDGET, [], bytes([2]) + compute_limit.to_bytes(4, "little"))]
+    if micro:
+        head.append((COMPUTE_BUDGET, [], bytes([3]) + _u64(micro)))
+    bh = rpc.blockhash()["blockhash"]
+    msg = _compile(kp.address, bh, head + ixs)
+    raw = _shortvec_encode(1) + kp.sign(msg) + msg
+    if len(raw) > MAX_TX_BYTES:
+        raise RuntimeError("%s is %d bytes, over the %d-byte limit"
+                           % (label, len(raw), MAX_TX_BYTES))
+    b64 = base64.b64encode(raw).decode()
+    sig = rpc.send("sendTransaction",
+                   [b64, {"encoding": "base64", "skipPreflight": False,
+                          "preflightCommitment": "confirmed", "maxRetries": 0}])
+    print("  %s  %s (%d bytes)" % (label, sig, len(raw)))
+    last = 0.0
+    while True:
+        st = rpc.send("getSignatureStatuses", [[sig]])["value"][0]
+        if st and st.get("err"):
+            raise RuntimeError("%s failed on-chain: %s" % (label, st["err"]))
+        if st and st.get("confirmationStatus") in ("confirmed", "finalized"):
+            return sig
+        if not rpc.blockhash_valid(bh):
+            # Dead beyond recovery: these bytes can never land now, so retrying is safe.
+            raise LaunchFailed(
+                "%s did not land — its blockhash expired, so those bytes can never be\n"
+                "  included now. Nothing happened. Run the same command again." % label)
+        if time.time() - last > 4:
+            rpc.send("sendTransaction",
+                     [b64, {"encoding": "base64", "skipPreflight": True, "maxRetries": 0}])
+            last = time.time()
+        time.sleep(2)
+
+
+def table_path(keypair_path: str) -> Path:
+    return Path(keypair_path).expanduser().resolve().parent / "lookup-table.json"
+
+
 def cmd_table(args):
     """Create the address lookup table this wallet's launches reference.
 
     Needed because a launch does not fit in a legacy transaction any more. With cashback
     enabled a buy carries eight trailing fee recipients, and the whole thing touches 30
-    accounts — 161 bytes past the 1232-byte limit. The fixed accounts move in here; the
-    per-launch ones stay in the message.
+    accounts — past the 1232-byte limit. The fixed accounts move in here; the per-launch ones
+    stay in the message.
 
-    Separate from `launch` on purpose. It costs a transaction and a little rent, it has to
-    happen a slot or more before the launch that uses it, and a launch is not the moment to
-    discover either of those.
+    RESUMABLE, because the first attempt at this stalled. The table's address is written down
+    BEFORE anything is sent, and a re-run reads the chain to see how much of the work is
+    already done: a create that landed after a timeout is not repeated, and extending picks up
+    from however many addresses are actually in the table. Making a second table would only
+    cost rent, but "run it again and hope" is not a thing a launch script should ask for.
     """
     rpc = Rpc()
     kp = Keypair.load(args.keypair)
@@ -2298,74 +2357,84 @@ def cmd_table(args):
     print("  payer     %s" % kp.address)
     print("  cluster   %s" % rpc.host)
     print("  balance   %.6f SOL" % (rpc.balance(kp.address) / LAMPORTS))
-    if dest.exists():
-        old = json.loads(dest.read_text())
+
+    pending = json.loads(dest.read_text()) if dest.exists() else None
+    if pending and pending.get("accounts") != addrs:
+        raise RuntimeError(
+            "%s describes a table over different accounts than this launch needs.\n"
+            "  pump.fun's configuration has changed since it was made. Delete it and run\n"
+            "  this again to build a new one." % dest)
+    if pending and pending.get("complete"):
         print()
-        print("  A table already exists for this wallet: %s" % old["table"])
+        print("  A finished table already exists for this wallet: %s" % pending["table"])
         print("  Tables are append-only and reusable, so a second one is only rent.")
         print("  Delete %s to make another." % dest)
         return 0
 
-    # The slot is a seed of the table's address, so it fixes where the table will be.
-    recent = rpc.slot("finalized")
-    (create_ix, table) = alt_create_ix(kp.address, kp.address, recent)
-    print()
-    print("  table     %s" % table)
-    print("  holding   %d accounts, none of them per-launch" % len(addrs))
-    for a in addrs:
-        print("      %s" % a)
-    if not args.yes:
-        if ask("create it? type CREATE").strip() != "CREATE":
-            print("\n  stopped. Nothing was signed.\n")
-            return 1
+    if pending:
+        table, recent = pending["table"], pending["slot"]
+        print()
+        print("  resuming the table started earlier: %s" % table)
+    else:
+        # The slot is a seed of the address, so it fixes where the table will be before
+        # anything is sent — which is what makes this resumable at all.
+        recent = rpc.slot("finalized")
+        _, table = alt_create_ix(kp.address, kp.address, recent)
+        print()
+        print("  table     %s" % table)
+        print("  holding   %d accounts, none of them per-launch" % len(addrs))
+        for a in addrs:
+            print("      %s" % a)
+        if not args.yes:
+            if ask("create it? type CREATE").strip() != "CREATE":
+                print("\n  stopped. Nothing was signed.\n")
+                return 1
+        dest.write_text(json.dumps({"table": table, "authority": kp.address,
+                                    "accounts": addrs, "slot": recent,
+                                    "complete": False}, indent=2))
+        dest.chmod(0o600)
 
-    # One transaction creates it; the extends follow in chunks, because 22 addresses plus the
-    # message overhead is close enough to the size limit that a single extend is not worth
-    # the risk of it being the thing that fails.
-    chunks = [addrs[i:i + 12] for i in range(0, len(addrs), 12)]
-    steps = [("creating", [create_ix, alt_extend_ix(table, kp.address, kp.address, chunks[0])])]
-    for c in chunks[1:]:
-        steps.append(("extending", [alt_extend_ix(table, kp.address, kp.address, c)]))
+    # How much of this is already done, according to the chain rather than to a local guess.
+    try:
+        have = rpc.lookup_table(table)
+    except RuntimeError:
+        have = None
+    if have is None:
+        create_ix, _ = alt_create_ix(kp.address, kp.address, recent)
+        print("\n  creating the table…")
+        _send_until_landed(rpc, kp, [create_ix], "create", args.priority_fee)
+        have = []
+    elif have:
+        print("\n  %d of %d addresses are already in it" % (len(have), len(addrs)))
+    if have != addrs[:len(have)]:
+        raise RuntimeError(
+            "the table at %s holds addresses this did not put there. Refusing to extend it."
+            % table)
 
-    for what, ixs in steps:
-        bh = rpc.blockhash()["blockhash"]
-        msg = _compile(kp.address, bh, ixs)
-        raw = _shortvec_encode(1) + kp.sign(msg) + msg
-        print("\n  %s… (%d bytes)" % (what, len(raw)))
-        sig = rpc.send("sendTransaction",
-                       [base64.b64encode(raw).decode(),
-                        {"encoding": "base64", "preflightCommitment": "confirmed"}])
-        print("  %s" % sig)
-        deadline = time.time() + 90
-        while time.time() < deadline:
-            st = rpc.send("getSignatureStatuses", [[sig]])["value"][0]
-            if st and st.get("err"):
-                raise RuntimeError("%s failed: %s" % (what, st["err"]))
-            if st and st.get("confirmationStatus") in ("confirmed", "finalized"):
-                break
-            time.sleep(2)
-        else:
-            raise RuntimeError("%s did not confirm in 90s; check %s before retrying"
-                               % (what, sig))
+    # Twelve at a time: 22 addresses plus the message overhead is close enough to the size
+    # limit that one extend is not worth being the thing that fails.
+    while len(have) < len(addrs):
+        chunk = addrs[len(have):len(have) + 12]
+        print("\n  adding %d addresses (%d of %d done)…"
+              % (len(chunk), len(have), len(addrs)))
+        _send_until_landed(rpc, kp, [alt_extend_ix(table, kp.address, kp.address, chunk)],
+                           "extend", args.priority_fee)
+        have = rpc.lookup_table(table)
 
-    dest.write_text(json.dumps({"table": table, "authority": kp.address,
-                                "accounts": addrs, "slot": recent}, indent=2))
-    dest.chmod(0o600)
-    print()
-    print("  written   %s" % dest)
-    # A table cannot be used in the slot it was extended in. Waiting here means the next
-    # command works, rather than failing with something that reads like a bug.
-    print("  waiting for the table to become usable (one slot)…")
+    if have != addrs:
+        raise RuntimeError("the table's contents are not what was sent")
+    # A table cannot be used in the slot it was extended in. Waiting means the next command
+    # works, rather than failing with something that reads like a bug.
+    print("\n  waiting for the table to become usable (one slot)…")
     start = rpc.slot("confirmed")
     while rpc.slot("confirmed") <= start + 1:
         time.sleep(1)
-    on = rpc.lookup_table(table)
-    if len(on) != len(addrs):
-        raise RuntimeError("the table holds %d addresses and should hold %d"
-                           % (len(on), len(addrs)))
-    if on != addrs:
-        raise RuntimeError("the table's contents are not what was sent")
-    print("  verified  %d addresses, read back from the chain and identical" % len(on))
+    dest.write_text(json.dumps({"table": table, "authority": kp.address,
+                                "accounts": addrs, "slot": recent,
+                                "complete": True}, indent=2))
+    dest.chmod(0o600)
+    print("  verified  %d addresses, read back from the chain and identical" % len(have))
+    print("  written   %s" % dest)
     print()
     print("  launch will use it automatically.")
     print()
@@ -2726,6 +2795,9 @@ def build_parser():
 
     s = sub.add_parser("table", help="create the lookup table a launch needs to fit")
     s.add_argument("--keypair", required=True)
+    s.add_argument("--priority-fee", type=float, default=0.0005,
+                   help="SOL. A table transaction that pays nothing is one validators may "
+                        "drop, which is exactly what happened the first time")
     s.add_argument("--yes", action="store_true")
     s.set_defaults(fn=cmd_table)
     s = sub.add_parser("program", help="what an unidentified program id is, from the chain")
