@@ -476,6 +476,29 @@ def _shortvec_encode(n: int) -> bytes:
 # refused with the offending id printed rather than signed and worried about afterwards.
 BPF_UPGRADEABLE_LOADER = "BPFLoaderUpgradeab1e11111111111111111111111"
 
+# pump.fun publishes three programs and no others: the bonding curve, the AMM, and the fee
+# program. They are listed here so a transaction can be told "this is not one of them" with
+# something behind it — https://github.com/pump-fun/pump-public-docs/tree/main/idl.
+PUMP_PUBLISHED = {
+    "6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P": "pump.fun bonding curve (idl/pump.json)",
+    "pfeeUxB6jkeY1Hxd7CsFCAjcbHA9rWtchMGdZ6VojVZ": "pump.fun fees (idl/pump_fees.json)",
+}
+
+# An Anchor instruction begins with sha256("global:<name>")[:8]. Printing that, and naming it
+# when it matches an instruction pump.fun publishes, is how you find out what a foreign program
+# is being asked to DO: a buy discriminator arriving at an address that is not pump.fun's means
+# something is reimplementing pump.fun's interface, which is worth knowing before signing.
+_PUMP_IX = (
+    "buy sell create create_v2 buy_v2 sell_v2 buy_exact_sol_in sell_exact_sol_out "
+    "buy_exact_quote_in_v2 sell_exact_quote_out extend_account migrate migrate_v2 "
+    "initialize set_params withdraw_fees collect_creator_fee collect_creator_fee_v2 "
+    "init_user_volume_accumulator close_user_volume_accumulator claim_cashback "
+    "claim_cashback_v2 claim_token_incentives add_quote_mint remove_quote_mint"
+).split()
+DISCRIMINATORS = {
+    hashlib.sha256(("global:" + n).encode()).digest()[:8].hex(): n for n in _PUMP_IX
+}
+
 KNOWN_PROGRAMS = {
     "6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P": "pump.fun",
     "11111111111111111111111111111111": "system",
@@ -609,6 +632,14 @@ class Transaction:
             out.append("    %d. %-44s %s  (%d accounts, %d bytes)"
                        % (n + 1, p, KNOWN_PROGRAMS.get(p, "UNKNOWN PROGRAM"),
                           len(ix["accounts"]), len(ix["data"])))
+            disc = ix["data"][:8].hex()
+            named = DISCRIMINATORS.get(disc)
+            if named and p not in PUMP_PUBLISHED:
+                out.append('       data %s  — this is pump.fun\'s "%s" instruction,'
+                           % (disc, named))
+                out.append("            being sent to a program that is not pump.fun's")
+            elif named:
+                out.append('       data %s  — "%s"' % (disc, named))
         return "\n".join(out)
 
 
@@ -1732,6 +1763,10 @@ def cmd_program(args):
     if known:
         print("  This is a program the launch needs.")
         return 0
+    print("  pump.fun publishes three programs and this is not one of them:")
+    for a, what in sorted(PUMP_PUBLISHED.items()):
+        print("      %-44s %s" % (a, what))
+    print()
     print("  THIS IS NOT ONE OF THE SIX PROGRAMS A LAUNCH USES. Being deployed, being")
     print("  upgrade-frozen and being busy are not evidence that it is safe — every drainer")
     print("  on this chain is all three. Read it on an explorer, and if you cannot find out")

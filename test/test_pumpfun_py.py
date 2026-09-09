@@ -730,6 +730,31 @@ ok("the unidentified program from the live launch is not on the allowlist",
    UNK not in P.KNOWN_PROGRAMS)
 ok("the allowlist is still exactly the six programs a launch needs",
    len(P.KNOWN_PROGRAMS) == 6, sorted(P.KNOWN_PROGRAMS))
+ok("and the unidentified id is not on pump.fun's published list either",
+   UNK not in P.PUMP_PUBLISHED, sorted(P.PUMP_PUBLISHED))
+
+# ── what an instruction is ASKING FOR
+#
+# An Anchor instruction opens with sha256("global:<name>")[:8]. The live transaction sends 26
+# bytes to an unidentified program; if those bytes open with pump.fun's own buy discriminator,
+# something is reimplementing pump.fun's interface, and that is the single most useful fact
+# available before signing. These are the published values, not this file's own arithmetic.
+print("── an instruction names what it is asking for")
+ok("pump.fun's buy discriminator is the published one",
+   P.DISCRIMINATORS.get("66063d1201daebea") == "buy")
+ok("and its create discriminator is too",
+   P.DISCRIMINATORS.get("181ec828051c0777") == "create")
+
+wrapped = P.Transaction(build_v0([payer.pub, mint.pub, STRANGER], prog_index=2))
+wrapped.instructions[0]["data"] = bytes.fromhex("66063d1201daebea") + b"\x00" * 18
+shown = wrapped.describe()
+ok("a buy sent to a foreign program is called out by name in the description",
+   "is not pump.fun's" in shown and "buy" in shown, shown)
+
+native = P.Transaction(build_v0([payer.pub, mint.pub, PUMP], prog_index=2))
+native.instructions[0]["data"] = bytes.fromhex("66063d1201daebea") + b"\x00" * 18
+ok("and the same instruction to pump.fun itself is not",
+   "is not pump.fun's" not in native.describe(), native.describe())
 
 print("── the endpoint is a credential and is treated as one")
 ok("SOLANA_RPC is read from the environment",
