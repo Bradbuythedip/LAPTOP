@@ -1,4 +1,4 @@
-// The six steps, as data rather than as prose in a runbook.
+// The seven steps, as data rather than as prose in a runbook.
 //
 // EACH STEP IS FOUR THINGS and no more: the transactions it sends, what about it can never be
 // undone, what has to be true before it can be built at all, and what reading it back looks
@@ -47,7 +47,17 @@ export const view = (sig, args = "") => ({ sig, data: selector(sig) + args });
 
 const ORACLE_VIEWS = ["ready()", "spot()", "twap24()"];
 
-export const STEP_IDS = ["oracle", "deployer", "token", "salt", "curve", "lock"];
+// SEVEN, AND THE SIXTH IS NEW. Rule 3's reward token is its own step rather than a seventh
+// transaction inside step 5, and that is the state model rather than taste: record.mjs learns
+// an address from a receipt and writes it to THE STEP's readBack, so two creations in one step
+// means the second overwrites the first — and the first is the curve, which is the address
+// buyers paste. A step per creation is what the rest of this file already assumes.
+//
+// It also has to be its own decision. setDream can be called ONCE and is then permanent, and
+// skipping it is a real choice with a real consequence: Rule 3 keeps accruing on chain and
+// nobody can ever mint against it. That belongs on its own page with its own confirmation,
+// not appended to the end of the longest step in the sequence.
+export const STEP_IDS = ["oracle", "deployer", "token", "salt", "curve", "dream", "lock"];
 export const STEP_NUMBER = Object.fromEntries(STEP_IDS.map((id, i) => [id, i + 1]));
 
 /* ------------------------------------------------------------------ constructor arguments */
@@ -130,6 +140,7 @@ export function buildSteps({ cfg, artifacts, state }) {
   const tokenAddress = readBack("token").address || null;
   const saltRecord = readBack("salt");
   const curveAddress = readBack("curve").address || null;
+  const dreamAddress = readBack("dream").address || null;
   const pairAddress = readBack("curve").pair || null;
 
   const need = (id, why) => isVerified(state, id) ? null
@@ -709,9 +720,90 @@ export function buildSteps({ cfg, artifacts, state }) {
       },
     },
 
-    /* ------------------------------------------------------------- 6. give up the keys */
+    /* ------------------------------------------------------------ 6. the reward token */
     {
-      n: 6, id: "lock",
+      n: 6, id: "dream",
+      title: "SnoozeDream, and naming it on the token",
+      what: "Two transactions. Deploy the reward token Rule 3 pays out in, then tell the " +
+            "token about it — once, because setDream can never be repointed.",
+      txs: [
+        {
+          key: "deploy",
+          label: "Deploy SnoozeDream",
+          build: () => ({
+            to: null,
+            data: artifacts.contracts.SnoozeDream.initCode + addressWord(tokenAddress),
+            value: "0x0",
+            from: cfg.owner,
+            about: `SnoozeDream(${tokenAddress}) — a plain CREATE from your own wallet. The ` +
+                   "constructor takes the minter and nothing else, and it is immutable: this " +
+                   "contract has no admin, no cap and no second way to create a token.",
+          }),
+          blocked: () => need("token", "the reward token's only constructor argument is the " +
+                              "token that mints through it"),
+        },
+        {
+          key: "set",
+          label: "setDream() on the token",
+          build: () => ({
+            to: tokenAddress,
+            data: selector("setDream(address)") + addressWord(dreamAddress),
+            value: "0x0",
+            from: cfg.owner,
+            about: `setDream(${dreamAddress}) — ONCE. A second call reverts AlreadySet(), and ` +
+                   "after freeze() it reverts Frozen(). There is no call that changes it.",
+          }),
+          blocked: () => dreamAddress ? null
+            : "SnoozeDream is not deployed yet — send and record 6.deploy first",
+        },
+      ],
+      irreversible: [
+        "setDream is a ONE-WAY DOOR and there is no repointing. A settable mint target is an " +
+        "unlimited supply of the token holders are being asked to wait for, held by whoever " +
+        "holds the admin key — so it is set once and then it is a fact.",
+        "SKIPPING THIS STEP IS ALSO PERMANENT, once step 7 freezes the token. Rule 3 keeps " +
+        "accruing — dreamOwed goes up for every holder, streakSeconds keeps counting — and " +
+        "claimDream() reverts DreamNotSet() for everybody, forever. That is a legitimate " +
+        "choice and it is not a recoverable one.",
+        "The reward token has no supply cap. After the 90-day ramp the rate is flat rather " +
+        "than zero, so emission continues for as long as anybody holds. Decide whether the " +
+        "site says that before it says anything else about DREAM.",
+      ],
+      confirm: "setDream can never be repointed and skipping it cannot be undone after freeze",
+      blocked: () => need("curve", "the reward token is the last thing wired before the " +
+                          "token is frozen, and the curve has to be registered first"),
+      verify: {
+        target: () => dreamAddress,
+        calls: [view("symbol()"), view("decimals()"), view("minter()"), view("totalSupply()")],
+        extraCalls: () => tokenAddress ? [
+          { sig: "token.dream()", to: tokenAddress, data: selector("dream()") },
+          { sig: "token.RAMP()", to: tokenAddress, data: selector("RAMP()") },
+        ] : [],
+        check: (results) => {
+          const c = checks();
+          c.str(results, "symbol()", cfg.dream ? cfg.dream.symbol : "DREAM");
+          // NINE, matching Snooze, and it is the whole "one for one" claim. At different
+          // decimals the headline is off by a factor of a billion in one direction or the
+          // other and every screenshot of it is wrong.
+          c.num(results, "decimals()", 9,
+                "decimals() is 9, the same as SNOOZE — which is what makes one-for-one a count");
+          c.addr(results, "minter()", tokenAddress,
+                 "minter() is the SNOOZE token, and nothing else can ever mint");
+          c.num(results, "totalSupply()", 0,
+                "totalSupply() is 0 — nobody has served the time yet");
+          c.addr(results, "token.dream()", dreamAddress,
+                 "the token names THIS contract as its reward token");
+          c.num(results, "token.RAMP()", 7776000,
+                "RAMP() is 7,776,000 seconds (90 days), which is where one-for-one lands");
+          return c.out;
+        },
+        record: (_r, { address }) => ({ address }),
+      },
+    },
+
+    /* ------------------------------------------------------------- 7. give up the keys */
+    {
+      n: 7, id: "lock",
       title: "Freeze the token, seal the deployer",
       what: "Two one-way doors. After these there is no address on this launch that can " +
             "change a pool, an exemption, or deploy anything else — including yours.",
@@ -727,6 +819,12 @@ export function buildSteps({ cfg, artifacts, state }) {
           }),
           blocked: () => need("curve", "freezing before the curve is registered leaves a token " +
                              "with no pool and therefore no rules, permanently"),
+          // Not `blocked`, because launching without the reward token is allowed. It is a
+          // warning because it is the last moment the choice exists, and after this the
+          // consequence is silent: accrual keeps running and nothing can ever pay it out.
+          warn: () => isVerified(state, "dream") ? null
+            : "step 6 (dream) is not verified. freeze() makes that permanent: Rule 3 keeps " +
+              "accruing for every holder and claimDream() reverts DreamNotSet() forever.",
         },
         {
           key: "seal",
@@ -772,7 +870,7 @@ export function buildSteps({ cfg, artifacts, state }) {
   ];
 }
 
-/// What the six steps do NOT cover. Printed at the end of `plan.mjs` and shown on the page,
+/// What the seven steps do NOT cover. Printed at the end of `plan.mjs` and shown on the page,
 /// because a sequence that ends green while the launch is still half-done is a worse lie than
 /// one that fails.
 export const AFTER_THE_SEQUENCE = [

@@ -94,9 +94,17 @@ export async function call(ctx, sig, args = [], opts = {}) {
   });
   const raw = bytesToHex(r.execResult.returnValue);
   const gasUsed = r.execResult.executionGasUsed;
+  // Logs as hex, because an event is sometimes the only observable a contract offers: Rule 3's
+  // WokeUp is the whole public record that a streak was broken, and nothing else on chain
+  // distinguishes a wallet that never held from one that held for a year and sent a wei out.
+  const logs = (r.execResult.logs || []).map(([address, topics, data]) => ({
+    address: bytesToHex(address),
+    topics: topics.map(bytesToHex),
+    data: bytesToHex(data),
+  }));
   if (r.execResult.exceptionError)
-    return { ok: false, revert: r.execResult.exceptionError.error, raw, words: [], gasUsed };
-  return { ok: true, raw, words: decodeWords(raw), gasUsed };
+    return { ok: false, revert: r.execResult.exceptionError.error, raw, words: [], logs, gasUsed };
+  return { ok: true, raw, words: decodeWords(raw), logs, gasUsed };
 }
 
 /// Give an address a balance, so a depositor can actually send ETH.

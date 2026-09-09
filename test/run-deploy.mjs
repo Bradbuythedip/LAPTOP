@@ -921,6 +921,57 @@ let CURVE, PAIR;
   markVerified(state, "curve", { address: CURVE, pair: PAIR });
 }
 
+/* ─────────────────────────────────────────────────────── step 6: the reward token ──────── */
+console.log("── step 6, sent: the reward token, and the one-way door that names it");
+let DREAM = null;
+{
+  // Sent as the STEP's own bytes rather than as a hand-rolled deployment, so a wrong
+  // constructor encoding fails here instead of on Base.
+  const step = stepsNow().find(x => x.id === "dream");
+  const built = step.txs.find(t => t.key === "deploy").build();
+  ok("6.deploy is a contract creation, not a call", built.to === null);
+  const d = await deploy(ABI.strip(built.data), "", { evm, from: OWNER });
+  DREAM = d.address.toString();
+  ok("SnoozeDream deploys", !!DREAM);
+  const rdd = async (to, sig, arg = "") =>
+    (await raw(to, ABI.selector(sig) + arg, OWNER, 0n, 3500)).raw;
+  ok("its minter is the token and nothing else",
+     ABI.sameAddress(ABI.readAddress(await rdd(DREAM, "minter()")), TOKEN));
+  ok("it has nine decimals, matching SNOOZE — which is what makes one-for-one a COUNT",
+     ABI.readUint(await rdd(DREAM, "decimals()")) === 9n
+     && ABI.readUint(await rdd(DREAM, "decimals()"))
+        === ABI.readUint(await rdd(TOKEN, "decimals()")));
+  ok("and no supply until somebody serves the time",
+     ABI.readUint(await rdd(DREAM, "totalSupply()")) === 0n);
+
+  const stolen = await raw(DREAM, ABI.selector("mint(address,uint256)") + w(BUYER) + w(10n ** 9n),
+                           BUYER, 0n, 3500);
+  ok("a stranger cannot mint DREAM", !stolen.ok);
+  ok("neither can the owner", !(await raw(DREAM,
+     ABI.selector("mint(address,uint256)") + w(OWNER) + w(10n ** 9n), OWNER, 0n, 3500)).ok);
+
+  state.steps.dream = { status: "sent", readBack: { address: DREAM } };
+  const setTx = stepsNow().find(x => x.id === "dream").txs.find(t => t.key === "set").build();
+  ok("6.set targets the token", ABI.sameAddress(setTx.to, TOKEN));
+  const set = await raw(TOKEN, ABI.strip(setTx.data), OWNER, 0n, 3500);
+  ok("setDream lands", set.ok, set.err);
+  ok("the token now names it", ABI.sameAddress(
+     ABI.readAddress(await rdd(TOKEN, "dream()")), DREAM));
+  // ONCE. The property the whole reward rests on: an admin who can repoint the mint target
+  // has an unlimited supply of the token holders are being asked to wait for.
+  const again = await raw(TOKEN, ABI.selector("setDream(address)") + w(BUYER), OWNER, 0n, 3500);
+  ok("and it can never be repointed, not even by the admin", !again.ok);
+
+  const v = await runStepCheck(stepsNow().find(x => x.id === "dream"), DREAM);
+  ok(`step 6's own verify block passes on the real reward token (${v.list.length} checks)`,
+     v.list.every(c => c.ok), v.list.filter(c => !c.ok).map(c => c.name + " " + c.detail).join("; "));
+  const pv = await runPageCheck("dream", { token: TOKEN, dream: DREAM, curve: CURVE });
+  ok(`and so does the page's (${pv.list.length} checks)`,
+     pv.list.length > 0 && pv.list.every(c => c.ok),
+     pv.list.filter(c => !c.ok).map(c => c.name + " " + c.why).join("; "));
+  markVerified(state, "dream", { address: DREAM });
+}
+
 /* ---- and a buyer who arrives before you get round to verifying ---- */
 console.log("── somebody trades between funding the curve and reading it back");
 {
@@ -1185,12 +1236,12 @@ console.log("── the page's encoder against the scripts', on this launch's re
     vanity: cfg.vanity,
   };
   const st = { oracle: ORACLE, deployer: DEPLOYER, token: TOKEN, salt: SALT, curve: CURVE,
-               pair: PAIR };
+               pair: PAIR, dream: DREAM };
   const steps = buildSteps({ cfg, artifacts: ART, state });
   const pairs = [];
   for (const step of steps)
     for (const tx of step.txs) pairs.push([`${step.n}.${tx.key}`, step, tx]);
-  ok("every transaction the scripts define has a twin on the page", pairs.length === 10,
+  ok("every transaction the scripts define has a twin on the page", pairs.length === 12,
      String(pairs.length));
 
   // THE GAP THAT LET A LIVE LAUNCH STALL. The twin check below passes `st` built HERE, so it
@@ -1235,7 +1286,7 @@ console.log("── the page's encoder against the scripts', on this launch's re
   ok("a verified step's send buttons are disabled, so an irreversible deploy cannot repeat",
      /\|\| done;/.test(R("deploy/deploy.html")));
   ok("the page's check layer is a block a test can run outside a browser", !!PAGECHECKS);
-  ok("and it builds the same six steps", !!PAGECHECKS && PAGECHECKS.STEPS().length === 6);
+  ok("and it builds the same seven steps", !!PAGECHECKS && PAGECHECKS.STEPS().length === 7);
   if (PAGECHECKS) {
     // The page's oracle guard, against the one contract it exists to refuse.
     const mockRt = "0x" + compile(["contracts/test/SnoozeMocks.sol"]).all

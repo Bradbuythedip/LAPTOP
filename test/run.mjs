@@ -492,7 +492,7 @@ console.log("── borders you can touch, and a focus state you can see");
 // chance for a reader to confuse two things, and both are out.
 console.log("── one token, and only one");
 const pages = ["index.html", "buy.html", "checker.html", "size.html", "route.html",
-               "order.html", "slot.html", "launch.html", "snooze.html"];
+               "order.html", "slot.html", "launch.html", "snooze.html", "dream.html"];
 for (const f of pages) {
   const t = fs.readFileSync(path.join(ROOT, "web", f), "utf8");
   ok(`${f} never mentions $TWD`, !/\$TWD|%24TWD/.test(t));
@@ -619,7 +619,12 @@ console.log("── the README's test inventory adds up");
        `README says ${head[1]}, its own list adds to ${sum}`);
     const WORDS = { fourteen: 14, fifteen: 15, sixteen: 16, seventeen: 17, eighteen: 18,
                     nineteen: 19, twenty: 20, "twenty-one": 21, "twenty-two": 22,
-                    "twenty-three": 23, "twenty-four": 24, "twenty-five": 25 };
+                    "twenty-three": 23, "twenty-four": 24, "twenty-five": 25,
+                    // Extended past the count of the day, because the check that FIRED on the
+                    // twenty-sixth suite was this map running out — which reads as "the
+                    // README is wrong" when the README was right and the test was short.
+                    "twenty-six": 26, "twenty-seven": 27, "twenty-eight": 28,
+                    "twenty-nine": 29, thirty: 30, "thirty-one": 31, "thirty-two": 32 };
     ok("the headline suite count matches how many suites there are",
        WORDS[head[2]] === onDisk.length,
        `README says ${head[2]} (${WORDS[head[2]]}), there are ${onDisk.length}`);
