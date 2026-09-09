@@ -719,6 +719,41 @@ def _post_multipart(url: str, fields: dict, files: dict) -> dict:
         return json.loads(r.read())
 
 
+# Metaplex's on-chain metadata struct, which pump.fun's create writes into. These are the
+# real ceilings and they are measured in BYTES, not characters — an emoji is four. Over them
+# the field is truncated or the instruction fails, and either way it is permanent.
+MAX_NAME_BYTES = 32
+MAX_SYMBOL_BYTES = 10
+
+
+def check_metadata(name: str, symbol: str, description: str, website: str) -> list[str]:
+    """What is wrong with the metadata, before a byte of it is pinned.
+
+    EVERY ONE OF THESE IS PERMANENT. The URI is written into the mint's metadata account by
+    the create instruction and the creator cannot edit it afterwards — so a blank description,
+    a truncated symbol or a missing website is not a thing to fix later. There is no later.
+    """
+    bad = []
+    n, y = len(name.encode()), len(symbol.encode())
+    if not name.strip():
+        bad.append("the name is empty")
+    elif n > MAX_NAME_BYTES:
+        bad.append("the name is %d bytes and Metaplex allows %d — it would be truncated on "
+                   "chain, permanently (emoji are 4 bytes each)" % (n, MAX_NAME_BYTES))
+    if not symbol.strip():
+        bad.append("the symbol is empty")
+    elif y > MAX_SYMBOL_BYTES:
+        bad.append("the symbol is %d bytes and Metaplex allows %d — it would be truncated on "
+                   "chain, permanently" % (y, MAX_SYMBOL_BYTES))
+    if not description.strip():
+        bad.append("the description is empty. It is the coin page's whole body, it cannot be "
+                   "edited after the create, and a blank one reads as a bot launch")
+    if not website.strip():
+        bad.append("there is no --website. It is the only field that points back at a page you "
+                   "control, which is what makes a copycat's token distinguishable from yours")
+    return bad
+
+
 def upload_metadata(name: str, symbol: str, description: str, image: str,
                     twitter="", telegram="", website="") -> str:
     """Put the name, ticker and picture on IPFS and return the URI the mint will carry.
@@ -872,6 +907,13 @@ def cmd_launch(args):
     # FileNotFoundError from inside upload_metadata — after the mint was ground, which can be
     # minutes. And --dry-run never opened it at all, so the rehearsal passed and the real run
     # failed on the same typo.
+    # BEFORE the grind and before the upload, because all of it is permanent.
+    problems = check_metadata(args.name, args.symbol, args.description, args.website)
+    if problems:
+        raise RuntimeError(
+            "the metadata is not launch-ready, and it CANNOT BE EDITED after the create:\n"
+            + "\n".join("      · " + p for p in problems))
+
     img = Path(args.image).expanduser()
     if not img.is_file():
         raise RuntimeError("no image at %s — the launch needs one and pins it permanently" % img)
@@ -928,6 +970,18 @@ def cmd_launch(args):
         print("\n  --dry-run: NOT uploading metadata. Using a placeholder URI, because the")
         print("  upload is permanent and public and a rehearsal must not publish the launch.")
     else:
+        print("\n  THIS IS PERMANENT. The mint carries this URI forever and you cannot edit it:")
+        print("    name        %s  (%d/%d bytes)"
+              % (args.name, len(args.name.encode()), MAX_NAME_BYTES))
+        print("    symbol      %s  (%d/%d bytes)"
+              % (args.symbol, len(args.symbol.encode()), MAX_SYMBOL_BYTES))
+        print("    website     %s" % args.website)
+        print("    twitter     %s" % (args.twitter or "(none)"))
+        print("    telegram    %s" % (args.telegram or "(none)"))
+        print("    image       %s (%s bytes)" % (img, f"{img.stat().st_size:,}"))
+        print("    description")
+        for line in args.description.splitlines() or [""]:
+            print("      | %s" % line)
         print("\n  uploading metadata…")
         uri = upload_metadata(args.name, args.symbol, args.description, args.image,
                               args.twitter, args.telegram, args.website)
@@ -1609,7 +1663,9 @@ def main(argv=None):
     s.add_argument("--name", required=True)
     s.add_argument("--symbol", required=True)
     s.add_argument("--image", required=True, help="path to the token image")
-    s.add_argument("--description", default="")
+    s.add_argument("--description", default=None,
+                   help="the coin page's body. REQUIRED and permanent. Use @path to read it "
+                        "from a file, which is what you want for anything with newlines")
     s.add_argument("--twitter", default="")
     s.add_argument("--telegram", default="")
     s.add_argument("--website", default="")
@@ -1663,6 +1719,17 @@ def main(argv=None):
     sub.add_parser("selftest", help="against published vectors").set_defaults(fn=cmd_selftest)
 
     args = p.parse_args(argv)
+    # @file for the description, so a paragraph does not have to survive shell quoting — and
+    # so what gets pinned is a file you can read back and diff, not something retyped.
+    d = getattr(args, "description", None)
+    if isinstance(d, str) and d.startswith("@"):
+        args.description = Path(d[1:]).expanduser().read_text().strip()
+    elif d is None and getattr(args, "fn", None) is cmd_launch:
+        raise SystemExit(
+            "\n  --description is required. It is the coin page's whole body and it cannot be\n"
+            "  edited after the create. Write it in a file and pass @that file:\n"
+            "      python3 pumpfun.py launch --description @description.txt …\n")
+
     if not getattr(args, "fn", None):
         p.print_help()
         return 0

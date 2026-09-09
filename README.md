@@ -7,6 +7,9 @@ Snooze Bear, on Solana, launched through pump.fun. Two things live here:
 - **`pumpfun.py`** — the launch script. One file, standard library only, no pip install.
 
 **[`LAUNCH.md`](LAUNCH.md) is the runbook.** Read it before you spend anything.
+**[`description.txt`](description.txt)** is the coin page's body text — it lives in the repo so
+it is reviewable and diffable rather than retyped into a shell, and `--description @that file`
+is how it reaches the launch.
 
 ```
 python3 pumpfun.py size          # what a dev buy actually buys
@@ -157,7 +160,7 @@ This was a real hole until it was tested for: `launch-*.json` was not ignored, a
 sh test/run.sh
 ```
 
-**129 assertions, no network touched, nothing to install** (plus the script's own 33-check
+**143 assertions, no network touched, nothing to install** (plus the script's own 33-check
 `selftest`, which is what a downloaded copy can run on its own). They cover the arithmetic against
 RFC 8032 and published base58 vectors, every way a keypair file is refused, the transaction
 decoder against transactions built byte by byte, the publish flow end-to-end against the real

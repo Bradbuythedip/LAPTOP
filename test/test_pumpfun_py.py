@@ -110,9 +110,11 @@ def launch_args(keypair, **over):
     a.keypair, a.dev_buy, a.headroom, a.dry_run = keypair, 1.0, 0.5, True
     a.reserve = 0.03
     a.mint_keypair = a.grind = None
-    a.name, a.symbol, a.description = "Snooze Bear", "SNOOZE", ""
+    a.name, a.symbol = "Snooze Bear", "SNOOZE"
+    a.description = (ROOT / "description.txt").read_text().strip()
+    a.website = "https://snoozebear.xyz"
     a.image = str(ROOT / "web" / "snooze.png")
-    a.twitter = a.telegram = a.website = ""
+    a.twitter = a.telegram = ""
     a.slippage, a.priority_fee = 10, 0.0005
     for k, v in over.items():
         setattr(a, k, v)
@@ -303,6 +305,45 @@ ok("LAUNCH.md keeps the launch keypair out of the tree",
    "~/.snooze/launch.json" in LM and "-o ./launch.json" not in LM)
 ok("and the ground mint too", "cd ~/.snooze && solana-keygen grind" in LM)
 ok("and says why rather than just where", "scraped in minutes" in LM)
+
+print("── the metadata is permanent, so it is checked before it is pinned")
+DESC = (ROOT / "description.txt").read_text().strip()
+ok("the launch copy is in the repo, not in somebody's shell history", DESC != "")
+ok("and it fits", len(DESC.encode()) < 2000)
+ok("the real metadata passes",
+   P.check_metadata("Snooze Bear", "SNOOZE", DESC, "https://snoozebear.xyz") == [])
+# Every one of these is unfixable after the create instruction runs.
+for label, args_, want in [
+    ("an empty description", ("Snooze Bear", "SNOOZE", "  ", "https://x"), "description is empty"),
+    ("an empty name", ("", "SNOOZE", DESC, "https://x"), "name is empty"),
+    ("an empty symbol", ("Snooze Bear", " ", DESC, "https://x"), "symbol is empty"),
+    ("no website", ("Snooze Bear", "SNOOZE", DESC, ""), "no --website"),
+    ("a symbol over 10 bytes", ("Snooze Bear", "SNOOZEBEARCOIN", DESC, "https://x"), "allows 10"),
+    ("a name over 32 bytes", ("S" * 33, "SNOOZE", DESC, "https://x"), "allows 32"),
+]:
+    bad = P.check_metadata(*args_)
+    ok("%s is refused" % label, any(want in b for b in bad), bad)
+# BYTES, not characters. An emoji is four, and a name that looks short on screen is not.
+emoji = "S" * 20 + "\U0001F43B" * 4   # 24 characters, 36 bytes
+ok("the limits are measured in bytes, so emoji count properly",
+   len(emoji) <= 32 and len(emoji.encode()) > 32
+   and any("allows 32" in b for b in P.check_metadata(emoji, "SNOOZE", DESC, "https://x")))
+ok("and every refusal says it cannot be fixed later",
+   all("permanent" in b or "cannot be edited" in b or "empty" in b or "copycat" in b
+       for b in P.check_metadata("", "", "", "")))
+
+print("── --description is required, and readable from a file")
+SRC_D = (ROOT / "pumpfun.py").read_text()
+ok("it has no default, like --dev-buy", 'add_argument("--description", default=None' in SRC_D)
+ok("@file is supported so a paragraph is not a shell argument", 'd.startswith("@")' in SRC_D)
+out = StringIO()
+try:
+    with redirect_stdout(out):
+        P.main(["launch", "--keypair", "/dev/null", "--dev-buy", "1",
+                "--name", "X", "--symbol", "X", "--image", "x.png"])
+    ok("omitting it refuses before anything happens", False, "it proceeded")
+except SystemExit as e:
+    ok("omitting it refuses before anything happens", "--description is required" in str(e))
 
 print("── the order of operations, which is what stops a lost mint or a lost dev buy")
 with tempfile.TemporaryDirectory() as d:
