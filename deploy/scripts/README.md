@@ -116,7 +116,7 @@ under both rules, and it is checkable.
 
 | | | |
 | --- | --- | --- |
-| 1 | `oracle` | Record the oracle, and prove all three views answer without reverting with no history yet. Sends nothing. |
+| 1 | `oracle` | Record the oracle, and prove all three views answer without reverting with no history yet. Deploys `SnoozeNeverReady` when that is the choice; sends nothing when `oracle.address` is already set. |
 | 2 | `deployer` | Deploy `SnoozeDeployer`. Anyone may send it; only the owner can deploy from it after. |
 | 3 | `token` | Deploy `Snooze` from your wallet. `oracle` and `devBps` become immutable here. |
 | 4 | `salt` | Grind the vanity salt for the curve. Last, and it could not have been earlier. |
@@ -250,7 +250,7 @@ Read the oracle's verified source yourself; nothing here can do that for you.
 lib/abi.mjs      encoding and decoding, written out rather than imported — a library's bugs
                  would be indistinguishable from the contract's, and a wrong word in a
                  constructor is an immutable address holding the wrong parameter forever
-lib/rpc.mjs      reads only: an allowlist of seven methods, none of which can send
+lib/rpc.mjs      reads only: an allowlist of eight methods, none of which can send
 lib/solc.mjs     solc 0.8.36 / optimizer / 200 runs, recorded beside the bytes it produced
 lib/config.mjs   every `revert BadConfig()` copied out, so it costs nothing to discover
 lib/oracle.mjs   what bytecode can and cannot prove about an oracle

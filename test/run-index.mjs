@@ -24,6 +24,11 @@ const near = (n, g, w, tol) => ok(n, Math.abs(g - w) <= (tol ?? 1e-9),
 
 const SRC = fs.readFileSync(path.join(ROOT, "web", "index.html"), "utf8");
 const POOL_ADDR = "0x00000000000000000000000000000000000000aa";
+// The two $SNOOZE addresses, for the same reason POOL_ADDR exists: the real constants are
+// honestly empty until a launch happens, and the deployed path is the one that has to work.
+const CURVE_ADDR = "0x99c793b2EDfC5e9C64d5978Aed8f8CF0C64a8453";
+const TOKEN_ADDR = "0xA8303A4338Ad29B25D8c8cAAA7d296fdF23E4445";
+let BONDED = false;
 
 // A node that answers the three reads this page makes, and nothing else. `logs` is swapped
 // between scenarios so the same page can be driven through every state it has.
@@ -57,6 +62,11 @@ const node = http.createServer((req, res) => {
         }
         return { jsonrpc: "2.0", id: m.id, result: LOGS };
       }
+      // The one call the buy card makes. Everything else still refuses, so a page that starts
+      // reading something new fails here rather than quietly getting a zero word back.
+      if (m.method === "eth_call" && m.params && m.params[0] && m.params[0].data === "0xe88dc357")
+        return { jsonrpc: "2.0", id: m.id,
+                 result: "0x" + (BONDED ? "1" : "0").padStart(64, "0") };
       return { jsonrpc: "2.0", id: m.id, error: { code: -32601, message: "not allowed here" } };
     };
     res.writeHead(200, { "content-type": "application/json", ...CORS });
@@ -75,6 +85,11 @@ const site = http.createServer((req, res) => {
   if (rel === "/" && u.searchParams.get("pool")) {
     res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
     return res.end(SRC.replace('const POOL  = "";', `const POOL  = "${POOL_ADDR}";`));
+  }
+  if (rel === "/" && u.searchParams.get("curve")) {
+    res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+    return res.end(SRC.replace('const SNOOZE_CURVE = "";', `const SNOOZE_CURVE = "${CURVE_ADDR}";`)
+                      .replace('const SNOOZE_TOKEN = "";', `const SNOOZE_TOKEN = "${TOKEN_ADDR}";`));
   }
   const target = (!fs.existsSync(f) && f.endsWith("bg.png"))
     ? path.join(ROOT, "test", "fixture-bg.png") : f;
@@ -503,6 +518,58 @@ console.log("── the launch-day path, driven before launch day");
      JSON.stringify(stats));
   ok("the deposit count is reported", stats["deposits"] === "3", JSON.stringify(stats));
   ok("the address is now shown", (await txt("#poolAddr")).toLowerCase() === POOL_ADDR);
+}
+
+console.log("── the buy button lands on a buy, and stops when the curve does");
+{
+  // What "tradable at snoozebear.xyz" comes down to, given that no page here may ever sign:
+  // the button has to put a person on the exact screen where their own wallet can call buy().
+  // It used to link to the contract's Basescan ADDRESS page, which is a place to read about a
+  // contract and not a place to buy anything — three clicks and a tab nobody names away from
+  // the thing the card is for.
+  BONDED = false;
+  await load("?curve=1");
+  const cta = await page.$("#buyCta");
+  ok("the buy button is shown once the curve exists", !(await cta.evaluate(e => e.hidden)));
+  const href = await cta.getAttribute("href");
+  ok("and it lands on the Write Contract tab, not the address page",
+     href === "https://basescan.org/address/" + CURVE_ADDR + "#writeContract", href);
+  ok("the card names the tab the button lands on, so the two agree",
+     /Write Contract/.test(await txt("#buyHow3")), await txt("#buyHow3"));
+  ok("and it still says a plain send reverts, which is how people lose money here",
+     /plain send reverts/.test(await txt("#buyHow3")));
+  ok("the badge says the curve is live", (await txt("#buyBadge")) === "live");
+  ok("and the footer stops saying nothing is deployed",
+     !/Nothing is deployed/.test(await txt("#buyFoot")), await txt("#buyFoot"));
+
+  // buy() is `if (bonded) revert AlreadyBonded()` on its first line. After bond() the button
+  // above sends people at a function that reverts while the page still looks correct, which is
+  // the worst kind of broken.
+  BONDED = true;
+  await load("?curve=1");
+  ok("once the curve has bonded the badge says so", (await txt("#buyBadge")) === "bonded");
+  const href2 = await page.$eval("#buyCta", e => e.getAttribute("href"));
+  ok("and the button stops pointing at a buy() that now reverts",
+     !/#writeContract/.test(href2), href2);
+  ok("it points at the token, wherever the token trades",
+     href2 === "https://dexscreener.com/base/" + TOKEN_ADDR, href2);
+  const how = await txt("#buyHow3");
+  ok("and the card says the curve has closed", /curve has closed/i.test(how), how);
+  // bond(pool) hands the ETH and the tokens to an address the CALLER names and creates no pool
+  // of anything — contracts/SnoozeCurve.sol:290. So naming a venue here would be a claim the
+  // contract does not support, and this is the assertion that stops one being added back.
+  // Read from what a VISITOR sees and where the button goes, not from the source: the comment
+  // beside this code says the word "Uniswap" in order to explain why the page must not.
+  const seen = await page.evaluate(() => document.body.innerText);
+  ok("the page never claims a particular exchange, because bond() creates no pool",
+     !/uniswap|aerodrome|sushi/i.test(seen + " " + href2),
+     ((seen + " " + href2).match(/uniswap|aerodrome|sushi/i) || [])[0]);
+  ok("and the deployed page is still inside the word budget",
+     (await page.evaluate(() => document.body.innerText.replace(/\s+/g, " ").trim()
+                                  .split(" ").filter(Boolean).length)) < 700,
+     await page.evaluate(() => document.body.innerText.replace(/\s+/g, " ").trim()
+                                 .split(" ").filter(Boolean).length) + " words");
+  BONDED = false;
 }
 
 console.log("── one deposit is not a trend, and a refusing node is not zero interest");

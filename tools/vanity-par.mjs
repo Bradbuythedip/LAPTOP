@@ -4,7 +4,8 @@
 import { spawn } from "node:child_process";
 import os from "node:os";
 import path from "node:path";
-const HERE = path.resolve(new URL(".", import.meta.url).pathname);
+import { fileURLToPath } from "node:url";
+const HERE = path.resolve(path.dirname(fileURLToPath(import.meta.url)));
 const args = process.argv.slice(2);
 const N = Math.max(1, os.cpus().length - 1);
 const per = Math.ceil(Number(args[args.indexOf("--max") + 1] || 200e6) / N);

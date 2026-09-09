@@ -7,3 +7,5 @@ test/shot-*.png
 shots/
 deploy/launch-state.json
 deploy/predicted.json
+deploy/.test-cli/
+deploy/.test-state.json

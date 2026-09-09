@@ -7,7 +7,8 @@
 // network). The address stays in the detail rows below, which is where it was already.
 import fs from "node:fs";
 import path from "node:path";
-const WEB = path.resolve(new URL(".", import.meta.url).pathname, "..", "web");
+import { fileURLToPath } from "node:url";
+const WEB = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "web");
 
 let n = 0;
 for (const f of fs.readdirSync(WEB).filter(x => x.endsWith(".html"))) {

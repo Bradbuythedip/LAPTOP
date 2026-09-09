@@ -6,8 +6,9 @@
 //   node tools/stamp.mjs 2026-09-08b  # set a new tag on every page, then re-hash
 import fs from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import crypto from "node:crypto";
-const ROOT = path.resolve(new URL(".", import.meta.url).pathname, "..");
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const WEB = path.join(ROOT, "web");
 const newTag = process.argv[2];
 

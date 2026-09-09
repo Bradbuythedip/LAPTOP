@@ -28,7 +28,7 @@ proved by a test, the test is named.
 | Second | **LAPTOP**, on its own curve, gated on holding SNOOZE at launch |
 | Chain | Base, 8453, and nothing else |
 | Site | snoozebear.xyz |
-| Vanity | `…ba5ed` — BASED. See 2c: PUMP, BEAR, MOON and ZZZ cannot exist in an address |
+| Vanity | `…8453` — Base's chain id, per `deploy/config.json`. See 2c: PUMP, BEAR, MOON and ZZZ cannot exist in an address |
 
 All of it is in `deploy/config.json`, which `test/run-owner.mjs` reads and checks against the
 compiled contracts. That file deliberately holds no RPC key.
@@ -258,12 +258,7 @@ the predicted address twice, independently, and only proceed if both agree.
 transaction — the owner is the constructor argument, not the sender — but only that owner can
 deploy anything from it afterwards, and the owner cannot be transferred or renounced.
 
-**2c. Grind the vanity salt, last.** `node tools/vanity-par.mjs beabed --deployer <the deployer>
---inithash <keccak of the real init code>`. It has to be last because the address depends on the
-exact bytecode AND the constructor arguments: change the fee address, the supply, a comment that
-shifts a byte, and the address changes. Publish the salt with the address — it is not a secret,
-and publishing it is what lets a stranger recompute `keccak(0xff, deployer, salt, initHash)` and
-check that the address they were given is the one the code lands on.
+**2c. Grind the vanity salt, last.** `node deploy/scripts/grind.mjs` — and not `tools/vanity-par.mjs` by hand. `grind.mjs` computes the real init-code hash from the token that actually landed and passes the `--max` the grinder needs; run by hand against a hand-supplied hash the grinder produces a salt for an address the deployment will not land on, and without `--max` it reads the suffix as its budget and finds nothing. `deploy/scripts/predict.mjs --grind` does the same thing before the token exists.
 
 **Most words cannot be ground at any price.** An address is hex, so it contains only `0-9` and
 `a-f`. `PUMP` needs P, U and M; `BEAR` needs R; `MOON` needs M, O and N; `ZZZ` needs Z. None of
@@ -272,7 +267,7 @@ of difficulty, it is a matter of the alphabet.
 
 What is reachable, with roughly the same energy: `ba5ed` (BASED), `bada55` (BADASS), `1337`,
 `600d`, `beabed` (BEA-BED), `5eeded`, `acce55`, and the classics `f00d`, `face`, `dead`, `cafe`,
-`beef`. `ba5ed` is five characters — about a million salts, ten seconds — and is what
+`beef`. `8453` is four characters — about 65,000 salts, a second — and is what
 `deploy/config.json` currently names. Changing it is one word in that file; the suite refuses a
 suffix that is not hex, so an impossible one fails the build rather than a grind that can never
 finish.

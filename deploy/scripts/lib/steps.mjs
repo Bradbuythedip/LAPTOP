@@ -35,7 +35,7 @@
 // exists.
 // ─────────────────────────────────────────────────────────────────────────────────────────
 import {
-  addressWord, uintWord, selector, keccakHex, create2Address, encodeDeployCall,
+  addressWord, uintWord, bytes32Word, selector, keccakHex, create2Address, encodeDeployCall,
   readUint, readBool, readAddress, readString, sameAddress, toChecksum, ZERO,
 } from "./abi.mjs";
 import { oracleDecision } from "./config.mjs";
@@ -231,8 +231,17 @@ export function buildSteps({ cfg, artifacts, state }) {
           const c = checks();
           c.add(hasCode(code), "there is code at the address the deployment created");
           c.addr(results, "owner()", cfg.owner);
-          c.bool(results, "sealed_()", false, "sealed_() is false, so it can still deploy");
-          c.num(results, "count()", 0n, "count() is 0 — nothing has been deployed from it yet");
+          // State-aware, like step 3's checks, and for the same reason: "nothing deployed
+          // from it yet" is true at step 2 and false forever after step 5, so a step 2 that
+          // asserted it could never be re-read once the curve existed — and grind.mjs is
+          // gated on step 2, so a lost state file after 5.deploy deadlocked the toolkit.
+          const curveUp = !!readBack("curve").address;
+          const sealed = isVerified(state, "lock");
+          c.bool(results, "sealed_()", sealed, sealed ? "the deployer is sealed"
+                 : "sealed_() is false, so it can still deploy");
+          c.num(results, "count()", curveUp ? 1n : 0n, curveUp
+                ? "count() is 1 — the curve, and nothing else, has been deployed from it"
+                : "count() is 0 — nothing has been deployed from it yet");
           return c.out;
         },
         record: (_r, { address }) => ({ address }),
@@ -396,6 +405,29 @@ export function buildSteps({ cfg, artifacts, state }) {
                    "this; SnoozeDeployer.deploy reverts with NotOwner for anybody else.",
           }),
           blocked: () => need("salt", "there is no salt to deploy with"),
+          // The third derivation of the address, and the one that was documented and never
+          // made: steps.mjs and grind.mjs both said "step 5 reads it off the chain by calling
+          // addressOf", and nothing did — the only on-chain agreement was SnoozeDeployer.deploy
+          // reverting DeployFailed on a mismatch, at spend time. Now it is a read before the
+          // send: the deployer itself computes keccak(0xff, this, salt, initHash) and it has to
+          // agree with what the grinder and grind.mjs each derived on their own.
+          precondition: {
+            needsChain: "the deployer's own addressOf(salt, initCodeHash) is the third " +
+                        "derivation of the address, and it lives on the chain",
+            calls: () => deployerAddress && saltRecord.salt ? [
+              { sig: "deployer.addressOf(salt,initHash)", to: deployerAddress,
+                data: selector("addressOf(bytes32,bytes32)") + bytes32Word(saltRecord.salt) +
+                      bytes32Word(curveInitCodeHash(artifacts, cfg, tokenAddress)) },
+            ] : [],
+            check: (results) => {
+              const onChain = decode(results, "deployer.addressOf(salt,initHash)", readAddress);
+              const agrees = onChain !== null && sameAddress(onChain, saltRecord.predicted);
+              return [{ ok: agrees,
+                name: "SnoozeDeployer.addressOf agrees with the salt's promise",
+                detail: onChain === null ? "could not be read"
+                      : agrees ? "" : `the deployer says ${onChain}, step 4 says ${saltRecord.predicted}` }];
+            },
+          },
         },
         {
           key: "fund",
@@ -412,8 +444,18 @@ export function buildSteps({ cfg, artifacts, state }) {
           // transfer INTO the curve from a non-exempt wallet is a sell: Rule 2 caps it at 20%
           // of the sender's balance and Rule 1 haircuts what is left. Funding after
           // registering would revert, and if it did not it would burn part of the float.
-          blocked: () => curveAddress ? null
-            : "the curve's address is not known yet — send and verify the deployment first",
+          // Known is not enough, and it was the whole hole: a wrong hash pasted at record.mjs
+          // 5.deploy made SOME address known, and this transfer would have sent the whole
+          // allocation to it. The address the transfer goes to has to be the one the salt
+          // promised — the only thing about the curve that was decided before any receipt
+          // existed — and a recorded address that disagrees with it is refused here as well as
+          // in record.mjs, because two doors are cheaper than one irreversible transfer.
+          blocked: () => !curveAddress
+            ? "the curve's address is not known yet — send and verify the deployment first"
+            : saltRecord.predicted && !sameAddress(curveAddress, saltRecord.predicted)
+              ? `the recorded curve ${curveAddress} is not the address the salt promised ` +
+                `(${saltRecord.predicted}). Do not fund it. Re-record 5.deploy with the right hash.`
+              : null,
         },
         {
           key: "register",

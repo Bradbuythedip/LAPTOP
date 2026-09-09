@@ -9,7 +9,8 @@
 //   node tools/theme-dark.mjs
 import fs from "node:fs";
 import path from "node:path";
-const ROOT = path.resolve(new URL(".", import.meta.url).pathname, "..");
+import { fileURLToPath } from "node:url";
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const WEB = path.join(ROOT, "web");
 
 const ROOT_BLOCK = `:root{

@@ -3,7 +3,8 @@
 import { chromium } from "playwright";
 import fs from "node:fs";
 import path from "node:path";
-const ROOT = path.resolve(new URL(".", import.meta.url).pathname, "..");
+import { fileURLToPath } from "node:url";
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const OUT = path.join(ROOT, "shots");
 fs.mkdirSync(OUT, { recursive: true });
 const only = process.argv.slice(2);

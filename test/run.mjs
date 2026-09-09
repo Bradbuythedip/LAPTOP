@@ -695,6 +695,64 @@ console.log("── the deploy button is somewhere this site cannot serve it");
        "a visitor must not arrive at a signing page from an origin that promises it never signs");
 }
 
+// THE MEASUREMENT THE PAGE'S PROGRESS CARD EXISTS FOR. The signing page keeps how far a launch
+// has got in localStorage, and localStorage is scoped to the ORIGIN it was opened from — so
+// "open deploy.html" is two different stores depending on whether the person double-clicked the
+// file or served it, and the page's own header tells them to do the second. Nothing here can
+// change that; what it can do is not be surprised by it, which is why deploy/deploy.html has a
+// Copy/Restore box and why this is measured in ONE browser profile rather than assumed.
+console.log("── the signing page's progress does not follow it between origins");
+{
+  const here = f => path.join(ROOT, f);
+  const dp = await ctx.newPage();
+  // The identical bytes, served from a http origin, so the only difference between the two
+  // loads is the origin itself.
+  await dp.route("http://deploy.test/**", async r => {
+    const name = (new URL(r.request().url()).pathname.replace(/^\//, "")) || "deploy.html";
+    const f = here("deploy/" + name);
+    if (!fs.existsSync(f)) return r.fulfill({ status: 404, body: "" });
+    return r.fulfill({ body: fs.readFileSync(f),
+                       contentType: name.endsWith(".js") ? "text/javascript" : "text/html" });
+  });
+  const KEY = "snooze.deploy.8453";
+  await dp.goto("file://" + here("deploy/deploy.html"), { waitUntil: "load" });
+  const wrote = await dp.evaluate((k) => {
+    try { localStorage.setItem(k, '{"token":"0x01"}');
+          return { origin: location.origin, back: localStorage.getItem(k) }; }
+    catch (e) { return { origin: location.origin, back: "THREW " + e.name }; }
+  }, KEY);
+  ok("progress written from a file:// load is there when read from a file:// load",
+     wrote.back === '{"token":"0x01"}', JSON.stringify(wrote));
+
+  await dp.goto("http://deploy.test/deploy.html", { waitUntil: "load" });
+  const read = await dp.evaluate((k) => ({ origin: location.origin,
+                                           back: localStorage.getItem(k) }), KEY);
+  ok("and gone when the same file is opened from a served origin instead",
+     read.back === null && read.origin !== wrote.origin,
+     `${wrote.origin} wrote it, ${read.origin} read ${JSON.stringify(read.back)}`);
+
+  // So the page has to offer a way out, and the way out has to be checkable. The validator
+  // itself is exercised in test/run-deploy.mjs; this is the round trip through the real DOM.
+  const saved = await dp.evaluate(() => {
+    ST.token = "0x" + "cc".repeat(20);
+    ST.verified = { oracle: true, deployer: true, token: true };
+    return exportProgress();
+  });
+  await dp.evaluate(() => { localStorage.clear(); });
+  await dp.reload({ waitUntil: "load" });
+  ok("a reload after the store is cleared really does forget the launch",
+     (await dp.evaluate(() => ST.token)) === null);
+  const back = await dp.evaluate((text) => {
+    const r = importProgress(text);
+    if (r.ok) { ST = r.state; save(); render(); }
+    return { ok: r.ok, why: r.why, token: ST.token, verified: ST.verified };
+  }, saved);
+  ok("and the exported record puts it back, through the page's own buttons' code path",
+     back.ok && back.token === "0x" + "cc".repeat(20) && back.verified.token === true,
+     JSON.stringify(back));
+  await dp.close();
+}
+
 // The failure a customer actually hits: Phantom installed, Solana side only, LAPTOP on Base.
 // "No wallet found" would be a lie there, and the lie costs them a bridge to the wrong chain.
 console.log("── Phantom: the Solana/EVM split");

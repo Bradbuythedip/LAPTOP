@@ -8,7 +8,8 @@
 // disclosure, and it should look like one.
 import fs from "node:fs";
 import path from "node:path";
-const WEB = path.resolve(new URL(".", import.meta.url).pathname, "..", "web");
+import { fileURLToPath } from "node:url";
+const WEB = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "web");
 
 const CSS = `
 /* Disclosures. A caret that turns, a real tap target, and no borrowed button styling. */

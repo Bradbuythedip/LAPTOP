@@ -3,7 +3,8 @@
 // the arithmetic and test/run.mjs recomputes it in the browser.
 import fs from "node:fs";
 import path from "node:path";
-const WEB = path.resolve(new URL(".", import.meta.url).pathname, "..", "web");
+import { fileURLToPath } from "node:url";
+const WEB = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "web");
 
 const OLD_FOCUS = `input:focus,select:focus,textarea:focus{outline:none;border-color:var(--gold);
   box-shadow:0 0 0 3px rgba(240,192,64,.22)}`;

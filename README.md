@@ -79,7 +79,7 @@ file and opening it locally removes the hosting party from the trust question en
 Published build `2026-09-08a`:
 
 ```
-sha256(web/index.html)   = c1a744bb1ff3a472adbc5ec4d3822d633680a13744ac7159612214844479f744
+sha256(web/index.html)   = 1dbc80b07db6aafaf3e88ce72a2a9b29cce7d8edb23dacf0d305157d37faa9c8
 sha256(web/buy.html)     = 3cd6f11114f5f0cbf9696d4153c5349a4c6999326db3e932c185c476f045e8b7
 sha256(web/checker.html) = 42bdeb0c23f1c05b576f1da1da4eb1dda1ce8b4997cb3e69f6d4899e9907e3bf
 sha256(web/size.html)    = 02a2028a2536c5d9764fe38c85e43c02ec3cd7587122b6e462ab0414c304b5f3
@@ -96,9 +96,9 @@ sha256(web/snooze.html)  = 774fc77328903db238f4e99862360ad71b1463a0d411728dd3640
 sh test/run-all.sh         # everything below, no network touched
 ```
 
-**2039 assertions across twenty-three suites.**
+**2089 assertions across twenty-three suites.**
 
-`test/run.mjs` — 370, drives the real page in Chromium against `test/mock-rpc.mjs`: Keccak vectors,
+`test/run.mjs` — 374, drives the real page in Chromium against `test/mock-rpc.mjs`: Keccak vectors,
 the four EIP-55 reference addresses, the v4 poolId derivation checked against a real Base pool
 id, ABI-string decoding (including a 10-character name, whose length word contains a hex
 letter, and truncated/absurd offsets), result-length discipline, and full flows for the happy
@@ -124,7 +124,7 @@ of the JavaScript, plus properties a size curve lives or dies on: output rises w
 effective price strictly worsens, a fee costs exactly its rate at the limit, deeper liquidity
 fills better, and no fill can exceed the output-side virtual reserve. Emits the fixture below.
 
-`test/run-index.mjs` — 177, drives the $SNOOZE landing page. Most of it is about one
+`test/run-index.mjs` — 189, drives the $SNOOZE landing page. Most of it is about one
 distinction: a plot of a FORMULA and a plot of a MARKET look identical from three feet away, so
 the suite asserts which one is on screen. With nothing deployed the chart shows Rule 1 itself —
 exact, checkable against `burnBps()` in the contract, labelled *this is arithmetic, not a
@@ -241,7 +241,7 @@ ordinary externally-owned account rather than from another contract, and gas mea
 the block limit — `launch()` deploys two contracts and makes five state-changing calls in one
 transaction, and comes in at 7.2% of a 30M block. It writes `deploy/`.
 
-`test/run-deploy.mjs` — 278, the deployment sequence in `deploy/scripts` sent step by step into
+`test/run-deploy.mjs` — 312, the deployment sequence in `deploy/scripts` sent step by step into
 an in-process EVM, using the exact bytes `build.mjs` prints and `deploy/deploy.html` sends. It is
 an execution rather than a grep because that is what found the thing that decides the shape of
 the whole sequence: **`Snooze` deployed through `SnoozeDeployer` mints the entire supply to the
@@ -255,7 +255,7 @@ to the curve, fund before `setPool` (measured: the other order does not revert, 
 `freeze()` and `seal()`, and finally a real buy that settles with `burnBps()` at 5000. It also
 pins the two halves that keep the deploy button out of `web/`, checks every selector the page
 hardcodes against keccak of its signature (nineteen of thirty-six were wrong when first
-written), and asserts all seven transactions are byte-identical between the page and the
+written), and asserts all eight transactions are byte-identical between the page and the
 scripts.
 
 `test/run-launchpad.mjs` — 37, `launch()` end to end: the wiring granted before any deposit
@@ -345,7 +345,14 @@ the Python is right, the same arrangement `size.html` has with `test_size_math.p
 The page is not linked from the buyer navigation — operator tool, reachable by URL. Still a
 static file on a public site, so not secret, just not advertised.
 
-## Launching — read `LAUNCH.md` first
+## Launching — read `deploy/scripts/README.md` first
+
+**The runbook for the launch this repository can actually perform is
+[`deploy/scripts/README.md`](deploy/scripts/README.md)** — six steps, sent from your own
+wallet, through `deploy/scripts` or `deploy/deploy.html`. `LAUNCH.md` below is the design
+record and the launchpad path, which `LAUNCH.md` §2.2 itself shows cannot complete on Base.
+
+### The design record — `LAUNCH.md`
 
 [`LAUNCH.md`](LAUNCH.md) is the runbook: what only you can decide, what has to exist before the
 launch transaction, the sequence, and what can still go wrong afterwards. Three things in it are

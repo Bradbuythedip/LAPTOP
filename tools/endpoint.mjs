@@ -16,7 +16,8 @@
 // a same-origin path (/api/rpc) with the key held server-side.
 import fs from "node:fs";
 import path from "node:path";
-const WEB = path.resolve(new URL(".", import.meta.url).pathname, "..", "web");
+import { fileURLToPath } from "node:url";
+const WEB = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "web");
 const next = process.argv[2];
 
 const PAT = /(["'])https:\/\/mainnet\.base\.org\1|(["'])\/api\/rpc\2|(["'])https:\/\/[^"']*\1(?=;?\s*(?:\/\/[^\n]*)?\n)/;

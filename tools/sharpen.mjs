@@ -17,7 +17,8 @@
 // Sharper corners throughout: 12px radius reads consumer-app, 6px reads instrument.
 import fs from "node:fs";
 import path from "node:path";
-const WEB = path.resolve(new URL(".", import.meta.url).pathname, "..", "web");
+import { fileURLToPath } from "node:url";
+const WEB = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "web");
 
 const SHARP = `
 /* ------------------------------------------------------------------ surfaces vs controls.
