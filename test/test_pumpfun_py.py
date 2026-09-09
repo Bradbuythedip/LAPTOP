@@ -1319,26 +1319,36 @@ _tkeys = [P.PUMP_PROGRAM, SYS_ADDR, _tmint, _tuser, _mystery, _tbc]
 # indices 2 and 6 of a buy's account list are the mint and the buyer, which is how trace
 # learns which token and which wallet it is looking at; 3 is the bonding curve.
 _tix = [1, 1, 2, 5, 1, 1, 3, 1, 1, 1, 1, 0, 1, 1, 1, 1, 4]
-_out = _capture(lambda: P.cmd_trace(_ns(mint=_tmint, signature=None, limit=5)),
+_out = _capture(lambda: P.cmd_trace(_ns(mint=_tmint, signature=None, limit=5,
+                                        instruction=None)),
                 rpc=TraceRpc(_tkeys, _tix))
 ok("it reports the mint and buyer it read out of the instruction",
    _tmint in _out and _tuser in _out)
 ok("it lists every account the real buy passed, in order", _out.count("\n    ") >= 17)
+# THE CENSUS IS THE POINT. A scan for `buy` across 41 real transactions found none, which
+# says the legacy instruction is not what anybody calls — a fact no amount of patching its
+# account list would have produced. So what IS called gets counted first.
+ok("it counts which pump.fun instructions were actually called",
+   "What they asked pump.fun to do" in _out and "buy" in _out, _out[:400])
+ok("and names them by discriminator, including ones no IDL would name",
+   "66063d1201daebea" in _out, _out[:400])
 ok("it names the ones this script can already derive", "bonding_curve" in _out)
 ok("and flags the ones it cannot, which are the answer",
-   "NOT ONE THIS SCRIPT DERIVES" in _out)
+   "the ones this script cannot name" in _out, _out[-600:])
 ok("a trailing account that matches a candidate seed is identified as such",
    'PDA["bonding-curve-v2", mint]' in _out)
 
 _odd = P.Keypair.generate().address
-_out2 = _capture(lambda: P.cmd_trace(_ns(mint=_tmint, signature=None, limit=5)),
+_out2 = _capture(lambda: P.cmd_trace(_ns(mint=_tmint, signature=None, limit=5,
+                                         instruction=None)),
                  rpc=TraceRpc([P.PUMP_PROGRAM, SYS_ADDR, _tmint, _tuser, _odd, _tbc], _tix))
 ok("and one that matches nothing says so rather than inventing a name",
    "no candidate seed matches" in _out2)
 
 # Accounts a transaction loaded from a lookup table have to be appended in the runtime's
 # order — writable then readonly — or every index past the static keys names the wrong one.
-_out3 = _capture(lambda: P.cmd_trace(_ns(mint=_tmint, signature=None, limit=5)),
+_out3 = _capture(lambda: P.cmd_trace(_ns(mint=_tmint, signature=None, limit=5,
+                                         instruction=None)),
                  rpc=TraceRpc([P.PUMP_PROGRAM, SYS_ADDR, _tmint, _tuser, _tbc], _tix,
                               loaded={"writable": [], "readonly": [_mystery]}))
 ok("an account the transaction loaded from a table is resolved too",
@@ -1349,7 +1359,12 @@ ok("an account the transaction loaded from a table is resolved too",
 # sees routers and reports that there are no buys, which is what the first version did.
 _r = TraceRpc(_tkeys, _tix)
 _r.inner = True
-_out4 = _capture(lambda: P.cmd_trace(_ns(mint=None, signature=None, limit=5)), rpc=_r)
+_out4 = _capture(lambda: P.cmd_trace(_ns(mint=None, signature=None, limit=5,
+                                         instruction=None)), rpc=_r)
+ok("buy_v2's published discriminator is known, so a census can name it",
+   P.DISCRIMINATORS.get("b817ee6167c5d33d") == "buy_v2")
+ok("every instruction the IDL declares is in the name table", len(P.DISCRIMINATORS) == 40,
+   len(P.DISCRIMINATORS))
 ok("a buy reached through a CPI is found, not skipped",
    'PDA["bonding-curve-v2", mint]' in _out4 and "CPI" in _out4)
 ok("and it says where it found it, so the shape of the transaction is visible",
@@ -1364,8 +1379,9 @@ class EmptyRpc(TraceRpc):
 
 
 ok("nothing to look at is an error that says so, not an empty success",
-   _raises(lambda: _capture(lambda: P.cmd_trace(_ns(mint=None, signature=None, limit=5)),
-                            rpc=EmptyRpc(_tkeys, _tix)), RuntimeError))
+   _raises(lambda: _capture(lambda: P.cmd_trace(
+       _ns(mint=None, signature=None, limit=5, instruction=None)),
+       rpc=EmptyRpc(_tkeys, _tix)), RuntimeError))
 ok("with no mint given it scans the program itself, which always has traffic",
    "pump.fun's own recent transactions" in _out4)
 
