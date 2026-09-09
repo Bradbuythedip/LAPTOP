@@ -1444,13 +1444,37 @@ def cmd_publish(args):
             print("  == %s already publishes it" % rel)
             continue
         new_line = '%s<div class="ca" id="ca" data-ca="%s">%s</div>\n' % (indent, mint, mint)
+
+        # EVERY LINK, INTO THE MARKUP. data-url holds the base; the href becomes base+mint, so
+        # pump.fun, Solscan and DexScreener all resolve with JavaScript off. They used to be
+        # filled only by the page's script, which is the same hole the address itself had: a
+        # visitor with JS blocked got a working address and three links to bare domains.
+        wired = 0
+        for j, line in enumerate(lines):
+            m2 = _re.search(r'data-url="([^"]*)"', line)
+            if not m2:
+                continue
+            base = m2.group(1)
+            want = 'href="%s%s"' % (base, mint)
+            if want in line:
+                continue
+            if _re.search(r'href="[^"]*"', line):
+                lines[j] = _re.sub(r'href="[^"]*"', want, line, count=1)
+            else:
+                # No href yet: the buy/sell buttons, inert until there is something to point at.
+                lines[j] = line.replace('data-url="%s"' % base,
+                                        'data-url="%s" %s' % (base, want), 1)
+            wired += 1
+
         if args.write:
             lines[i] = new_line
             f.write_text("".join(lines))
             changed.append(rel)
-            print("  ++ %s" % rel)
+            print("  ++ %s  (address + %d link%s)"
+                  % (rel, wired, "" if wired == 1 else "s"))
         else:
-            print("  would write %s -> %s" % (rel, mint))
+            print("  would write %s -> %s  (address + %d link%s)"
+                  % (rel, mint, wired, "" if wired == 1 else "s"))
 
     if not args.write:
         print("\n  nothing was written. Re-run with --write.\n")

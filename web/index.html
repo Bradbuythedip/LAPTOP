@@ -131,13 +131,18 @@ a{color:var(--goldHi)}
          click, and pointer-events:none does not stop the keyboard: Tab, Enter, and a new tab
          opens on pump.fun's homepage with no token. An anchor without href is not focusable
          and not activatable, in every browser, with or without CSS. -->
-    <a class="btn buy" id="buy" rel="noopener noreferrer" target="_blank">Buy</a>
-    <a class="btn sell" id="sell" rel="noopener noreferrer" target="_blank">Sell</a>
+    <a class="btn buy" id="buy" data-url="https://pump.fun/coin/"
+       rel="noopener noreferrer" target="_blank">Buy</a>
+    <a class="btn sell" id="sell" data-url="https://pump.fun/coin/"
+       rel="noopener noreferrer" target="_blank">Sell</a>
   </div>
   <div class="links">
-    <a id="pf" href="https://pump.fun" rel="noopener noreferrer" target="_blank">pump.fun</a>
-    <a id="scan" href="https://solscan.io" rel="noopener noreferrer" target="_blank">Solscan</a>
-    <a id="dex" href="https://dexscreener.com" rel="noopener noreferrer" target="_blank">DexScreener</a>
+    <a id="pf" data-url="https://pump.fun/coin/" href="https://pump.fun"
+       rel="noopener noreferrer" target="_blank">pump.fun</a>
+    <a id="scan" data-url="https://solscan.io/token/" href="https://solscan.io"
+       rel="noopener noreferrer" target="_blank">Solscan</a>
+    <a id="dex" data-url="https://dexscreener.com/solana/" href="https://dexscreener.com"
+       rel="noopener noreferrer" target="_blank">DexScreener</a>
   </div>
   <p class="tiny" style="margin-top:12px">Buying and selling happen on pump.fun. This page holds
   no liquidity, takes no fee, and never asks you to connect a wallet or sign anything.</p>
@@ -180,12 +185,15 @@ a{color:var(--goldHi)}
 
   $("copy").hidden = false;
 
-  var coin = "https://pump.fun/coin/" + CA;
-  $("buy").href = coin;
-  $("sell").href = coin;
-  $("pf").href = coin;
-  $("scan").href = "https://solscan.io/token/" + CA;
-  $("dex").href = "https://dexscreener.com/solana/" + CA;
+  /* A FALLBACK, not the mechanism. `publish` writes these hrefs into the markup so every
+     link works with JavaScript off — this only fills one that publish has not reached, which
+     is a page whose data-ca was edited by hand. A link already pointing at the mint is left
+     alone rather than rewritten to the same value. */
+  var links = document.querySelectorAll("a[data-url]");
+  for (var i = 0; i < links.length; i++) {
+    var a = links[i], want = a.getAttribute("data-url") + CA;
+    if (a.getAttribute("href") !== want) a.setAttribute("href", want);
+  }
 
   $("copy").addEventListener("click", function(){
     var done = function(){

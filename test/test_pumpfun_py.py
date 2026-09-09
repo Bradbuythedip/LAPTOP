@@ -697,13 +697,31 @@ with tempfile.TemporaryDirectory() as d:
            "would write" in out.getvalue()
            and 'data-ca=""' in (Path(d) / "web/index.html").read_text())
         a.write = True
-        with redirect_stdout(StringIO()):
+        out = StringIO()
+        with redirect_stdout(out):
             with_rpc(PubRpc(), P.cmd_publish, a)
         wrote = (Path(d) / "web/index.html").read_text()
         ok("--write puts the mint in the page",
            ('data-ca="%s"' % MINT) in wrote and (">%s</div>" % MINT) in wrote)
         ok("and it is readable with no JavaScript at all",
            MINT in wrote.split("<script>")[0])
+        # THE LINKS TOO, not just the address. They were filled only by the page's script, so a
+        # visitor with JavaScript blocked got a correct contract address and three links to
+        # bare domains — the same hole the address itself had, one element over.
+        markup = wrote.split("<script>")[0]
+        for label, want in [
+            ("buy/sell/pump.fun", "https://pump.fun/coin/" + MINT),
+            ("solscan",           "https://solscan.io/token/" + MINT),
+            ("dexscreener",       "https://dexscreener.com/solana/" + MINT),
+        ]:
+            ok("publish writes the %s link into the markup, so it works with JS off" % label,
+               ('href="%s"' % want) in markup, want)
+        ok("every data-url element ends up with a matching href",
+           all(('href="%s%s"' % (b, MINT)) in markup
+               for b in re.findall(r'data-url="([^"]*)"', markup)),
+           re.findall(r'data-url="([^"]*)"', markup))
+        ok("and it reports how many it wired", "5 links" in out.getvalue(),
+           out.getvalue()[-160:])
         ok("and nothing else on the page moved",
            len(wrote.splitlines()) == len(SITE.splitlines()))
         # Running it again is a no-op, not a second edit.

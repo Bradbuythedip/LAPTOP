@@ -160,7 +160,7 @@ This was a real hole until it was tested for: `launch-*.json` was not ignored, a
 sh test/run.sh
 ```
 
-**165 assertions, no network touched, nothing to install** (plus the script's own 33-check
+**175 assertions, no network touched, nothing to install** (plus the script's own 33-check
 `selftest`, which is what a downloaded copy can run on its own). They cover the arithmetic against
 RFC 8032 and published base58 vectors, every way a keypair file is refused, the transaction
 decoder against transactions built byte by byte, the publish flow end-to-end against the real

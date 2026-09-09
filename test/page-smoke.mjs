@@ -52,16 +52,26 @@ function domFrom(caValue) {
     const attrs = { ...d.attrs };
     if (id === "ca") attrs["data-ca"] = caValue;
     els[id] = {
-      id, textContent: "", className: attrs.class || "", hidden: "hidden" in attrs,
-      href: attrs.href, _attrs: attrs,
+      id, _tag: d.tag, textContent: "", className: attrs.class || "",
+      hidden: "hidden" in attrs, href: attrs.href, _attrs: attrs,
       getAttribute(a) { return a in this._attrs ? this._attrs[a] : null; },
       setAttribute(a, v) { this._attrs[a] = v; },
       removeAttribute(a) { delete this._attrs[a]; },
       addEventListener(_e, f) { this._on = f; },
     };
   }
-  return { els, document: { getElementById: id => els[id] || null },
-           navigator: {}, window: {}, setTimeout: () => {} };
+  const doc = {
+    getElementById: id => els[id] || null,
+    // Enough of a selector engine for the one selector the page uses. Deliberately narrow:
+    // a stub that answered anything would stop the test noticing a selector that matches
+    // nothing on the real page.
+    querySelectorAll(sel) {
+      const m = /^a\[([\w-]+)\]$/.exec(sel);
+      if (!m) throw new Error("page-smoke only stubs 'a[attr]', got: " + sel);
+      return Object.values(els).filter(e => e._tag === "a" && m[1] in e._attrs);
+    },
+  };
+  return { els, document: doc, navigator: {}, window: {}, setTimeout: () => {} };
 }
 
 function run(caValue) {
@@ -92,6 +102,17 @@ console.log("── the address renders with NO SCRIPT AT ALL");
      text.includes(CA));
   ok("and the pre-launch page says so instead of showing an empty box",
      html.split("<body>")[1].split("<script>")[0].includes("Not launched yet"));
+  // Every link carries the mint in the MARKUP after publish, not only after a script runs.
+  // The address was fixed for this once; the links were still JavaScript-only.
+  for (const [id, base] of [["buy", "https://pump.fun/coin/"],
+                            ["sell", "https://pump.fun/coin/"],
+                            ["pf", "https://pump.fun/coin/"],
+                            ["scan", "https://solscan.io/token/"],
+                            ["dex", "https://dexscreener.com/solana/"]]) {
+    ok(`${id} declares its base as data-url, so publish can fill it`,
+       declared.get(id).attrs["data-url"] === base,
+       declared.get(id).attrs["data-url"]);
+  }
 }
 
 console.log("── with an address published");
@@ -99,10 +120,12 @@ console.log("── with an address published");
   const CA = "So11111111111111111111111111111111111111112";
   const e = run(CA);
   ok("the copy button appears", e.copy.hidden === false);
-  ok("buy points at the coin page", e.buy.href === "https://pump.fun/coin/" + CA, e.buy.href);
-  ok("sell points at the same place", e.sell.href === "https://pump.fun/coin/" + CA);
-  ok("solscan is wired", e.scan.href === "https://solscan.io/token/" + CA, e.scan.href);
-  ok("dexscreener is wired", e.dex.href === "https://dexscreener.com/solana/" + CA, e.dex.href);
+  const href = el => el._attrs.href;
+  ok("buy points at the coin page", href(e.buy) === "https://pump.fun/coin/" + CA, href(e.buy));
+  ok("sell points at the same place", href(e.sell) === "https://pump.fun/coin/" + CA);
+  ok("solscan is wired", href(e.scan) === "https://solscan.io/token/" + CA, href(e.scan));
+  ok("dexscreener is wired",
+     href(e.dex) === "https://dexscreener.com/solana/" + CA, href(e.dex));
   ok("a copy handler is attached", typeof e.copy._on === "function");
 }
 
